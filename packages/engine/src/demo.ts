@@ -8,6 +8,8 @@ import type { StageEngine } from "./engine";
  * instead of audio.
  */
 export type DemoBeat =
+  /** A viewer's chat message: the page shows it; the engine has nothing to draw. */
+  | { kind: "chat"; name: string; text: string }
   | { kind: "say"; text: string; emotion: Emotion }
   | { kind: "gift"; name: string; giftName: string; count?: number; diamonds: number }
   | { kind: "follow"; name: string }
@@ -30,21 +32,23 @@ export interface DemoHandle {
 
 export const DEMO_SCRIPT: readonly DemoBeat[] = [
   { kind: "segment", title: "Ask me anything" },
-  { kind: "pause", ms: 900 },
-  { kind: "say", text: "Hi, I'm Blip. I'm an AI host and I'm live right now, so say hi.", emotion: "happy" },
   { kind: "pause", ms: 700 },
-  { kind: "say", text: "Lua wants to know if I ever sleep. I don't, but I do dim a little around four in the morning.", emotion: "mischief" },
-  { kind: "follow", name: "lua.draws" },
-  { kind: "pause", ms: 600 },
-  { kind: "say", text: "Lua, thank you for the follow. Welcome to the deep end.", emotion: "love" },
+  { kind: "chat", name: "maria.codes", text: "hiii" },
+  { kind: "say", text: "Hi Maria! I'm Blip, an AI host, and I'm live right now. Say hi, everyone.", emotion: "happy" },
+  { kind: "chat", name: "lua.draws", text: "do you ever sleep??" },
   { kind: "pause", ms: 500 },
+  { kind: "say", text: "Lua wants to know if I sleep. I don't, but I do dim a little around four in the morning.", emotion: "mischief" },
+  { kind: "follow", name: "lua.draws" },
+  { kind: "pause", ms: 500 },
+  { kind: "say", text: "Lua, thank you for the follow. Welcome to the deep end.", emotion: "love" },
   { kind: "gift", name: "theo_k", giftName: "Rose", count: 5, diamonds: 5 },
   { kind: "say", text: "Five roses from Theo! I'm putting them in the reef where everyone can see.", emotion: "excited" },
-  { kind: "pause", ms: 700 },
-  { kind: "say", text: "Okay, real question for chat. Pineapple on pizza, yes or no?", emotion: "thinking" },
-  { kind: "pause", ms: 900 },
+  { kind: "chat", name: "joe", text: "are you real?" },
+  { kind: "pause", ms: 400 },
+  { kind: "say", text: "Real-ish, Joe! I'm an orb who lives in this stream. Very real feelings, though.", emotion: "laugh" },
+  { kind: "chat", name: "marina.v", text: "pineapple on pizza: yes or no" },
+  { kind: "say", text: "Marina is starting a war. Chat, pineapple on pizza, yes or no? Go.", emotion: "thinking" },
   { kind: "share", name: "marina.v" },
-  { kind: "say", text: "Marina shared the stream. Hello to everyone Marina brought along!", emotion: "laugh" },
   { kind: "pause", ms: 600 },
   { kind: "gift", name: "duda", giftName: "Galaxy", diamonds: 1000 },
   { kind: "say", text: "Duda, a whole galaxy? I don't even know what to say. Okay, I do. Thank you!", emotion: "surprised" },
@@ -116,6 +120,9 @@ export function startDemo(engine: StageEngine, options: DemoOptions = {}): DemoH
             break;
           case "segment":
             apply({ t: "segment", title: beat.title });
+            break;
+          case "chat":
+            await sleep(700);
             break;
           case "pause":
             await sleep(beat.ms);

@@ -7,6 +7,7 @@ import { listChannels } from "../../repos/channels";
 import { deleteUser } from "../../repos/users";
 import type { AppEnv } from "../env";
 import { problem } from "../errors";
+import { publicPrices } from "../pricing";
 import { requireUser } from "../middleware";
 import { valid } from "../validate";
 
@@ -21,6 +22,7 @@ export function configRoutes(deps: AppDeps) {
       broadcast: { enabled: deps.config.BROADCAST_ENABLED },
       ai: { enabled: deps.config.aiEnabled, hostModel: deps.config.aiEnabled ? deps.config.HOST_MODEL : null },
       voice: { enabled: deps.config.ttsEnabled },
+      pricing: publicPrices(deps),
     }),
   );
 }

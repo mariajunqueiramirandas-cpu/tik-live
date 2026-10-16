@@ -50,8 +50,8 @@ function PlanRow({ offer, current, billing, onChoose, busy }: { offer: Offer; cu
         ))}
       </ul>
       <div className={s.price}>
-        {offer.price === null ? (
-          <span className={s.free}>{offer.id === "free" ? "Free" : "Contact us"}</span>
+        {offer.price === null || offer.price === 0 ? (
+          <span className={s.free}>{offer.id === "free" || offer.price === 0 ? "Free" : "Contact us"}</span>
         ) : (
           <>
             <span className="money">{money(offer.price, offer.currency)}</span>

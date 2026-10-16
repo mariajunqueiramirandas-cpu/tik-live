@@ -3,7 +3,12 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AppDeps } from "../deps";
 import type { AppEnv } from "./env";
+import { publicPrices } from "./pricing";
 import { channelForStageKey } from "./routes/stage";
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+}
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -57,6 +62,28 @@ export function mountStatic(app: Hono<AppEnv>, deps: AppDeps): void {
 
   app.get("/assets/*", async (c) => (await sendFile(c.req.path, "public, max-age=31536000, immutable")) ?? c.body(null, 404));
   app.get("/fonts/*", async (c) => (await sendFile(c.req.path, "public, max-age=31536000, immutable")) ?? c.body(null, 404));
+
+  // The landing page is prerendered at build time; prices are server config,
+  // so they're filled in here (and repeated as JSON for hydration).
+  let landing: { html: string } | null = null;
+  const landingHtml = async (): Promise<string | null> => {
+    if (landing) return landing.html;
+    const handle = file("/landing.html");
+    if (!handle || !(await handle.exists())) return null;
+    const prices = publicPrices(deps);
+    const json = JSON.stringify(prices).replace(/</g, "\\u003c");
+    let html = await handle.text();
+    for (const [id, text] of Object.entries(prices)) html = html.replaceAll(`{{price:${id}}}`, escapeHtml(text));
+    html = html.replace("<!--lantern:head-->", `<script type="application/json" id="lantern-prices">${json}</script>`);
+    landing = { html };
+    return html;
+  };
+
+  app.get("/", async (c, next) => {
+    const html = await landingHtml();
+    if (!html) return next();
+    return c.html(html, 200, { "cache-control": "no-cache" });
+  });
 
   app.get("*", async (c) => {
     const pathname = c.req.path;

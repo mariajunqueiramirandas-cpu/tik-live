@@ -411,19 +411,25 @@
     }
     .stageCol {
       position: static;
+      width: 100%;
       max-width: 240px;
       margin: 0 auto;
     }
-    /* The kill switch stays reachable on phones. */
+    /* The kill switch stays on screen on phones. */
+    .studio {
+      padding-bottom: 88px;
+    }
     .kill {
-      position: sticky;
-      bottom: var(--s-3);
-      z-index: 5;
-      order: -1;
-      padding: var(--s-2);
-      border-radius: 14px;
-      background: rgb(11 4 32 / 0.9);
-      backdrop-filter: blur(8px);
+      position: fixed;
+      inset: auto 0 0;
+      z-index: 30;
+      padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom));
+      background: rgb(11 4 32 / 0.94);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--hairline);
+    }
+    .killHint {
+      display: none;
     }
     .room {
       height: 60dvh;

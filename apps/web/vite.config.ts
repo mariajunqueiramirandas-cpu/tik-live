@@ -43,6 +43,7 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: true,
+    manifest: true,
     assetsInlineLimit: 0,
     rolldownOptions: {
       input: {
