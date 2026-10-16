@@ -29,11 +29,10 @@ const auth = values.gate ? { authorization: `Basic ${btoa(`load:${values.gate}`)
 const origin = new URL(base).origin;
 
 async function api<T>(path: string, user: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
-    ...init,
-    headers: { ...auth, origin, "x-dev-user": user, ...(init.json ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) },
-    ...(init.json ? { body: JSON.stringify(init.json) } : {}),
-  });
+  const headers = new Headers(init.headers);
+  for (const [key, value] of Object.entries({ ...auth, origin, "x-dev-user": user })) headers.set(key, value);
+  if (init.json) headers.set("content-type", "application/json");
+  const res = await fetch(`${base}${path}`, { ...init, headers, ...(init.json ? { body: JSON.stringify(init.json) } : {}) });
   if (!res.ok && res.status !== 204) throw new Error(`${init.method ?? "GET"} ${path}: ${res.status} ${await res.text()}`);
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
