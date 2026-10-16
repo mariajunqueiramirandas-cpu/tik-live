@@ -93,6 +93,11 @@ export function securityHeaders(deps: AppDeps): MiddlewareHandler<AppEnv> {
  */
 export function csrfGuard(deps: AppDeps): MiddlewareHandler<AppEnv> {
   const allowed = new Set([deps.config.publicOrigin]);
+  // In development, localhost and 127.0.0.1 are the same machine.
+  if (!deps.config.isProduction) {
+    allowed.add(deps.config.publicOrigin.replace("//localhost", "//127.0.0.1"));
+    allowed.add(deps.config.publicOrigin.replace("//127.0.0.1", "//localhost"));
+  }
   return async (c, next) => {
     const method = c.req.method;
     if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();

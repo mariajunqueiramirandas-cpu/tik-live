@@ -1,0 +1,150 @@
+@layer components {
+  .dim {
+    color: var(--haze);
+  }
+  .summary {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--s-6);
+    padding: var(--s-6);
+  }
+  .summaryMain,
+  .usage {
+    display: grid;
+    gap: 6px;
+    align-content: start;
+  }
+  .planTitle {
+    font-family: var(--font-display);
+    font-size: var(--t-37);
+    font-weight: 760;
+    line-height: 1.05;
+  }
+  .subLine {
+    font-weight: 600;
+  }
+  .ok {
+    color: var(--glow);
+  }
+  .warn {
+    color: var(--offering);
+  }
+  .bad {
+    color: var(--alarm);
+  }
+  .usageValue {
+    font-family: var(--font-display);
+    font-size: var(--t-23);
+    font-weight: 700;
+  }
+  .meter {
+    height: 6px;
+    border-radius: 99px;
+    background: var(--trench);
+    overflow: hidden;
+    margin: 4px 0;
+  }
+  .meter span {
+    display: block;
+    height: 100%;
+    background: var(--glow);
+    border-radius: inherit;
+  }
+  .meter span[data-high] {
+    background: var(--offering);
+  }
+  .summaryActions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .plans {
+    display: grid;
+    border-radius: var(--r-panel);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    overflow: hidden;
+  }
+  .plan {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) minmax(200px, 1.4fr) 130px 170px;
+    gap: var(--s-4);
+    align-items: center;
+    padding: var(--s-5);
+  }
+  .plan + .plan {
+    border-top: 1px solid var(--hairline);
+  }
+  .current {
+    background: var(--trench);
+    box-shadow: inset 3px 0 0 var(--glow);
+  }
+  .planName h3 {
+    font-family: var(--font-display);
+    font-size: var(--t-23);
+    font-weight: 720;
+    letter-spacing: -0.01em;
+  }
+  .highlights {
+    display: grid;
+    gap: 4px;
+    color: var(--haze);
+  }
+  .highlights li {
+    display: flex;
+    gap: var(--s-2);
+    align-items: center;
+  }
+  .highlights svg {
+    width: 15px;
+    height: 15px;
+    color: var(--glow);
+    flex: none;
+  }
+  .price {
+    display: grid;
+  }
+  .price :global(.money) {
+    font-family: var(--font-display);
+    font-size: var(--t-23);
+    font-weight: 720;
+  }
+  .free {
+    font-family: var(--font-display);
+    font-size: var(--t-23);
+    font-weight: 720;
+  }
+  .per {
+    color: var(--haze);
+    font-size: var(--t-12);
+  }
+  .planAction {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .currentLabel {
+    color: var(--glow);
+    font-weight: 700;
+  }
+  .fine {
+    color: var(--haze);
+    font-size: var(--t-12);
+    max-width: 70ch;
+  }
+  @media (max-width: 860px) {
+    .summary {
+      grid-template-columns: 1fr;
+    }
+    .plan {
+      grid-template-columns: 1fr auto;
+    }
+    .highlights {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+    .planAction {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+  }
+}

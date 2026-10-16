@@ -1,0 +1,54 @@
+@import "../styles/fonts.css";
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0420;
+  color: #f4f0ff;
+  font-family: "Atkinson Hyperlegible Next", "Atkinson Fallback", system-ui, sans-serif;
+}
+
+body {
+  display: grid;
+  place-items: center;
+}
+
+/* Fill the source exactly (OBS sizes it 1080x1920); letterbox anywhere else. */
+#stage {
+  display: block;
+  width: min(100vw, calc(100vh * 9 / 16));
+  aspect-ratio: 9 / 16;
+}
+
+.notice {
+  position: fixed;
+  inset: auto 0 6vh;
+  margin: 0 auto;
+  max-width: 28ch;
+  padding: 0 16px;
+  text-align: center;
+  font-size: clamp(14px, 2.4vh, 22px);
+  line-height: 1.35;
+  color: #a397d6;
+}
+
+.sound {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  translate: -50% 0;
+  padding: 10px 18px;
+  border: 1px solid rgb(124 245 255 / 0.5);
+  border-radius: 999px;
+  background: #1e1247;
+  color: #f4f0ff;
+  font: 600 15px/1 "Atkinson Hyperlegible Next", "Atkinson Fallback", system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.sound:focus-visible {
+  outline: 2px solid #7cf5ff;
+  outline-offset: 3px;
+}

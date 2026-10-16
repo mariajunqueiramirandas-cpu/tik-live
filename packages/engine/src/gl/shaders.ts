@@ -63,7 +63,7 @@ void main() {
   vec2 q = px / 150.0;
   float c = noise(q + vec2(u_time * 0.07, u_time * 0.05)) + noise(q * 1.9 - vec2(u_time * 0.05, -u_time * 0.06));
   float caustic = pow(1.0 - abs(c - 1.0), 8.0);
-  col += u_primary * caustic * 0.07 * (1.0 - smoothstep(0.0, 0.55, y));
+  col += u_primary * caustic * 0.045 * (1.0 - smoothstep(0.0, 0.45, y));
 
   // The character's light on the water, plus the gold flash from gifts.
   float dist = length(px - u_orb);
@@ -192,7 +192,7 @@ void main() {
   float aa = u_px * 1.2;
 
   float ang = atan(p.y, p.x);
-  float wob = 1.0 + 0.025 * sin(3.0 * ang + u_time * 1.7) + 0.018 * sin(2.0 * ang - u_time * 1.1) + u_amp * 0.055 * sin(5.0 * ang + u_time * 7.0);
+  float wob = 1.0 + 0.025 * sin(3.0 * ang + u_time * 1.7) + 0.018 * sin(2.0 * ang - u_time * 1.1) + u_amp * 0.022 * sin(5.0 * ang + u_time * 7.0);
   float dBody = length(p) - wob;
   float body = fill(dBody, aa);
 
@@ -235,8 +235,8 @@ void main() {
     shine = max(shine, fill(length(q - vec2(0.045, -0.08 * open)) - r, aa) * eye);
     shine = max(shine, fill(length(q - vec2(-0.035, 0.06 * open)) - r * 0.45 * u_eye2.z, aa) * eye);
     // Sad brows.
-    vec2 b0 = c + vec2(-0.13 * side, -0.27);
-    vec2 b1 = c + vec2(0.12 * side, -0.33);
+    vec2 b0 = c + vec2(-0.12 * side, -0.35); // inner end, raised
+    vec2 b1 = c + vec2(0.13 * side, -0.27);  // outer end, lower
     ink = max(ink, fill(sdSegment(p, b0, b1) - 0.022, aa) * u_eye2.y);
   }
 
@@ -292,6 +292,7 @@ void main() {
   vec2 px = u_rect.xy + v_uv * u_rect.zw;
   float cy = u_rect.y + u_rect.w * 0.5;
   float a = 8.0 + u_amp * 120.0;
+  float fade = smoothstep(40.0, 260.0, px.x) * (1.0 - smoothstep(820.0, 1040.0, px.x));
   vec3 col = vec3(0.0);
   float alpha = 0.0;
   for (int i = 0; i < 3; i++) {
@@ -301,7 +302,7 @@ void main() {
     float halo = exp(-d / (16.0 + u_amp * 14.0)) * 0.45;
     vec3 c = i == 0 ? u_primary : (i == 1 ? u_secondary : mix(u_primary, u_secondary, 0.5));
     c = mix(c, u_gold, u_flash * 0.5);
-    float s = (core * 0.9 + halo) * (1.0 - fi * 0.3);
+    float s = (core * 0.75 + halo) * (1.0 - fi * 0.3) * fade;
     col += c * s;
     alpha += s * 0.6;
   }

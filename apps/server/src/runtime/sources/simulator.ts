@@ -71,6 +71,8 @@ export class SimulatorSource implements EventSource {
   }
 
   async start(emit: EventListener): Promise<void> {
+    // A room starts with people in it, like a real stream does.
+    emit({ kind: "viewers", at: Date.now(), count: this.viewers });
     const loop = () => {
       emit(this.next());
       const rate = this.options.rate ?? 0.5;

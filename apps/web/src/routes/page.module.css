@@ -1,0 +1,69 @@
+@layer components {
+  .page {
+    display: grid;
+    gap: var(--s-8);
+    padding: var(--s-8) clamp(var(--s-4), 4vw, var(--s-12)) var(--s-16);
+    max-width: 1240px;
+  }
+  .narrow {
+    max-width: 840px;
+  }
+  .header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--s-4);
+    flex-wrap: wrap;
+  }
+  .header h1 {
+    font-size: var(--t-37);
+  }
+  .lede {
+    margin-top: var(--s-2);
+    color: var(--haze);
+    max-width: 60ch;
+  }
+  .actions {
+    display: flex;
+    gap: var(--s-2);
+    flex-wrap: wrap;
+  }
+  .section {
+    display: grid;
+    gap: var(--s-4);
+  }
+  .sectionHead {
+    display: grid;
+    gap: 4px;
+  }
+  .sectionHead p {
+    color: var(--haze);
+    max-width: 64ch;
+  }
+  .form {
+    display: grid;
+    gap: var(--s-5);
+    padding: var(--s-6);
+  }
+  .formRow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--s-4);
+  }
+  .formActions {
+    display: flex;
+    gap: var(--s-2);
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 860px) {
+    .page {
+      padding-top: var(--s-6);
+      gap: var(--s-6);
+    }
+    .header h1 {
+      font-size: var(--t-29);
+    }
+  }
+}

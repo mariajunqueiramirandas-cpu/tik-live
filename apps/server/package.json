@@ -3,6 +3,9 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./app-type": "./src/app-type.ts"
+  },
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun dist/index.js",

@@ -96,3 +96,23 @@ export interface ChannelDto {
   createdAt: string;
   updatedAt: string;
 }
+
+/** The most recent stream, for the channel list's sparkline. */
+export interface LastStreamDto {
+  startedAt: string;
+  endedAt: string | null;
+  peakViewers: number;
+  diamonds: number;
+  /** Viewers per sample, downsampled to at most 32 points. */
+  viewers: number[];
+}
+
+export type ChannelListItem = ChannelDto & { lastStream: LastStreamDto | null };
+
+/** Evenly downsamples a series (keeps the first and last points). */
+export function downsample(values: readonly number[], max: number): number[] {
+  if (values.length <= max) return [...values];
+  const out: number[] = [];
+  for (let i = 0; i < max; i++) out.push(values[Math.round((i * (values.length - 1)) / (max - 1))] as number);
+  return out;
+}

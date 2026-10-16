@@ -1,0 +1,89 @@
+/*
+ * Design tokens (ADR-0011). Depth is elevation: surfaces get lighter and
+ * more violet as they rise. Color is semantic: glow = live or act,
+ * offering = money, bloom = the character, alarm = stop.
+ */
+@layer reset, tokens, base, components, utilities;
+
+@layer tokens {
+  :root {
+    color-scheme: dark;
+
+    /* Water depth */
+    --abyss: #0b0420;
+    --trench: #140a33;
+    --shelf: #1e1247;
+    --reef: #2a1a5e; /* hover on raised surfaces */
+
+    /* Ink */
+    --ink: #f4f0ff;
+    --haze: #a397d6;
+    --mist: #7d72ad; /* tertiary text: placeholders, disabled (large text only) */
+    --hairline: rgb(163 151 214 / 0.18);
+    --hairline-strong: rgb(163 151 214 / 0.32);
+
+    /* Meaning */
+    --glow: #7cf5ff;
+    --glow-ink: #062a30; /* text on glow */
+    --glow-soft: rgb(124 245 255 / 0.14);
+    --bloom: #ff5fd2;
+    --bloom-soft: rgb(255 95 210 / 0.14);
+    --offering: #ffd15c;
+    --offering-soft: rgb(255 209 92 / 0.14);
+    --alarm: #ff6b6b;
+    --alarm-ink: #2b0606;
+    --alarm-soft: rgb(255 107 107 / 0.14);
+
+    /* Type */
+    --font-display: "Bricolage Grotesque", "Bricolage Fallback", system-ui, sans-serif;
+    --font-ui: "Atkinson Hyperlegible Next", "Atkinson Fallback", system-ui, sans-serif;
+    --t-12: 0.75rem;
+    --t-15: 0.9375rem;
+    --t-19: 1.1875rem;
+    --t-23: 1.4375rem;
+    --t-29: 1.8125rem;
+    --t-37: 2.3125rem;
+    --t-46: 2.875rem;
+    --t-57: 3.5625rem;
+    --t-72: 4.5rem;
+    --t-88: 5.5rem;
+
+    /* Space: 4 px grid */
+    --s-1: 4px;
+    --s-2: 8px;
+    --s-3: 12px;
+    --s-4: 16px;
+    --s-5: 20px;
+    --s-6: 24px;
+    --s-8: 32px;
+    --s-10: 40px;
+    --s-12: 48px;
+    --s-16: 64px;
+    --s-24: 96px;
+
+    /* Radius by role */
+    --r-control: 8px;
+    --r-panel: 14px;
+    --r-stage: 20px;
+    --r-pill: 999px;
+
+    /* Motion */
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --dur-fast: 120ms;
+    --dur: 200ms;
+    --dur-slow: 360ms;
+
+    --focus: 0 0 0 2px var(--abyss), 0 0 0 4px var(--glow);
+    --sidebar: 248px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --dur-fast: 0ms;
+      --dur: 0ms;
+      --dur-slow: 0ms;
+    }
+  }
+}

@@ -1,0 +1,54 @@
+@layer components {
+  .chart {
+    position: relative;
+    width: 100%;
+  }
+  .chart svg {
+    display: block;
+    touch-action: pan-y;
+  }
+  .grid {
+    stroke: var(--hairline);
+  }
+  .yLabel,
+  .xLabel {
+    fill: var(--haze);
+    font-size: 12px;
+    font-family: var(--font-ui);
+  }
+  .area {
+    fill: var(--glow-soft);
+  }
+  .line {
+    fill: none;
+    stroke: var(--glow);
+    stroke-width: 2;
+    stroke-linejoin: round;
+  }
+  .cursor {
+    stroke: var(--hairline-strong);
+  }
+  .dot {
+    fill: var(--glow);
+    stroke: var(--abyss);
+    stroke-width: 2;
+  }
+  .tip {
+    position: absolute;
+    top: 0;
+    width: 140px;
+    display: grid;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: var(--reef);
+    font-size: var(--t-12);
+    pointer-events: none;
+  }
+  .tip span {
+    color: var(--haze);
+  }
+  .empty {
+    color: var(--haze);
+    padding: var(--s-6) 0;
+  }
+}

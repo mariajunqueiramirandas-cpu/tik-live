@@ -733,8 +733,9 @@ export class Engine implements StageEngine {
 
 function alertDetail(message: Extract<StageServerPayload, { t: "alert" }>): string {
   if (message.kind === "gift") {
+    // TikTok's own convention: the gift's name, then the combo count.
     const count = message.count ?? 1;
-    return `${count > 1 ? `${count} ` : ""}${message.giftName ?? "gift"}`;
+    return `${message.giftName ?? "a gift"}${count > 1 ? ` ×${count}` : ""}`;
   }
   return message.kind === "follow" ? "followed" : "shared the stream";
 }

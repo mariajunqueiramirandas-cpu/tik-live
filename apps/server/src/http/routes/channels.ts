@@ -3,9 +3,11 @@ import {
   channelCreateSchema,
   channelUpdateSchema,
   DEFAULT_SAFETY,
+  downsample,
   findPreset,
   PLANS,
-  type ChannelDto,
+  type ChannelListItem,
+  type LastStreamDto,
   type VoiceSettings,
 } from "@tik-live/shared";
 import { Hono } from "hono";
@@ -46,11 +48,29 @@ export function channelRoutes(deps: AppDeps) {
     return { stageKeyLookup: await deps.secrets.lookup(key), stageKeyCiphertext: await deps.secrets.encrypt("stage-key", key), key };
   };
 
+  const lastStream = async (channelId: string): Promise<LastStreamDto | null> => {
+    const [session] = await listSessions(deps.db, channelId, 1);
+    if (!session) return null;
+    const samples = await listSamples(deps.db, session.id);
+    return {
+      startedAt: session.startedAt.toISOString(),
+      endedAt: session.endedAt?.toISOString() ?? null,
+      peakViewers: session.peakViewers,
+      diamonds: session.diamonds,
+      viewers: downsample(
+        samples.map((s) => s.viewers),
+        32,
+      ),
+    };
+  };
+
   return new Hono<AppEnv>()
     .use(requireUser(deps))
     .get("/", async (c) => {
       const rows = await listChannels(deps.db, c.get("user").id);
-      const channels: ChannelDto[] = await Promise.all(rows.map((row) => toChannelDto(deps, row)));
+      const channels: ChannelListItem[] = await Promise.all(
+        rows.map(async (row) => ({ ...(await toChannelDto(deps, row)), lastStream: await lastStream(row.id) })),
+      );
       return c.json({ channels });
     })
     .post("/", valid("json", channelCreateSchema), async (c) => {

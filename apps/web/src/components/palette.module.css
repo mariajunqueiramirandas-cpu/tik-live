@@ -1,0 +1,84 @@
+@layer components {
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    background: rgb(5 2 18 / 0.6);
+  }
+  .palette {
+    position: fixed;
+    z-index: 81;
+    top: 14vh;
+    left: 50%;
+    translate: -50% 0;
+    width: min(560px, calc(100vw - 24px));
+    border-radius: var(--r-panel);
+    background: var(--shelf);
+    box-shadow:
+      inset 0 0 0 1px var(--hairline-strong),
+      0 24px 64px rgb(5 2 18 / 0.6);
+    overflow: hidden;
+  }
+  .palette[data-state="open"] {
+    animation: pop var(--dur) var(--ease-out);
+  }
+  .input {
+    width: 100%;
+    padding: var(--s-4) var(--s-5);
+    border: 0;
+    border-bottom: 1px solid var(--hairline);
+    background: transparent;
+    font-size: var(--t-19);
+    color: var(--ink);
+  }
+  .input:focus {
+    outline: none;
+  }
+  .input::placeholder {
+    color: var(--mist);
+  }
+  .results {
+    list-style: none;
+    margin: 0;
+    padding: 6px;
+    max-height: min(420px, 60vh);
+    overflow-y: auto;
+  }
+  .result {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    min-height: 42px;
+    padding: 0 var(--s-3);
+    border-radius: var(--r-control);
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .result svg {
+    width: 18px;
+    height: 18px;
+    color: var(--haze);
+    flex: none;
+  }
+  .current {
+    background: var(--reef);
+  }
+  .label {
+    font-weight: 600;
+  }
+  .hint {
+    margin-left: auto;
+    color: var(--haze);
+    font-size: var(--t-12);
+  }
+  .empty {
+    padding: var(--s-4);
+    color: var(--haze);
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      scale: 0.98;
+    }
+  }
+}

@@ -196,7 +196,7 @@ export class Caption {
           const y = CAPTION.pad + w.line * lineHeight + layout.fontSize * 0.92;
           const said = i < current;
           const speaking = i === current;
-          ctx.shadowColor = speaking ? glow : "transparent";
+          ctx.shadowColor = speaking ? withAlpha(glow, 0.8) : "transparent";
           ctx.shadowBlur = speaking ? 28 : 0;
           ctx.fillStyle = said || speaking ? INK : "rgba(244,240,255,0.3)";
           // A soft dark edge keeps captions readable over bright frames.
@@ -353,7 +353,8 @@ export class Chrome {
 
   private paintTitle(scale: number): void {
     const font = `760 44px ${FONT_FAMILY}`;
-    const pad = 24;
+    // Room for the glow, so it never clips into a visible box.
+    const pad = 48;
     const width = Math.min(640, measureWith(font)(this.titleText)) + pad * 2;
     this.title.x = 64 - pad;
     this.title.y = 200 - pad;
@@ -362,8 +363,8 @@ export class Chrome {
     this.title.draw(width, 44 * 1.1 + pad * 2, scale, (ctx) => {
       ctx.font = font;
       ctx.textBaseline = "alphabetic";
-      ctx.shadowColor = glow;
-      ctx.shadowBlur = 24;
+      ctx.shadowColor = withAlpha(glow, 0.55);
+      ctx.shadowBlur = 22;
       ctx.fillStyle = INK;
       ctx.fillText(text, pad, pad + 40, 640);
     });
@@ -399,6 +400,12 @@ function roundRect(ctx: Canvas2D, x: number, y: number, w: number, h: number, r:
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+/** "#7CF5FF" + 0.5 → "rgba(124,245,255,0.5)". */
+function withAlpha(hex: string, alpha: number): string {
+  const n = Number.parseInt(hex.replace("#", ""), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
 function truncate(text: string, max: number): string {

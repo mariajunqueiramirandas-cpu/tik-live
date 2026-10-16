@@ -84,7 +84,9 @@ export class BillingService {
   }
 
   offers(): PlanOffer[] {
-    const ids: PlanId[] = this.enabled ? ["free", "creator", "pro"] : ["self-hosted"];
+    // Without billing everyone is on Self-hosted; the public plans are still
+    // listed (not purchasable) so the pricing page reads the same everywhere.
+    const ids: PlanId[] = ["free", "creator", "pro"];
     return ids.map((id) => this.offer(id));
   }
 
