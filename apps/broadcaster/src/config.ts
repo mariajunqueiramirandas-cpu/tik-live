@@ -19,7 +19,7 @@ const schema = z.object({
   STAGE_ORIGINS: z.string().default("http://lantern-app:8080"),
   CHROMIUM_PATH: z.string().optional(),
   FFMPEG_PATH: z.string().default("ffmpeg"),
-  BROADCAST_MAX_CONCURRENT: z.coerce.number().int().min(1).max(64).default(2),
+  BROADCAST_MAX_CONCURRENT: z.coerce.number().int().min(1).max(64).default(1),
   /** Development only: allow RTMP targets on private networks (a local test listener). */
   ALLOW_PRIVATE_RTMP: bool,
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
