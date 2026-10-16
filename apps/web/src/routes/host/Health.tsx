@@ -14,6 +14,20 @@ function Item({ tone, label, value }: { tone: Tone; label: string; value: string
   );
 }
 
+const BROADCAST_TEXT = { starting: "Starting", live: "Live", retrying: "Reconnecting", failed: "Not streaming", stopped: "Off" } as const;
+
+function BroadcastItem({ broadcast }: { broadcast: NonNullable<RuntimeSnapshot["health"]["broadcast"]> }) {
+  const tone: Tone = broadcast.state === "live" ? "ok" : broadcast.state === "failed" ? "bad" : broadcast.state === "stopped" ? "off" : "warn";
+  const value = broadcast.state === "live" && broadcast.bitrateKbps ? `Live, ${(broadcast.bitrateKbps / 1000).toFixed(1)} Mbps` : BROADCAST_TEXT[broadcast.state];
+  return (
+    <li className={cx(s.healthItem, s[tone])} title={broadcast.detail}>
+      <span className={s.healthDot} aria-hidden />
+      <span className={s.healthLabel}>Cloud broadcast</span>
+      <span className={s.healthValue}>{value}</span>
+    </li>
+  );
+}
+
 /** The few signals a creator needs to trust the show is working. */
 export function Health({ snapshot, onAir }: { snapshot: RuntimeSnapshot | null; onAir: boolean }) {
   if (!snapshot) return null;
@@ -37,6 +51,7 @@ export function Health({ snapshot, onAir }: { snapshot: RuntimeSnapshot | null; 
       {health.budget.limitTokensPerHour !== null && (
         <Item tone={health.budget.usedPct < 80 ? "ok" : health.budget.usedPct < 100 ? "warn" : "bad"} label="AI budget this hour" value={`${Math.round(health.budget.usedPct)}%`} />
       )}
+      {health.broadcast && <BroadcastItem broadcast={health.broadcast} />}
       {snapshot.reactOnly && onAir && <Item tone="warn" label="Mode" value="Reacting only" />}
     </ul>
   );

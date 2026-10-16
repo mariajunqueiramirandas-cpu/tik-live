@@ -7,6 +7,7 @@ import {
   type StudioCommand,
 } from "@tik-live/shared";
 import type { Entitlements, EntitlementCheck } from "../billing/entitlements";
+import type { BroadcastSupervisor } from "../broadcast/supervisor";
 import type { Secrets } from "../crypto/secrets";
 import { getChannelById, listDesiredRunning, setDesiredStateInternal, type ChannelRow } from "../repos/channels";
 import type { AudioStore } from "./audio-store";
@@ -31,6 +32,8 @@ export interface RuntimeManagerOptions {
   secrets: Secrets;
   entitlements: Entitlements;
   audio: AudioStore;
+  /** Cloud broadcast (ADR-0014); absent when the server has it turned off. */
+  broadcasts?: BroadcastSupervisor;
   runtimeOverrides?: Pick<ChannelRuntimeOptions, "makeSource" | "makeHost" | "makeTts">;
 }
 
@@ -99,6 +102,7 @@ export class RuntimeManager {
       await slot.runtime.stop(reason);
       slot.runtime = null;
     }
+    await this.options.broadcasts?.stop(channelId);
     slot.channel = { ...slot.channel, desiredState: "stopped" };
     this.prune(slot);
   }
@@ -117,6 +121,7 @@ export class RuntimeManager {
       await this.startRow(channel, false);
     } else {
       runtime.reconfigure(channel, await this.options.entitlements.planFor(channel.ownerId));
+      await this.syncBroadcast(slot);
     }
   }
 
@@ -127,6 +132,8 @@ export class RuntimeManager {
     slot.stage.setStageKey(stageKey);
     // Connected stages used the old key; disconnect them so only the new URL works.
     slot.stage.closeAll(4001, "stage key rotated");
+    // The cloud broadcast renders the stage link too: restart it on the new one.
+    await this.syncBroadcast(slot);
   }
 
   async remove(channelId: string): Promise<void> {
@@ -134,6 +141,7 @@ export class RuntimeManager {
     if (!slot) return;
     if (slot.failure?.timer) clearTimeout(slot.failure.timer);
     await slot.runtime?.stop("channel deleted");
+    await this.options.broadcasts?.stop(channelId);
     slot.stage.closeAll(4004, "channel deleted");
     this.slots.delete(channelId);
   }
@@ -158,7 +166,14 @@ export class RuntimeManager {
 
   snapshot(channel: ChannelRow): RuntimeSnapshot {
     const slot = this.slots.get(channel.id);
-    if (slot?.runtime) return slot.runtime.snapshot();
+    if (slot?.runtime) {
+      const snapshot = slot.runtime.snapshot();
+      const broadcast = this.options.broadcasts?.current(channel.id);
+      if (broadcast) {
+        snapshot.health.broadcast = { state: broadcast.state, detail: broadcast.detail, bitrateKbps: broadcast.stats?.bitrateKbps ?? null };
+      }
+      return snapshot;
+    }
     const summary = this.summary(channel);
     return stoppedSnapshot(channel, slot?.stage.counts() ?? { program: 0, preview: 0, broadcast: 0 }, summary.status, summary.detail);
   }
@@ -200,6 +215,9 @@ export class RuntimeManager {
     this.accepting = false;
     clearInterval(this.patchTimer);
     clearInterval(this.minuteTimer);
+    // Cloud broadcasts keep running through an app restart: the stage page
+    // holds its last frame and reconnects, and the next boot resyncs.
+    this.options.broadcasts?.close();
     for (const slot of this.slots.values()) {
       slot.stage.hold();
       if (slot.failure?.timer) clearTimeout(slot.failure.timer);
@@ -256,6 +274,7 @@ export class RuntimeManager {
       await runtime.start();
       if (slot.failure) slot.failure = { ...slot.failure, timer: null };
       slot.failure = null;
+      await this.syncBroadcast(slot);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.log.error(`channel ${channel.id} failed to start`, err);
@@ -300,6 +319,9 @@ export class RuntimeManager {
       const runtime = slot.runtime;
       if (!runtime || !isActive(runtime.getStatus().status)) continue;
       runtime.tickMinute();
+      if (this.options.broadcasts?.isLive(slot.channelId)) runtime.meterBroadcast(60);
+      // Picks up plan changes (a downgrade stops the cloud broadcast).
+      await this.syncBroadcast(slot).catch(() => undefined);
       const plan = await this.options.entitlements.planFor(slot.ownerId).catch(() => null);
       if (!plan || isUnlimited(plan.limits.liveHoursPerMonth)) continue;
       const used = await this.options.entitlements.liveSecondsThisMonth(slot.ownerId).catch(() => 0);
@@ -314,6 +336,14 @@ export class RuntimeManager {
         await this.stop(slot.channelId, "out of live hours");
       }
     }
+  }
+
+  private async syncBroadcast(slot: Slot): Promise<void> {
+    const broadcasts = this.options.broadcasts;
+    if (!broadcasts) return;
+    const running = Boolean(slot.runtime && isActive(slot.runtime.getStatus().status));
+    const plan = running ? await this.options.entitlements.planFor(slot.ownerId) : null;
+    await broadcasts.sync(slot.channel, slot.stage.stageKey, running && Boolean(plan?.limits.cloudBroadcast));
   }
 
   /** Drops slots nobody uses so memory doesn't grow with every channel ever viewed. */

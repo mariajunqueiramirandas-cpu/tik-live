@@ -139,6 +139,10 @@ export class StageHub implements SpeechOutput, StageNotifier {
     this.cueListener = listener;
   }
 
+  get stageKey(): string {
+    return this.options.stageKey;
+  }
+
   setStageKey(stageKey: string): void {
     this.options.stageKey = stageKey;
   }

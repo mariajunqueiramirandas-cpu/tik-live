@@ -302,6 +302,11 @@ export class ChannelRuntime {
     }
   }
 
+  /** Cloud-broadcast time, metered separately from live hours (ADR-0013). */
+  meterBroadcast(seconds: number): void {
+    this.meter.addBroadcastSeconds(seconds);
+  }
+
   /** Live seconds recorded since the last flush (counted toward plan hours). */
   pendingLiveSeconds(): number {
     return this.status === "live" ? Math.floor((this.now() - this.lastTickAt) / 1000) : 0;

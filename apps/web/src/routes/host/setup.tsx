@@ -133,6 +133,8 @@ function CloudBroadcast() {
   const [rtmpUrl, setRtmpUrl] = useState(channel.broadcast.rtmpUrl ?? "");
   const [streamKey, setStreamKey] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const { store } = useHost();
+  const live = useStudio(store, (st) => st.snapshot?.health.broadcast ?? null);
   const allowed = me?.plan.limits.cloudBroadcast ?? false;
   const available = config?.broadcast.enabled ?? false;
 
@@ -178,6 +180,12 @@ function CloudBroadcast() {
           noValidate
         >
           <Switch label="Broadcast this host from the cloud" hint="Starts with the host and stops with it." checked={channel.broadcast.enabled} onChange={(enabled) => void save({ enabled })} disabled={update.isPending} />
+          {live && (
+            <p className={s.status} data-ok={live.state === "live"}>
+              <span className={s.statusDot} aria-hidden />
+              {live.state === "live" ? "Streaming to TikTok now" : live.detail}
+            </p>
+          )}
           <div className={p.formRow}>
             <Field label="Server URL" hint="From TikTok LIVE Studio or your stream key page. Starts with rtmp:// or rtmps://.">
               {(props) => <Input {...props} value={rtmpUrl} onChange={(e) => setRtmpUrl(e.target.value)} placeholder="rtmps://…" spellCheck={false} autoComplete="off" />}

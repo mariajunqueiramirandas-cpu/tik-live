@@ -119,6 +119,8 @@ export interface RuntimeSnapshot {
     brain: { host: string; moderator: string | null; tts: string };
     latency: { p50: number; p95: number; samples: number } | null;
     budget: { usedPct: number; limitTokensPerHour: number | null };
+    /** Cloud broadcast, when it's turned on for this channel. */
+    broadcast?: { state: "starting" | "live" | "retrying" | "failed" | "stopped"; detail: string; bitrateKbps: number | null } | null;
   };
   session: { id: string; startedAt: string } | null;
 }

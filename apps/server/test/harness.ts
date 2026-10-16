@@ -5,6 +5,7 @@ import { createApp } from "../src/app";
 import type { MercadoPagoClient } from "../src/billing/mercadopago";
 import { testConfig } from "../src/config";
 import { openDatabase } from "../src/db/client";
+import type { BroadcasterClient } from "../src/broadcast/client";
 import { createDeps, type AppDeps } from "../src/deps";
 import type { IdentityProvider } from "../src/identity/types";
 import { configureLogging } from "../src/log";
@@ -49,6 +50,7 @@ export async function startTestServer(
     mercadoPago?: MercadoPagoClient;
     identity?: IdentityProvider;
     database?: Awaited<ReturnType<typeof openDatabase>>;
+    broadcaster?: BroadcasterClient;
   } = {},
 ): Promise<TestServer> {
   const config = testConfig({ PUBLIC_URL: "http://localhost:9999", ...options.env });
@@ -59,6 +61,7 @@ export async function startTestServer(
     anthropic: null,
     ...(options.mercadoPago ? { mercadoPago: options.mercadoPago } : {}),
     ...(options.identity ? { identity: options.identity } : {}),
+    ...(options.broadcaster ? { broadcaster: options.broadcaster } : {}),
     runtimeOverrides: {
       makeSource: (channel) => {
         const source = new ManualSource();

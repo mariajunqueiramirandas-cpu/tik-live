@@ -1,4 +1,5 @@
 export * from "./brand";
+export * from "./broadcast";
 export * from "./channel";
 export * from "./events";
 export * from "./persona";

@@ -53,7 +53,9 @@ const envSchema = z.object({
 
   BROADCAST_ENABLED: bool.default(false),
   BROADCASTER_URL: z.string().url().optional(),
-  BROADCASTER_TOKEN: z.string().min(16).optional(),
+  BROADCASTER_TOKEN: z.string().min(24).optional(),
+  /** Origin the broadcaster uses to load stage pages, e.g. http://app:8080 inside compose. Defaults to PUBLIC_URL. */
+  BROADCAST_STAGE_ORIGIN: z.string().url().optional(),
 
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });

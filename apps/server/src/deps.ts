@@ -1,3 +1,5 @@
+import { HttpBroadcasterClient, type BroadcasterClient } from "./broadcast/client";
+import { BroadcastSupervisor } from "./broadcast/supervisor";
 import Anthropic from "@anthropic-ai/sdk";
 import { BillingService } from "./billing/service";
 import { Entitlements } from "./billing/entitlements";
@@ -34,6 +36,8 @@ export interface DepsOverrides {
   mercadoPago?: MercadoPagoClient;
   fetch?: typeof fetch;
   runtimeOverrides?: Pick<ChannelRuntimeOptions, "makeSource" | "makeHost" | "makeTts">;
+  /** Tests: a fake broadcaster (turns cloud broadcast on). */
+  broadcaster?: BroadcasterClient;
   now?: () => number;
 }
 
@@ -48,11 +52,17 @@ export async function createDeps(config: AppConfig, database: Database, override
   const voices = new VoiceCatalog(config.ELEVENLABS_API_KEY, createLogger("voices"), overrides.fetch);
   const audio = new AudioStore(undefined, undefined, now);
   const anthropic = overrides.anthropic !== undefined ? overrides.anthropic : config.aiEnabled ? new Anthropic({ apiKey: config.ANTHROPIC_API_KEY }) : null;
+  const broadcasterClient =
+    overrides.broadcaster ?? (config.BROADCAST_ENABLED ? new HttpBroadcasterClient(config.BROADCASTER_URL!, config.BROADCASTER_TOKEN!, overrides.fetch) : null);
+  const broadcasts = broadcasterClient
+    ? new BroadcastSupervisor({ client: broadcasterClient, secrets, stageOrigin: config.BROADCAST_STAGE_ORIGIN ?? config.PUBLIC_URL, log: createLogger("broadcast"), now })
+    : undefined;
   const manager = new RuntimeManager({
     ctx: { db, config, anthropic, log: createLogger("runtime"), now },
     secrets,
     entitlements,
     audio,
+    ...(broadcasts ? { broadcasts } : {}),
     ...(overrides.runtimeOverrides ? { runtimeOverrides: overrides.runtimeOverrides } : {}),
   });
   return { config, database, db, log, secrets, identity, entitlements, billing, voices, audio, manager, now };
