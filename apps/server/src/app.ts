@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { compress } from "hono/compress";
 import type { AppDeps } from "./deps";
 import type { AppEnv } from "./http/env";
 import { errorHandler, problem } from "./http/errors";
@@ -35,6 +36,8 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   if (deps.config.AUTH_MODE === "dev" && deps.config.DEV_GATE_PASSWORD) app.use("*", devGate(deps.config.DEV_GATE_PASSWORD));
   app.use("/api/*", csrfGuard(deps));
   app.use("/api/*", rateLimit({ windowMs: 60_000, max: 600, key: (c) => `api:${clientIp(c) ?? "unknown"}` }));
+  // JSON over 1 KB is compressed here rather than by the proxy (Traefik under Dokploy doesn't).
+  app.use("/api/*", compress({ threshold: 1024 }));
 
   app.get("/healthz", (c) => c.json({ ok: true }));
   app.get("/readyz", async (c) => {

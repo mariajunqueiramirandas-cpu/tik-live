@@ -5,7 +5,10 @@
 .data
 data
 deploy/backups
-deploy/.env
+# Secrets: Dokploy writes its environment to .env next to the compose file (the repo root).
+**/.env
+**/.env.*
+!**/.env.example
 **/*.log
 test-results
 playwright-report
