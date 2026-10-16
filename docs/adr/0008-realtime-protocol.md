@@ -11,7 +11,7 @@ Three kinds of client need live data:
 1. **Stage clients** (OBS browser sources, the cloud broadcaster, previews)
    receive speech cues, alerts, segment changes and stats. They report when
    each cue finished playing, which paces the host. They authenticate with a
-   channel's secret stage key, not a user session.
+   channel's secret stage key, not a user identity.
 2. **Studio clients** (the dashboard) receive runtime snapshots, the
    transcript, blocked lines, incoming live events, logs and health. They send
    commands: pause, resume, skip, say, segment, inject test events.
@@ -30,7 +30,7 @@ native pub/sub for fan-out:
 | Endpoint | Auth | Topic |
 |---|---|---|
 | `GET /ws/stage/:stageKey?role=program\|preview\|broadcast` | Stage key (HMAC lookup) | `stage:<channelId>` |
-| `GET /ws/studio/:channelId` | Session cookie and channel ownership | `studio:<channelId>` |
+| `GET /ws/studio/:channelId` | Resolved identity ([ADR-0018](0018-defer-authentication.md)) and channel ownership | `studio:<channelId>` |
 
 **Messages** are JSON. Their types are defined once in `packages/shared` as
 zod discriminated unions. Every message carries `v` (protocol version, starts

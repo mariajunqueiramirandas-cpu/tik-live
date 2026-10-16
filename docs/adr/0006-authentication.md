@@ -1,8 +1,13 @@
 # ADR-0006: Better Auth for accounts and sessions
 
-**Status:** Proposed
+**Status:** Rejected, superseded by [ADR-0018](0018-defer-authentication.md)
 **Date:** 2026-10-16
 **Deciders:** Project owner
+
+> **Rejected before acceptance.** The owner chose a hosted identity provider
+> (Clerk or WorkOS) for later and no authentication during development. See
+> [ADR-0018](0018-defer-authentication.md). This record is kept to show the
+> option that was weighed.
 
 ## Context
 

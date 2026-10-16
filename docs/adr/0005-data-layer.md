@@ -35,14 +35,15 @@ tests should get a real database without Docker.
   holding a Postgres advisory lock, so two instances never migrate at once.
   Destructive changes follow expand, then migrate, then contract across
   releases.
-- **Auth tables** (`user`, `session`, `account`, `verification`) come from
-  Better Auth's Drizzle schema generator, so they live in the same migration
-  history ([ADR-0006](0006-authentication.md)).
+- **Users:** an `app_user` table that we own, provisioned just-in-time from
+  the identity provider ([ADR-0018](0018-defer-authentication.md)). No
+  provider tables live in our database.
 
 ### Product schema (v1)
 
 | Table | Key | Purpose | Notes |
 |---|---|---|---|
+| `app_user` | `id` (UUIDv7) | A person using the dashboard | `external_id` (unique: `dev\|local` in development, the Clerk or WorkOS user id later), `email`, `name`, `created_at` |
 | `channel` | `id` (UUIDv7) | A host configuration owned by a user | `owner_id`, `name`, `tiktok_username`, `persona` jsonb, `voice` jsonb, `safety` jsonb, `broadcast` jsonb (stream key encrypted), `desired_state` (`stopped` / `running`), `source` (`tiktok` / `simulator`), `stage_key_lookup` (HMAC, unique), `stage_key_ciphertext` |
 | `viewer` | (`channel_id`, `platform_user_id`) | Viewer memory | `handle`, `nickname`, `first_seen_at`, `last_seen_at`, `visits`, `messages`, `diamonds`, `gifts` jsonb, `follows`, `shares`, `recent_lines` jsonb, `notes` jsonb; index on (`channel_id`, `diamonds` desc) |
 | `stream_session` | `id` | One continuous live session | Totals: peak viewers, likes, diamonds, gifts, messages, follows, shares, turns, spoken lines, blocked lines, tokens, TTS characters; `ended_at`, `end_reason` |
@@ -141,7 +142,7 @@ without setup cost.
 
 ## Action Items
 
-1. [ ] Define the Drizzle schema and generate the first migration (including the Better Auth tables).
+1. [ ] Define the Drizzle schema (including `app_user`) and generate the first migration.
 2. [ ] Implement `createDb()` that returns a Bun.SQL- or PGlite-backed Drizzle instance from `DATABASE_URL` (`postgres://…` or `pglite://path` or `pglite://memory`).
 3. [ ] Migrate at boot under an advisory lock; add a test helper that creates a migrated in-memory PGlite per test file.
 4. [ ] Implement write-behind stores (viewers, samples, utterances, usage) with flush-on-stop tests.

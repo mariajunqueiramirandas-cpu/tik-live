@@ -15,8 +15,11 @@ outcomes:
    [ADR-0012](0012-ai-and-voice-pipeline.md).)
 2. **Cross-tenant access.** One creator reads or controls another's channel.
 3. **Account takeover.** Credential stuffing, session theft, weak resets.
+   (Owned by the identity provider once it's added; until then, the risk is
+   an exposed development server.)
 4. **Secret theft.** Stream keys or API keys leaked from the database or logs.
-5. **Abuse of our infrastructure.** Mass sign-ups burning AI budget; SSRF
+5. **Abuse of our infrastructure.** Mass sign-ups, or an open dev server,
+   burning AI budget; SSRF
    through user-supplied RTMP URLs; using the platform for TikTok Shop streams
    that ban AI voices.
 
@@ -35,10 +38,20 @@ outcomes:
 
 ### Authentication
 
-Handled by Better Auth ([ADR-0006](0006-authentication.md)): argon2id,
-database sessions, HttpOnly + Secure + SameSite=Lax cookies, rate limits,
-verification and reset flows, device revoke. Changing the password or email
-revokes all other sessions.
+Per [ADR-0018](0018-defer-authentication.md):
+
+- **During development** there is no sign-in. `AUTH_MODE=dev` resolves every
+  request to a development user; impersonation (`x-dev-user`) exists only in
+  dev mode, for tenancy tests.
+- **Guard against an open server:** the app refuses to start with
+  `AUTH_MODE=dev` and `NODE_ENV=production` unless `DEV_GATE_PASSWORD` is
+  set. With it set, the whole dashboard and API sit behind HTTP Basic auth
+  over HTTPS; only stage URLs and webhooks (which carry their own keys or
+  signatures) are outside the gate.
+- **Before launch:** Clerk or WorkOS takes over sign-in, sessions, password
+  policy, email verification, bot protection and device management. Our
+  server verifies the provider's session on every HTTP request and WebSocket
+  upgrade, and maps it to our `app_user` row.
 
 ### Request protection
 
@@ -49,14 +62,15 @@ revokes all other sessions.
   `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'
   data: blob:; media-src 'self' blob:; connect-src 'self' wss:; font-src
   'self'; frame-ancestors 'none'`. Fonts are self-hosted, so no third-party
-  origins are needed. The stage page gets its own policy that allows embedding
+  origins are needed (the identity provider's domains are added to the policy
+  when it is integrated). The stage page gets its own policy that allows embedding
   in OBS. Also HSTS (via Caddy), `X-Content-Type-Options`,
   `Referrer-Policy: strict-origin-when-cross-origin`.
 - **Input validation:** zod on every HTTP and WebSocket input; body size
   limits (`bodyLimit`: 64 KB API, 1 MB webhooks); persona text field length caps.
-- **Rate limits:** auth (Better Auth), the general API (per user and IP), and
-  runtime commands (`say` at most 10 per minute, so a stolen session can't
-  flood a stream).
+- **Rate limits:** the general API (per user and IP) and runtime commands
+  (`say` at most 10 per minute, so a stolen session can't flood a stream).
+  Sign-in rate limits come from the identity provider.
 
 ### Secrets
 
@@ -71,13 +85,15 @@ revokes all other sessions.
 - **Write-only UI** for stream keys: the dashboard shows "set" and the last 4
   characters, never the value.
 - **Logs:** a redaction list (authorization, cookie, stream keys, API keys,
-  passwords) applied by the logger; request bodies are not logged.
+  provider tokens) applied by the logger; request bodies are not logged.
 
 ### Abuse
 
-- **Sign-ups:** `SIGNUPS=open|invite|closed`. Email verification is required
-  before going live. The free plan's live hours cap AI spend per account.
-  Optional Cloudflare Turnstile on sign-up (env-gated).
+- **Sign-ups (after the provider is added):** the provider's bot protection
+  and email verification; going live requires a verified email. The free
+  plan's live hours cap AI spend per account.
+- **During development:** the dev gate above, plus deployment-level AI spend
+  caps ([ADR-0012](0012-ai-and-voice-pipeline.md) budgets apply to dev users too).
 - **SSRF:** RTMP destinations must be `rtmp://` or `rtmps://`; the hostname is
   resolved and private, loopback and link-local ranges are rejected before
   ffmpeg connects. The broadcaster runs on an internal network with egress
@@ -89,7 +105,7 @@ revokes all other sessions.
 
 - Frozen lockfile in CI and Docker; dependency updates through PRs with tests.
 - Containers run as non-root with read-only root filesystems where possible.
-- An `audit_log` table records sign-ins, password changes, channel deletes,
+- An `audit_log` table records user provisioning, channel deletes,
   stream-key changes, plan changes and admin actions.
 - A security review checklist runs before launch (Phase 7).
 
@@ -137,8 +153,9 @@ small SaaS gets breached.
 
 ## Action Items
 
-1. [ ] Implement the repository-layer scoping and the cross-tenant test suite.
-2. [ ] Implement `crypto.ts` (HKDF, AES-GCM, versioned ciphertext) and the stage-key HMAC lookup.
-3. [ ] Configure CSP and security headers per surface (dashboard, stage, landing).
-4. [ ] Add log redaction, `audit_log`, and the RTMP SSRF guard.
-5. [ ] Run the pre-launch security checklist (Phase 7).
+1. [ ] Implement the repository-layer scoping and the cross-tenant test suite (two dev users via impersonation).
+2. [ ] Implement the dev-mode production guard and the `DEV_GATE_PASSWORD` gate ([ADR-0018](0018-defer-authentication.md)).
+3. [ ] Implement `crypto.ts` (HKDF, AES-GCM, versioned ciphertext) and the stage-key HMAC lookup.
+4. [ ] Configure CSP and security headers per surface (dashboard, stage, landing).
+5. [ ] Add log redaction, `audit_log`, and the RTMP SSRF guard.
+6. [ ] Run the pre-launch security checklist (Phase 7).

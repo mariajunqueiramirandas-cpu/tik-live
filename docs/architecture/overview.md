@@ -30,8 +30,10 @@ describes the production system that replaces it.
 
 - Horizontal scaling across many machines (the design leaves a path, see
   [ADR-0007](../adr/0007-channel-runtime.md)).
-- Teams and shared workspaces (single owner per account in v1; Better Auth's
-  organization plugin is the planned path).
+- Teams and shared workspaces (single owner per account in v1; the identity
+  provider's organizations are the planned path).
+- Sign-in during development. There is a built-in development user until
+  Clerk or WorkOS is added before launch ([ADR-0018](../adr/0018-defer-authentication.md)).
 - Mobile apps. The dashboard is responsive and works on a phone browser.
 - Platforms other than TikTok.
 
@@ -41,7 +43,7 @@ describes the production system that replaces it.
 
 | Area | Requirement |
 |---|---|
-| Accounts | Sign up, sign in, sign out, email verification, password reset, session list and revoke |
+| Identity | Development: a built-in dev user, switchable for multi-tenant testing, with a password gate for public staging servers. Before launch: sign-in through Clerk or WorkOS, with users provisioned on first visit |
 | Channels | Create, edit, delete; TikTok handle; character (persona, segments, look, voice); safety settings |
 | Runtime | Start, stop, pause (kill switch), resume, skip line, say a line, switch segment, inject test events |
 | Studio | Live view of the stage, transcript, blocked lines, queue, stats, health, logs, all in real time |
@@ -62,7 +64,7 @@ describes the production system that replaces it.
 | API latency | p95 under 50 ms for non-AI endpoints | Request timing logs |
 | Recovery | A restarted server resumes every running channel within 10 s | Integration test plus a manual restart drill |
 | Capacity (one 4 vCPU / 8 GB VPS) | 50 concurrent channels in browser-source mode; about 2 cloud broadcasts at 720p (to be measured) | Load test (Phase 7) and the broadcast spike (Phase 6) |
-| Security | No cross-tenant reads or writes; secrets encrypted at rest; strict CSP | Tenant-scoping tests, security review checklist |
+| Security | No cross-tenant reads or writes; secrets encrypted at rest; strict CSP; no unauthenticated public dashboard | Tenant-scoping tests, production-guard test, security review checklist |
 
 ## 3. System context
 
@@ -77,7 +79,9 @@ flowchart LR
   platform -- host turns, moderation --> anthropic[(Claude API)]
   platform -- text-to-speech --> eleven[(ElevenLabs)]
   platform -- checkout, portal, webhooks --> stripe[(Stripe)]
-  platform -- verification and reset emails --> mail[(SMTP / Resend)]
+  platform -- transactional email, later --> mail[(Resend)]
+  creator -. sign-in, before launch .-> idp[(Clerk or WorkOS)]
+  platform -. verify sessions, user sync .-> idp
 ```
 
 There are two ways to get video to TikTok:
@@ -96,7 +100,7 @@ flowchart TB
   subgraph vps[VPS · docker compose]
     caddy[Caddy<br/>TLS, reverse proxy, WS upgrade]
     subgraph app[app · Bun]
-      hono[Hono HTTP API<br/>auth, channels, analytics, billing]
+      hono[Hono HTTP API<br/>identity, channels, analytics, billing]
       ws[WebSocket hubs<br/>stage + studio, Bun pub/sub]
       rm[Runtime manager<br/>one ChannelRuntime per running channel]
       static[Static assets<br/>dashboard SPA, stage page]
@@ -116,7 +120,7 @@ flowchart TB
 | Container | Responsibility | Decided in |
 |---|---|---|
 | `caddy` | HTTPS certificates, HTTP/2, WebSocket proxying, compression of static assets | [ADR-0015](../adr/0015-deployment.md) |
-| `app` | Everything stateful about the product: API, auth, realtime hubs, channel runtimes, static files | [ADR-0002](../adr/0002-bun-runtime-and-toolchain.md), [ADR-0003](../adr/0003-hono-server.md), [ADR-0007](../adr/0007-channel-runtime.md) |
+| `app` | Everything stateful about the product: API, identity resolution, realtime hubs, channel runtimes, static files | [ADR-0002](../adr/0002-bun-runtime-and-toolchain.md), [ADR-0003](../adr/0003-hono-server.md), [ADR-0007](../adr/0007-channel-runtime.md) |
 | `db` | Accounts, channels, viewer memory, sessions, analytics, usage, billing state | [ADR-0005](../adr/0005-data-layer.md) |
 | `broadcaster` | Headless render of stage pages and RTMP push; isolated so its CPU use cannot starve the API | [ADR-0014](../adr/0014-cloud-broadcast.md) |
 | `backup` | Nightly `pg_dump`, retention rotation, optional off-site copy | [ADR-0015](../adr/0015-deployment.md) |
@@ -194,10 +198,8 @@ say, segment) travel on the same socket and are acknowledged. See
 
 ```mermaid
 erDiagram
-  user ||--o{ session : has
-  user ||--o{ account : "auth providers"
-  user ||--o{ channel : owns
-  user ||--o| subscription : "billing state"
+  app_user ||--o{ channel : owns
+  app_user ||--o| subscription : "billing state"
   channel ||--o{ viewer : remembers
   channel ||--o{ stream_session : "goes live"
   stream_session ||--o{ session_sample : "per-minute stats"
@@ -205,9 +207,10 @@ erDiagram
   channel ||--o{ usage_daily : meters
 ```
 
-`user`, `session`, `account` and `verification` follow Better Auth's schema
-([ADR-0006](../adr/0006-authentication.md)). The product tables are described
-in [ADR-0005](../adr/0005-data-layer.md).
+`app_user` is ours: it maps an external identity (the dev user now, a Clerk
+or WorkOS user later) to an internal id that everything else references
+([ADR-0018](../adr/0018-defer-authentication.md)). The tables are described in
+[ADR-0005](../adr/0005-data-layer.md).
 
 ## 8. Repository layout
 
@@ -234,7 +237,7 @@ Decided in [ADR-0004](../adr/0004-monorepo-layout.md).
 | [0003](../adr/0003-hono-server.md) | Hono for HTTP and WebSockets, with a typed RPC client |
 | [0004](../adr/0004-monorepo-layout.md) | Bun workspaces monorepo, internal packages consumed as TypeScript source |
 | [0005](../adr/0005-data-layer.md) | PostgreSQL with Drizzle ORM; PGlite for dev and tests |
-| [0006](../adr/0006-authentication.md) | Better Auth for accounts and sessions |
+| [0006](../adr/0006-authentication.md) | ~~Better Auth for accounts and sessions~~ (rejected, superseded by 0018) |
 | [0007](../adr/0007-channel-runtime.md) | In-process runtime manager with desired-state reconciliation |
 | [0008](../adr/0008-realtime-protocol.md) | Versioned, zod-validated WebSocket protocol over Bun pub/sub |
 | [0009](../adr/0009-stage-engine.md) | Custom WebGL2 stage engine with SDF character and cached text sprites |
@@ -246,3 +249,4 @@ Decided in [ADR-0004](../adr/0004-monorepo-layout.md).
 | [0015](../adr/0015-deployment.md) | Docker Compose on a VPS with Caddy, Postgres and backups |
 | [0016](../adr/0016-security.md) | Security model: tenancy, secrets, CSRF, CSP, rate limits, abuse |
 | [0017](../adr/0017-testing-strategy.md) | Testing strategy: bun test, PGlite, Playwright E2E, visual checks |
+| [0018](../adr/0018-defer-authentication.md) | No authentication during development; Clerk or WorkOS later |

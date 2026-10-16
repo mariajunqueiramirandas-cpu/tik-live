@@ -14,7 +14,7 @@ after a deploy so running channels come back quickly. A smaller toolchain
 the VPS.
 
 What has to work on the runtime: the unofficial TikTok connector, the
-Anthropic SDK, Postgres access, WebSockets, password hashing, OBS WebSocket,
+Anthropic SDK, Postgres access, WebSockets, OBS WebSocket,
 and (for cloud broadcast) Playwright driving Chromium.
 
 ## Decision
@@ -39,7 +39,6 @@ means rewriting one file, not the codebase:
 |---|---|---|
 | `Bun.serve` WebSockets and pub/sub | Realtime hubs | `hono/bun` adapter plus `RealtimeHub` |
 | `Bun.SQL` | Postgres driver | Drizzle `bun-sql` driver |
-| `Bun.password` | Password hashing (argon2id) | Better Auth `password.hash/verify` hooks |
 | `Bun.file` | Static files | `serveStatic` from `hono/bun` |
 
 ## Options Considered
@@ -54,7 +53,7 @@ means rewriting one file, not the codebase:
 | Team familiarity | Owner's preference; Node-compatible APIs keep most knowledge transferable |
 
 **Pros:** fast installs and startup; native TypeScript; built-in WebSocket
-pub/sub, Postgres client and argon2; a Jest-compatible test runner. The spike
+pub/sub and Postgres client; a Jest-compatible test runner. The spike
 showed every critical dependency working (see the [index](README.md#evidence-used)).
 **Cons:** younger than Node, so the long tail of Node-compat edge cases is
 real; some tools (the Playwright test runner) officially target Node.
@@ -92,7 +91,7 @@ exercised in the spike because TikTok was unreachable. The connector sits
 behind the `EventSource` interface, so if Bun can't run it, we run the
 connector alone in a small Node sidecar that forwards normalized events over a
 local socket. That is a contained fallback, not a rewrite. The upside (one
-fast toolchain, native WebSocket pub/sub, native argon2 and Postgres) is worth
+fast toolchain, native WebSocket pub/sub and Postgres) is worth
 that risk.
 
 ## Consequences

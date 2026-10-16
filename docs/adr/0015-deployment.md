@@ -43,13 +43,14 @@ something required is missing):
 |---|---|
 | `PUBLIC_URL` | e.g. `https://lantern.example.com` (cookies, CSRF origin, email links) |
 | `APP_SECRET` | 32+ random bytes; key derivation for encryption and stage-key HMAC |
-| `BETTER_AUTH_SECRET` | Session signing |
+| `AUTH_MODE` | `dev` during development; `clerk` or `workos` once the provider is chosen ([ADR-0018](0018-defer-authentication.md)) |
+| `DEV_GATE_PASSWORD` | Required to run `AUTH_MODE=dev` with `NODE_ENV=production`; puts the dashboard and API behind HTTP Basic auth |
 | `DATABASE_URL` | `postgres://…` |
 | `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY` | Platform AI keys |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` | Billing (omit for self-hosted mode) |
 | `MAIL_FROM`, `SMTP_URL` or `RESEND_API_KEY` | Email |
 | `BROADCAST_ENABLED`, `BROADCAST_MAX_CONCURRENT`, `BROADCASTER_TOKEN` | Cloud broadcast |
-| `SIGNUPS` | `open`, `invite` or `closed` |
+| `CLERK_SECRET_KEY` / `CLERK_PUBLISHABLE_KEY` or `WORKOS_API_KEY` / `WORKOS_CLIENT_ID` | Identity provider (later) |
 
 ### Operations
 

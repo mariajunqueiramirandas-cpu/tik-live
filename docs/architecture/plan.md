@@ -26,13 +26,13 @@ flowchart LR
 | Phase | Outcome | Relative size | ADRs |
 |---|---|---|---|
 | 0. Foundations | Bun monorepo; v0.1 code moved and passing on Bun; CI on Bun | S | 0002, 0004, 0017 |
-| 1. Backend core | Accounts, channels, multi-channel runtimes, realtime hubs, metering; a simulated channel runs end to end through the API | L | 0003, 0005, 0006, 0007, 0008, 0012, 0016 |
+| 1. Backend core | Dev identity, channels, multi-channel runtimes, realtime hubs, metering; a simulated channel runs end to end through the API | L | 0003, 0005, 0007, 0008, 0012, 0016, 0018 |
 | 2. Stage engine | WebGL2 engine and stage page; deterministic visual tests | L | 0009 |
 | 3. Dashboard + landing | The whole creator-facing app and the public landing page | XL | 0010, 0011 |
 | 4. Billing + plans | Plans, entitlements, Stripe, self-hosted mode | M | 0013 |
 | 5. Deployment | Production compose stack, backups, runbook, image publishing | M | 0015 |
 | 6. Cloud broadcast (beta) | Server-rendered RTMP streaming, measured capacity | L | 0014 |
-| 7. Hardening + launch | Load test, security checklist, performance pass, docs | M | 0016, 0017 |
+| 7. Hardening + launch | Identity provider (Clerk or WorkOS), load test, security checklist, performance pass, docs | M | 0016, 0017, 0018 |
 
 A **staging deploy** of the Phase 1 backend goes up as soon as Phase 1 is
 done, using the Phase 5 compose skeleton, so real TikTok, Claude and
@@ -58,14 +58,13 @@ Bun).
 **Deliverables**
 
 - Config loader (zod), structured logger with redaction, error shape.
-- Drizzle schema and first migration (product tables plus Better Auth tables); `createDb()` for Bun.SQL and PGlite; migrate-at-boot under an advisory lock.
-- Better Auth: email and password (argon2id), verification, reset, sessions, rate limits; `Mailer` (console, SMTP, Resend).
-- Hono app: middleware chain, `requireUser`, route modules:
+- Drizzle schema and first migration (product tables plus `app_user`); `createDb()` for Bun.SQL and PGlite; migrate-at-boot under an advisory lock.
+- Identity seam ([ADR-0018](../adr/0018-defer-authentication.md)): `IdentityProvider`, `DevIdentityProvider` with `x-dev-user` impersonation, JIT `app_user` provisioning, `requireUser`, the production guard and the `DEV_GATE_PASSWORD` gate.
+- Hono app: middleware chain and route modules:
 
 | Module | Endpoints |
 |---|---|
-| `auth` | `/api/auth/*` (Better Auth) |
-| `me` | `GET /api/me`, `PATCH /api/me`, `GET /api/me/sessions`, `DELETE /api/me/sessions/:id` |
+| `me` | `GET /api/me` (the resolved user; in dev mode also the dev-user list for the switcher) |
 | `channels` | `GET/POST /api/channels`, `GET/PATCH/DELETE /api/channels/:id`, `POST /api/channels/:id/stage-key/rotate` |
 | `runtime` | `POST /api/channels/:id/start`, `/stop`; commands also via the studio socket |
 | `analytics` | `GET /api/channels/:id/sessions`, `GET /api/channels/:id/sessions/:sid`, `GET /api/channels/:id/supporters` |
@@ -80,7 +79,7 @@ Bun).
 
 **Exit criteria**
 
-- Integration tests cover every route, including the cross-tenant suite and auth flows.
+- Integration tests cover every route, including the cross-tenant suite (two dev users), the dev gate and the production guard.
 - A test creates a user and a simulator channel, starts it through the API, connects a stage socket, receives `speak` cues, acknowledges them, and sees transcript lines on a studio socket.
 - Boot-resume test: a channel left running is running again after an app restart in the test harness.
 - Shutdown test: write-behind stores flush on stop.
@@ -105,20 +104,18 @@ Bun).
 
 **Deliverables** (screens in build order)
 
-1. Design system: tokens, fonts, primitives on Radix, page shell, command palette, toasts.
-2. Auth: sign up, sign in, verify email, reset password.
-3. Channels home (rows with live state) and create-channel flow (name, TikTok handle, pick a starter character).
-4. **Studio:** stage monitor (embedded engine), "the room" timeline, on-air controls and kill switch, say box, segments, queue, vitals, health, notices. Keyboard shortcuts.
-5. **Character editor:** identity, voice (with samples), look (live preview), show segments (reorderable), rules; autosave; "Try a line".
-6. Safety: blocklist, strictness, topics; blocked-lines review.
-7. Setup: stage URL with copy and rotate, OBS and TikTok LIVE Studio guides; cloud broadcast settings (Phase 6).
-8. Analytics: sessions list; a session view with viewers over time, gifts and diamonds, messages, follows, top supporters and host activity.
-9. Account: profile, password, sessions (device revoke), delete account.
-10. Landing page (prerendered), with the engine in demo mode as the hero.
+1. Design system: tokens, fonts, primitives on Radix, page shell, command palette, toasts; a dev-user switcher shown only in dev mode.
+2. Channels home (rows with live state) and create-channel flow (name, TikTok handle, pick a starter character).
+3. **Studio:** stage monitor (embedded engine), "the room" timeline, on-air controls and kill switch, say box, segments, queue, vitals, health, notices. Keyboard shortcuts.
+4. **Character editor:** identity, voice (with samples), look (live preview), show segments (reorderable), rules; autosave; "Try a line".
+5. Safety: blocklist, strictness, topics; blocked-lines review.
+6. Setup: stage URL with copy and rotate, OBS and TikTok LIVE Studio guides; cloud broadcast settings (Phase 6).
+7. Analytics: sessions list; a session view with viewers over time, gifts and diamonds, messages, follows, top supporters and host activity.
+8. Landing page (prerendered), with the engine in demo mode as the hero.
 
 **Exit criteria**
 
-- E2E: sign up → verify → create channel → start (simulator) → studio shows live transcript → pause → resume → stop; the character editor autosaves and the preview updates.
+- E2E: open the dashboard (dev identity) → create channel → start (simulator) → studio shows live transcript → pause → resume → stop; the character editor autosaves and the preview updates.
 - Screenshots of every screen at 390, 1280 and 1600 px, critiqued against [ADR-0011](../adr/0011-design-direction.md); issues fixed.
 - No accessibility violations from axe in E2E; full keyboard path through the studio.
 - Bundle budgets met; landing LCP under 2.0 s (lab).
@@ -155,12 +152,17 @@ in a follow-up ADR.
 
 ## Phase 7: Hardening and launch
 
-**Deliverables:** load test (simulated channels and sockets), security
-checklist ([ADR-0016](../adr/0016-security.md)), performance pass (turn latency
+**Deliverables:** identity provider integration (Clerk or WorkOS: adapter,
+React sign-in, user-sync webhook, account page from the provider's
+components, removal of the dev gate in production;
+[ADR-0018](../adr/0018-defer-authentication.md)), load test (simulated channels
+and sockets), security checklist ([ADR-0016](../adr/0016-security.md)), performance pass (turn latency
 p50/p95, frame time, bundle sizes), retention jobs, final docs.
 
-**Exit criteria:** 50 simulated channels on the target VPS with event-loop lag
-p99 under 50 ms; checklist complete; all ADRs accepted or superseded.
+**Exit criteria:** sign-in through the chosen provider works for HTTP and
+WebSockets, and a provider user deletion cascades correctly; 50 simulated
+channels on the target VPS with event-loop lag p99 under 50 ms; checklist
+complete; all ADRs accepted or superseded.
 
 ## Migration from v0.1
 
@@ -199,7 +201,9 @@ p99 under 50 ms; checklist complete; all ADRs accepted or superseded.
 | TikTok tightens rules on AI hosts in regular LIVE | Medium | High | Non-removable AI disclosure; ToS excludes Shop LIVE; owner reviews TikTok guidelines before launch |
 | AI cost per live hour exceeds what plans can charge | Medium | High | Measured on staging; per-plan models; audience-aware pacing; budgets |
 | Stage engine too slow under SwiftShader for broadcast | Medium | Medium | 720p default; quality governor; measure in Phase 2; GPU host option |
-| Better Auth or Bun.SQL churn | Low to medium | Medium | Pin versions; full auth and DB integration suites; postgres-js fallback |
+| Bun.SQL driver churn | Low to medium | Medium | Pin versions; full DB integration suite; postgres-js fallback |
+| Identity provider integration surprises late (WebSocket auth, user sync, CSP) | Medium | Medium | Identity seam from day one; multi-user paths exercised through impersonation; both providers document Hono and React usage; integrate early in Phase 7 |
+| A development server exposed without auth | Medium | High | Production guard refuses dev mode without `DEV_GATE_PASSWORD`; spend budgets apply to dev users |
 | Single VPS failure | Low | High | Nightly backups, rehearsed restore, documented re-provisioning |
 | Scope growth delays launch | High | Medium | Phase exit criteria; browser-source mode ships before cloud broadcast |
 | Prompt injection gets something harmful on stream | Medium | High | Layered defenses; fail-closed moderation; kill switch; blocked-lines review |
@@ -215,10 +219,10 @@ assumes until answered.
 | 2 | Models per plan, given the [cost table](../adr/0012-ai-and-voice-pipeline.md#cost-model-estimates-to-be-replaced-by-metered-data) (Opus 5.5 host + moderator ≈ $7.55 per live hour; Sonnet 5.5 + Haiku 5.5 ≈ $2.25; Haiku 5.5 for both ≈ $0.20) | Opus 5.5 everywhere until staging measurements are in, then decide per plan |
 | 3 | Plan names, prices and limits | Free / Creator / Pro as in [ADR-0013](../adr/0013-billing-and-plans.md), prices TBD |
 | 4 | Stripe directly or a merchant of record (Paddle, Lemon Squeezy) for sales tax | Stripe, with the integration isolated |
-| 5 | Email provider | Resend (simple HTTP API), SMTP supported |
-| 6 | Sign-ups at launch | Invite-only beta, then open |
+| 5 | Transactional email (billing notices, stream alerts); sign-in emails will come from the identity provider | Resend, added when the first email feature lands |
+| 6 | Clerk or WorkOS | Decide before Phase 7: Clerk if individual creators are the focus, WorkOS if agencies and enterprise SSO matter |
 | 7 | Cloud broadcast in the launch scope | Yes, as a Pro beta after browser-source mode ships |
-| 8 | Social sign-in at launch | Email and password only; Google next |
+| 8 | Sign-ups at launch | Invite-only beta through the provider, then open |
 | 9 | Domain for the deployment | Needed before Phase 5 |
 | 10 | Delivery: everything on the current branch and PR #1, or one PR per phase | One PR per phase, for reviewable diffs (needs permission to open new branches) |
 

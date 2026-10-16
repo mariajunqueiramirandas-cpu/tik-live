@@ -34,12 +34,13 @@ Use **Hono 4** on the Bun adapter.
   3. `csrf()`: checks `Origin` on state-changing requests.
   4. Rate limiting (`hono-rate-limiter` with an in-memory store; Postgres or
      Redis store later if we run more than one instance).
-  5. Session loading (Better Auth `getSession`) into `c.var.user`.
+  5. Identity resolution through `IdentityProvider` (dev mode now, Clerk or
+     WorkOS later; [ADR-0018](0018-defer-authentication.md)) into `c.var.user`.
   6. Error handler that maps zod and domain errors to a consistent JSON
      problem shape (`{ error: { code, message, details? } }`) and never leaks
      stack traces.
-- **WebSockets:** Hono's `upgradeWebSocket` authenticates the upgrade (a
-  session for studio, a stage key for stage). It then subscribes the raw Bun
+- **WebSockets:** Hono's `upgradeWebSocket` authenticates the upgrade (the
+  resolved identity for studio, a stage key for stage). It then subscribes the raw Bun
   socket to a channel topic, and the runtime publishes with
   `server.publish(topic, data)`. See [ADR-0008](0008-realtime-protocol.md).
 - **Static files:** `serveStatic` from `hono/bun` for hashed assets (immutable

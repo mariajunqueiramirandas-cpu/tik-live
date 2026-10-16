@@ -17,10 +17,10 @@ new system needs coverage at every layer without slow or flaky suites.
 | Layer | Tool | What it covers | Runs |
 |---|---|---|---|
 | Unit | `bun test` | Pure logic: triage, director (fake clock), sentences, safety rules, prompt building, plans and entitlements, engine math (springs, layout, quality governor, syllable envelope), protocol schemas | Every push; under 10 s |
-| Integration (server) | `bun test` + PGlite in-memory + `app.request()` | Every API route against a real migrated Postgres dialect: auth flows, channel CRUD, tenancy isolation (two users), runtime start/stop/reconcile, WebSocket protocol (Bun server on an ephemeral port), Stripe webhook fixtures, write-behind flushing | Every push; under 60 s |
+| Integration (server) | `bun test` + PGlite in-memory + `app.request()` | Every API route against a real migrated Postgres dialect: identity modes and the dev gate, channel CRUD, tenancy isolation (two dev users via impersonation), runtime start/stop/reconcile, WebSocket protocol (Bun server on an ephemeral port), Stripe webhook fixtures, write-behind flushing | Every push; under 60 s |
 | Contract | `bun test` in `packages/shared` | Every protocol message round-trips its zod schema; version handling | Every push |
 | Type safety | `tsc --noEmit` per workspace | Including the dashboard against the server's `AppType` | Every push |
-| End-to-end | `@playwright/test` (run with Node in CI) against the built app with PGlite and the simulator source | Sign up → verify → create channel → start → studio shows transcript → pause → stop; character editor autosave; stage page renders and acknowledges playback | PRs labeled `e2e`, and `main` |
+| End-to-end | `@playwright/test` (run with Node in CI) against the built app with PGlite and the simulator source | Open the dashboard (dev identity) → create channel → start → studio shows transcript → pause → stop; character editor autosave; stage page renders and acknowledges playback | PRs labeled `e2e`, and `main` |
 | Visual | Playwright screenshots of the engine in deterministic mode (`seed`, fixed clock, `renderAt(t)`) | Each emotion, alerts, captions, voice-line mode; compared with a tolerance against committed baselines | With E2E |
 | Engine robustness | Playwright | Context loss and restore (`WEBGL_lose_context`), no allocation growth in the frame loop (heap snapshots over 30 s), reconnect behavior | With E2E |
 | Performance budgets | Build script | Bundle sizes for stage, dashboard and landing | Every push |
