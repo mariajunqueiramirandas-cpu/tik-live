@@ -12,7 +12,7 @@ const MIGRATIONS = path.resolve(import.meta.dir, "../drizzle");
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  configureLogging({ level: config.LOG_LEVEL });
+  configureLogging({ level: config.LOG_LEVEL, format: config.isProduction ? "json" : "pretty" });
 
   const database = await openDatabase(config.DATABASE_URL, MIGRATIONS);
   await database.migrate();

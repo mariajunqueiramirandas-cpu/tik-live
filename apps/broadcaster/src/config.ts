@@ -11,8 +11,12 @@ const schema = z.object({
   PORT: z.coerce.number().int().default(8090),
   /** Shared with the app server; at least 24 characters. */
   BROADCASTER_TOKEN: z.string().min(24, "BROADCASTER_TOKEN must be at least 24 characters"),
-  /** Comma-separated origins the stage page may load from, e.g. http://app:8080. */
-  STAGE_ORIGINS: z.string().default("http://app:8080"),
+  /**
+   * Comma-separated origins the stage page may load from. Inside compose the
+   * app is reached as http://lantern-app:8080: never a bare "app" host, which
+   * is an HSTS-preloaded top-level domain that Chromium forces to HTTPS.
+   */
+  STAGE_ORIGINS: z.string().default("http://lantern-app:8080"),
   CHROMIUM_PATH: z.string().optional(),
   FFMPEG_PATH: z.string().default("ffmpeg"),
   BROADCAST_MAX_CONCURRENT: z.coerce.number().int().min(1).max(64).default(2),
@@ -24,7 +28,9 @@ const schema = z.object({
 export type BroadcasterConfig = z.infer<typeof schema> & { stageOrigins: string[]; isProduction: boolean };
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): BroadcasterConfig {
-  const parsed = schema.safeParse(env);
+  // Blank values (KEY= in an env file) count as unset.
+  const cleaned = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined && v.trim() !== ""));
+  const parsed = schema.safeParse(cleaned);
   if (!parsed.success) {
     throw new Error(`Invalid broadcaster configuration: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
   }

@@ -118,3 +118,27 @@ describe("static files", () => {
     }
   });
 });
+
+describe("logging", () => {
+  it("keeps stage keys out of request logs", async () => {
+    const { redactPath } = await import("../../src/http/middleware");
+    expect(redactPath("/s/abc123")).toBe("/s/[stage key]");
+    expect(redactPath("/ws/stage/abc123")).toBe("/ws/stage/[stage key]");
+    expect(redactPath("/api/stage/abc123/audio/cue")).toBe("/api/stage/[stage key]/audio/cue");
+    expect(redactPath("/api/channels/x")).toBe("/api/channels/x");
+  });
+});
+
+describe("client addresses", () => {
+  it("ignores X-Forwarded-For unless the app runs behind a trusted proxy", async () => {
+    const { Hono } = await import("hono");
+    const { clientIp, configureProxyTrust } = await import("../../src/http/middleware");
+    const app = new Hono().get("/", (c) => c.text(clientIp(c) ?? "unknown"));
+    const spoofed = { headers: { "x-forwarded-for": "203.0.113.9, 10.0.0.1" } };
+    configureProxyTrust(false);
+    expect(await (await app.request("/", spoofed)).text()).not.toBe("203.0.113.9");
+    configureProxyTrust(true);
+    expect(await (await app.request("/", spoofed)).text()).toBe("203.0.113.9");
+    configureProxyTrust(false);
+  });
+});

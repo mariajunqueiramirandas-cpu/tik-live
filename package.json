@@ -9,9 +9,9 @@
   ],
   "scripts": {
     "dev": "bun scripts/dev.ts",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "bun run --filter '*' typecheck && tsc -p tsconfig.e2e.json",
     "test": "bun test",
-    "build": "bun run --filter @tik-live/web build && bun run --filter @tik-live/server build",
+    "build": "bun run --filter @tik-live/web build && bun run --filter @tik-live/server build && bun run --filter @tik-live/broadcaster build",
     "e2e": "playwright test",
     "check": "bun run typecheck && bun test"
   },

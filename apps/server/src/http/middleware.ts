@@ -10,14 +10,30 @@ import type { AppEnv } from "./env";
 import { problem } from "./errors";
 
 /** Best-effort client IP: Caddy's X-Forwarded-For first, then the socket. */
+let trustProxy = false;
+
+/**
+ * Behind Caddy (TRUST_PROXY=true) the client address comes from
+ * X-Forwarded-For, which Caddy overwrites. Exposed directly, that header is
+ * attacker-controlled, so it's ignored.
+ */
+export function configureProxyTrust(trust: boolean): void {
+  trustProxy = trust;
+}
+
 export function clientIp(c: Context): string | null {
-  const forwarded = c.req.header("x-forwarded-for");
+  const forwarded = trustProxy ? c.req.header("x-forwarded-for") : undefined;
   if (forwarded) return forwarded.split(",")[0]?.trim() ?? null;
   try {
     return getConnInfo(c).remote.address ?? null;
   } catch {
     return null;
   }
+}
+
+/** Stage keys are capabilities: keep them out of logs. */
+export function redactPath(path: string): string {
+  return path.replace(/^(\/s\/|\/ws\/stage\/|\/api\/stage\/)[^/]+/, "$1[stage key]");
 }
 
 export function requestLog(deps: AppDeps): MiddlewareHandler<AppEnv> {
@@ -31,7 +47,7 @@ export function requestLog(deps: AppDeps): MiddlewareHandler<AppEnv> {
     const ms = Math.round(performance.now() - started);
     const path = c.req.path;
     if (path === "/healthz" || path === "/readyz" || path.startsWith("/assets/") || path.includes("/audio/")) return;
-    log.info(`${c.req.method} ${path} ${c.res.status} ${ms}ms`, { requestId });
+    log.info(`${c.req.method} ${redactPath(path)} ${c.res.status} ${ms}ms`, { requestId });
   };
 }
 

@@ -17,7 +17,7 @@ function setup(maxConcurrent = 2) {
     factory,
     log: quietLog,
     maxConcurrent,
-    stageOrigins: ["http://app:8080"],
+    stageOrigins: ["http://lantern-app:8080"],
     rtmp: { resolve: publicDns },
     backoff: () => 20,
   });
@@ -26,7 +26,7 @@ function setup(maxConcurrent = 2) {
 
 const request = (channelId = "ch1", overrides: Record<string, unknown> = {}) => ({
   channelId,
-  stageUrl: `http://app:8080/s/key-${channelId}`,
+  stageUrl: `http://lantern-app:8080/s/key-${channelId}`,
   rtmpUrl: "rtmps://push.example.com/live",
   streamKey: "sk_live_SECRET123",
   ...overrides,
@@ -178,6 +178,6 @@ describe("config", () => {
   it("requires a long token and refuses private RTMP in production", () => {
     expect(() => loadConfig({ BROADCASTER_TOKEN: "short" })).toThrow("BROADCASTER_TOKEN");
     expect(() => loadConfig({ BROADCASTER_TOKEN: TOKEN, NODE_ENV: "production", ALLOW_PRIVATE_RTMP: "true" })).toThrow("ALLOW_PRIVATE_RTMP");
-    expect(loadConfig({ BROADCASTER_TOKEN: TOKEN, STAGE_ORIGINS: "http://app:8080/, https://lantern.example" }).stageOrigins).toEqual(["http://app:8080", "https://lantern.example"]);
+    expect(loadConfig({ BROADCASTER_TOKEN: TOKEN, STAGE_ORIGINS: "http://lantern-app:8080/, https://lantern.example" }).stageOrigins).toEqual(["http://lantern-app:8080", "https://lantern.example"]);
   });
 });

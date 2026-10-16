@@ -28,7 +28,7 @@ let server: TestServer;
 
 beforeAll(async () => {
   server = await startTestServer({
-    env: { BROADCAST_ENABLED: "true", BROADCASTER_URL: "http://broadcaster:8090", BROADCASTER_TOKEN: "b".repeat(32), BROADCAST_STAGE_ORIGIN: "http://app:8080" },
+    env: { BROADCAST_ENABLED: "true", BROADCASTER_URL: "http://broadcaster:8090", BROADCASTER_TOKEN: "b".repeat(32), BROADCAST_STAGE_ORIGIN: "http://lantern-app:8080" },
     broadcaster,
   });
 });
@@ -56,7 +56,7 @@ describe("cloud broadcast", () => {
     const request = broadcaster.started[0]!;
     expect(request.streamKey).toBe("live_123_SECRET");
     expect(request.rtmpUrl).toBe("rtmps://push.example.com/live");
-    expect(request.stageUrl).toBe(`http://app:8080/s/${stageKeyFrom(channel.stageUrl)}`);
+    expect(request.stageUrl).toBe(`http://lantern-app:8080/s/${stageKeyFrom(channel.stageUrl)}`);
 
     const studio = await server.socket(`/ws/studio/${channel.id}`, "caster");
     const snapshot = await studio.next<{ state: RuntimeSnapshot }>((m) => m.t === "snapshot");
@@ -65,7 +65,7 @@ describe("cloud broadcast", () => {
     // A new stage link restarts the broadcast on it.
     const rotated = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}/stage-key`, { method: "POST", user: "caster" });
     await eventually(() => broadcaster.started.length === 2);
-    expect(broadcaster.started[1]!.stageUrl).toBe(`http://app:8080/s/${stageKeyFrom(rotated.body.channel.stageUrl)}`);
+    expect(broadcaster.started[1]!.stageUrl).toBe(`http://lantern-app:8080/s/${stageKeyFrom(rotated.body.channel.stageUrl)}`);
 
     // Unchanged settings don't restart it.
     await server.json(`/api/channels/${channel.id}`, { method: "PATCH", user: "caster", json: { name: "Cast two" } });

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { AppDeps } from "./deps";
 import type { AppEnv } from "./http/env";
 import { errorHandler, problem } from "./http/errors";
-import { clientIp, csrfGuard, devGate, rateLimit, requestLog, securityHeaders } from "./http/middleware";
+import { clientIp, configureProxyTrust, csrfGuard, devGate, rateLimit, requestLog, securityHeaders } from "./http/middleware";
 import { mountRealtime } from "./http/realtime";
 import { configRoutes, meRoutes } from "./http/routes/account";
 import { billingRoutes, billingWebhookRoutes, voiceRoutes } from "./http/routes/billing";
@@ -25,6 +25,7 @@ export function buildApi(deps: AppDeps) {
 export type AppType = ReturnType<typeof buildApi>;
 
 export function createApp(deps: AppDeps): Hono<AppEnv> {
+  configureProxyTrust(deps.config.TRUST_PROXY);
   const app = new Hono<AppEnv>();
   app.onError(errorHandler(deps.log));
 

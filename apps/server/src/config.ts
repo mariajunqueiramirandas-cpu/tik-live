@@ -13,6 +13,8 @@ const DEV_SECRET = "dev-only-secret-change-me-dev-only-secret-change-me";
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   HOST: z.string().default("127.0.0.1"),
+  /** True behind a reverse proxy that sets X-Forwarded-For (Caddy in deploy/compose.yaml). */
+  TRUST_PROXY: bool.default(false),
   PORT: z.coerce.number().int().min(0).max(65535).default(8080),
   /** Where people reach the app; used for stage links, redirects and CSRF origin checks. */
   PUBLIC_URL: z.string().url().default("http://localhost:5173"),
@@ -54,7 +56,7 @@ const envSchema = z.object({
   BROADCAST_ENABLED: bool.default(false),
   BROADCASTER_URL: z.string().url().optional(),
   BROADCASTER_TOKEN: z.string().min(24).optional(),
-  /** Origin the broadcaster uses to load stage pages, e.g. http://app:8080 inside compose. Defaults to PUBLIC_URL. */
+  /** Origin the broadcaster uses to load stage pages, e.g. http://lantern-app:8080 inside compose. Defaults to PUBLIC_URL. */
   BROADCAST_STAGE_ORIGIN: z.string().url().optional(),
 
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),

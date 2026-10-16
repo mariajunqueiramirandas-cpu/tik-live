@@ -132,6 +132,10 @@ export class BroadcastSession {
   private async runOnce(): Promise<string> {
     if (this.state !== "failed" && this.state !== "retrying") this.setState("starting", "Opening the stage");
     let firstChunk = true;
+    // Stage first: the encoder only starts once there's something to encode.
+    const stage = await this.factory.openStage(this.config.stageUrl, this.config.video);
+    this.current.stage = stage;
+    if (this.stopped) return "stopped";
     const encoder = this.factory.spawnEncoder(this.config.output, this.config.video, {
       onStats: (stats) => {
         this.stats = stats;
@@ -139,9 +143,6 @@ export class BroadcastSession {
       onLog: (line) => this.log.warn("ffmpeg", { line: redact(line, [this.config.streamKey]) }),
     });
     this.current.encoder = encoder;
-    const stage = await this.factory.openStage(this.config.stageUrl, this.config.video);
-    this.current.stage = stage;
-    if (this.stopped) return "stopped";
     await stage.record((chunk) => {
       encoder.write(chunk);
       if (firstChunk) {
