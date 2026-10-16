@@ -12,3 +12,4 @@ deploy/backups
 **/*.log
 test-results
 playwright-report
+services

@@ -40,6 +40,8 @@ services:
       BROADCASTER_URL: http://lantern-broadcaster:8090
       # Not "http://app:8080": "app" is an HSTS-preloaded TLD, so Chromium would force HTTPS.
       BROADCAST_STAGE_ORIGIN: http://lantern-app:8080
+      # Used only with POCKET_TTS_SECRET set (and the tts profile in COMPOSE_PROFILES).
+      POCKET_TTS_URL: http://lantern-tts:8793
     expose:
       - "8080"
     read_only: true
@@ -147,6 +149,39 @@ services:
       internal:
         aliases: [lantern-broadcaster]
       default: {}
+    logging: *logging
+
+  # Self-hosted pt-BR voice (services/tts, ADR-0021). Off unless COMPOSE_PROFILES includes tts
+  # and POCKET_TTS_SECRET is set. The build downloads the model (360 MB) from Hugging Face.
+  tts:
+    profiles: [tts]
+    image: ${TTS_IMAGE:-lantern-tts:local}
+    build:
+      context: services/tts
+    restart: unless-stopped
+    environment:
+      # Without it the service idles and refuses every call.
+      TTS_SECRET: ${POCKET_TTS_SECRET:-}
+      TTS_VOICE: ${POCKET_TTS_VOICE:-rafael}
+      # Spelled out: the service parses these with int(), so an empty value would crash it.
+      TTS_MAX_ACTIVE: "16"
+      TTS_MAX_CHARS: "2000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8793/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    init: true
+    deploy:
+      resources:
+        limits:
+          # Its threads follow this quota (cgroup).
+          cpus: "${TTS_CPUS:-2}"
+          memory: 1g
+    networks:
+      internal:
+        aliases: [lantern-tts]
     logging: *logging
 
 networks:

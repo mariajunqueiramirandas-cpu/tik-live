@@ -17,7 +17,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0009](0009-stage-engine.md) | WebGL2 stage engine | Proposed |
 | [0010](0010-frontend-stack.md) | Frontend stack | Proposed |
 | [0011](0011-design-direction.md) | Design direction | Proposed |
-| [0012](0012-ai-and-voice-pipeline.md) | AI and voice pipeline | Proposed |
+| [0012](0012-ai-and-voice-pipeline.md) | AI and voice pipeline | Proposed (voice amended by 0021) |
 | [0013](0013-billing-and-plans.md) | Billing and plans | Proposed |
 | [0014](0014-cloud-broadcast.md) | Cloud broadcast | Proposed (pipeline amended by 0020) |
 | [0015](0015-deployment.md) | Deployment on a VPS | Proposed (amended by 0019) |
@@ -26,6 +26,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0018](0018-defer-authentication.md) | No authentication during development; Clerk or WorkOS later | Proposed |
 | [0019](0019-dokploy.md) | Deploy with Dokploy | Proposed |
 | [0020](0020-broadcast-pipeline-avx2.md) | Broadcast pipeline for CPU-only AVX2 hosts | Proposed |
+| [0021](0021-self-hosted-tts.md) | A self-hosted Brazilian Portuguese voice | Proposed |
 
 ## Evidence used
 

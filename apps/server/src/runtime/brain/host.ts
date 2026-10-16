@@ -10,7 +10,8 @@ import { SentenceSplitter, toUtterance, type Emotion, type Utterance } from "./s
 export interface HostBrain {
   readonly name: string;
   generate(turn: TurnRequest, signal: AbortSignal): AsyncGenerator<Utterance>;
-  reconfigure(update: { persona?: Persona; safety?: SafetySettings }): void;
+  /** `speechLanguage: null` lifts a previous voice's language. */
+  reconfigure(update: { persona?: Persona; safety?: SafetySettings; speechLanguage?: string | null }): void;
 }
 
 /** Models that accept server-side refusal fallbacks (`fallbacks: "default"`). */
@@ -20,6 +21,8 @@ export interface ClaudeHostOptions {
   client: Anthropic;
   persona: Persona;
   safety: SafetySettings;
+  /** The only language the voice speaks, if it has one (BCP 47). */
+  speechLanguage?: string;
   memory: ViewerMemory;
   model: string;
   effort: "low" | "medium" | "high";
@@ -39,13 +42,15 @@ export class ClaudeHost implements HostBrain {
 
   constructor(private readonly options: ClaudeHostOptions) {
     this.name = options.model;
-    this.system = buildSystemPrompt(options.persona, options.safety);
+    this.system = buildSystemPrompt(options.persona, options.safety, options.speechLanguage);
   }
 
-  reconfigure(update: { persona?: Persona; safety?: SafetySettings }): void {
+  reconfigure(update: { persona?: Persona; safety?: SafetySettings; speechLanguage?: string | null }): void {
     if (update.persona) this.options.persona = update.persona;
     if (update.safety) this.options.safety = update.safety;
-    this.system = buildSystemPrompt(this.options.persona, this.options.safety);
+    if (update.speechLanguage === null) delete this.options.speechLanguage;
+    else if (update.speechLanguage) this.options.speechLanguage = update.speechLanguage;
+    this.system = buildSystemPrompt(this.options.persona, this.options.safety, this.options.speechLanguage);
   }
 
   async *generate(turn: TurnRequest, signal: AbortSignal): AsyncGenerator<Utterance> {

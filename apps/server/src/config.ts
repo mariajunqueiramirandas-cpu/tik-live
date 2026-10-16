@@ -48,6 +48,14 @@ const envSchema = z.object({
   ELEVENLABS_MODEL: z.string().default("eleven_flash_v2_5"),
   DEFAULT_VOICE_ID: z.string().optional(),
 
+  /** Self-hosted Pocket TTS (services/tts, ADR-0021). On when both are set. */
+  POCKET_TTS_URL: z.string().url().optional(),
+  POCKET_TTS_SECRET: z.string().min(16).optional(),
+  /** The voice for plans without voice choice, and the dashboard's "Default voice". */
+  POCKET_TTS_VOICE: z.string().max(64).default("rafael"),
+  /** Concurrent requests to the sidecar from this process; keep under its TTS_MAX_ACTIVE (16). */
+  POCKET_TTS_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(8),
+
   EULER_API_KEY: z.string().optional(),
 
   MP_ACCESS_TOKEN: z.string().optional(),
@@ -76,6 +84,7 @@ export interface AppConfig extends Env {
   billingEnabled: boolean;
   aiEnabled: boolean;
   ttsEnabled: boolean;
+  pocketEnabled: boolean;
 }
 
 export class ConfigError extends Error {}
@@ -114,17 +123,22 @@ export function loadConfig(source: Record<string, string | undefined> = process.
   if (Boolean(env.MP_ACCESS_TOKEN) !== Boolean(env.MP_WEBHOOK_SECRET)) {
     throw new ConfigError("Set both MP_ACCESS_TOKEN and MP_WEBHOOK_SECRET to enable billing, or neither");
   }
+  if (env.POCKET_TTS_SECRET && !env.POCKET_TTS_URL) {
+    throw new ConfigError("POCKET_TTS_SECRET requires POCKET_TTS_URL (the tts service, e.g. http://localhost:8793)");
+  }
   if (env.BROADCAST_ENABLED && !(env.BROADCASTER_URL && env.BROADCASTER_TOKEN)) {
     throw new ConfigError("BROADCAST_ENABLED requires BROADCASTER_URL and BROADCASTER_TOKEN");
   }
 
+  const pocketEnabled = Boolean(env.POCKET_TTS_URL && env.POCKET_TTS_SECRET);
   return {
     ...env,
     isProduction,
     publicOrigin: new URL(env.PUBLIC_URL).origin,
     billingEnabled: Boolean(env.MP_ACCESS_TOKEN),
     aiEnabled: Boolean(env.ANTHROPIC_API_KEY),
-    ttsEnabled: Boolean(env.ELEVENLABS_API_KEY),
+    ttsEnabled: Boolean(env.ELEVENLABS_API_KEY) || pocketEnabled,
+    pocketEnabled,
   };
 }
 

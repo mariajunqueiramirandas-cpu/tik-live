@@ -137,11 +137,14 @@ function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: Voi
   if (!data?.enabled) {
     return (
       <Banner title="Voice isn't set up on this server">
-        Your host speaks in captions with a moving mouth. Add an ElevenLabs key to the server to give it a voice.
+        Your host speaks in captions with a moving mouth. Add an ElevenLabs key or the self-hosted voice server to give it a voice.
       </Banner>
     );
   }
-  const selected = data.voices.find((v) => v.id === voice.voiceId);
+  const provider = voice.provider === "none" || data.providers.includes(voice.provider) ? voice.provider : (data.providers[0] ?? "none");
+  const voices = data.voices.filter((v) => v.provider === provider);
+  const defaultId = provider === "pocket" ? data.defaultPocketVoiceId : data.defaultVoiceId;
+  const selected = voices.find((v) => v.id === (voice.voiceId ?? defaultId));
   const preview = (url: string | null) => {
     playing?.pause();
     if (!url) return;
@@ -153,21 +156,25 @@ function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: Voi
     <div className={s.stack}>
       <Segmented
         label="How the host speaks"
-        value={voice.provider}
-        onChange={(provider) => onChange({ ...voice, provider })}
+        value={provider}
+        onChange={(next) => onChange({ provider: next, voiceId: next === voice.provider ? voice.voiceId : null })}
         options={[
-          { value: "elevenlabs", label: "Voice and captions" },
-          { value: "none", label: "Captions only" },
+          ...data.providers.map((p) => ({
+            value: p,
+            label: data.providers.length === 1 ? "Voice and captions" : p === "pocket" ? "Portuguese voice" : "ElevenLabs voice",
+          })),
+          { value: "none" as const, label: "Captions only" },
         ]}
       />
-      {voice.provider === "elevenlabs" &&
+      {provider === "pocket" && <p className={s.note}>This voice speaks Brazilian Portuguese only, so your host always talks in Portuguese, even to viewers who write in another language.</p>}
+      {provider !== "none" &&
         (data.canChoose ? (
           <Field label="Voice" hint="Pick a voice that fits the character. Your host keeps it for every stream.">
             {(props) => (
               <div className={s.voiceRow}>
-                <Select {...props} value={voice.voiceId ?? ""} onChange={(e) => onChange({ ...voice, voiceId: e.target.value || null })}>
+                <Select {...props} value={voice.voiceId ?? ""} onChange={(e) => onChange({ provider, voiceId: e.target.value || null })}>
                   <option value="">Default voice</option>
-                  {data.voices.map((v) => (
+                  {voices.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.name}
                       {v.tags.length ? ` (${v.tags.slice(0, 3).join(", ")})` : ""}
@@ -185,7 +192,7 @@ function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: Voi
             Choosing from the full voice library is part of the Creator and Pro plans.
           </Banner>
         ))}
-      {voice.provider === "none" && <p className={s.note}>The mouth follows each syllable of the caption, so the character still looks like it's talking.</p>}
+      {provider === "none" && <p className={s.note}>The mouth follows each syllable of the caption, so the character still looks like it's talking.</p>}
     </div>
   );
 }

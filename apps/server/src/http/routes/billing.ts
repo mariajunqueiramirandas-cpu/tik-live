@@ -42,9 +42,22 @@ export function voiceRoutes(deps: AppDeps) {
       const plan = await deps.entitlements.planFor(c.get("user").id);
       return c.json({
         enabled: deps.voices.enabled,
+        providers: deps.voices.providers,
         canChoose: plan.limits.voices === "curated",
         defaultVoiceId: deps.config.DEFAULT_VOICE_ID ?? null,
+        defaultPocketVoiceId: deps.config.pocketEnabled ? deps.config.POCKET_TTS_VOICE : null,
         voices: await deps.voices.list(),
       });
+    })
+    .get("/pocket/:voice/sample", async (c) => {
+      const voice = c.req.param("voice");
+      if (voice.length > 64) return problem(c, 404, "voice_not_found", "No such voice.");
+      const sample = await deps.voices.pocketSample(voice).catch((err: unknown) => {
+        deps.log.warn("voice sample failed", err);
+        return undefined;
+      });
+      if (sample === null) return problem(c, 404, "voice_not_found", "No such voice.");
+      if (!sample) return problem(c, 503, "voice_unavailable", "The voice server is busy. Try again in a moment.");
+      return c.body(new Uint8Array(sample.data), 200, { "content-type": sample.mime, "cache-control": "private, max-age=3600" });
     });
 }

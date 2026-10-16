@@ -12,6 +12,7 @@ of Caddy. The decision and what was tested are in
 | `db` | Postgres 17 | No (internal network only) |
 | `backup` | Nightly `pg_dump`, 7 daily and 4 weekly copies, optional S3 upload | No |
 | `broadcaster` | Cloud broadcast (only with `COMPOSE_PROFILES=broadcast`) | No |
+| `tts` | Self-hosted Brazilian Portuguese voice (only with `tts` in `COMPOSE_PROFILES`) | No |
 
 Everything lives in [`compose.dokploy.yaml`](../compose.dokploy.yaml) at
 the repository root.
@@ -59,7 +60,7 @@ every `.env`).
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24`. Set it before the first deploy; Postgres keeps the first one |
 | `DEV_GATE_PASSWORD` | Required while `AUTH_MODE=dev` (no sign-in yet): the whole site asks for this password, except stage links, webhooks and health checks |
 | `ANTHROPIC_API_KEY` | Without it, hosts run an offline scripted brain |
-| `ELEVENLABS_API_KEY` | Without it, hosts speak in captions only |
+| `ELEVENLABS_API_KEY` | Without it (and without the self-hosted voice), hosts speak in captions only |
 | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago; leave both empty to run without billing |
 
 ## 4. Domain
@@ -145,6 +146,22 @@ BROADCAST_MAX_CONCURRENT=1
 and deploy. `COMPOSE_PROFILES` starts the broadcaster container; the rest
 turns the feature on in the app. Creators then add their TikTok server URL
 and stream key under **Setup → Broadcast from the cloud**.
+
+### Self-hosted voice
+
+A free Brazilian Portuguese voice on the server's own CPUs
+([ADR-0021](../docs/adr/0021-self-hosted-tts.md), `services/tts`). In the
+Environment tab:
+
+```sh
+COMPOSE_PROFILES=tts            # or broadcast,tts
+POCKET_TTS_SECRET=<openssl rand -hex 24>
+TTS_CPUS=2
+```
+
+The first build downloads the model (360 MB) from Hugging Face and packs it
+(about 2 minutes). The service uses about 300 MB of RAM. Hosts on this voice
+always speak Portuguese.
 
 ## 9. Cloudflare
 

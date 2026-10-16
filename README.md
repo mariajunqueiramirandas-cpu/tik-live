@@ -19,7 +19,7 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
    Host (Claude, streamed sentence by sentence)
         │
         ▼
-   Safety gate (rules + Claude moderator) ∥ Voice (ElevenLabs)
+   Safety gate (rules + Claude moderator) ∥ Voice (ElevenLabs or self-hosted)
         │
         ▼
    Stage engine (WebGL2: character, captions, alerts, lip sync)
@@ -67,6 +67,9 @@ To give the host its real brain and voice, copy `.env.example` to `.env`:
 
 - `ANTHROPIC_API_KEY`: the host and the safety moderator run on Claude.
 - `ELEVENLABS_API_KEY`: the host speaks out loud.
+- Or, free and in Brazilian Portuguese only: run the self-hosted voice
+  (`services/tts`, [ADR-0021](docs/adr/0021-self-hosted-tts.md)) and set
+  `POCKET_TTS_URL` and `POCKET_TTS_SECRET`.
 
 ## Going live
 

@@ -9,6 +9,8 @@ export interface AudioClip {
 
 export interface TtsProvider {
   readonly name: string;
+  /** Set when the voice speaks only one language (BCP 47); the host is told to speak it. */
+  readonly language?: string;
   /** Returns audio for the text, or null for caption-only mode. */
   synthesize(text: string, emotion: Emotion, signal?: AbortSignal): Promise<AudioClip | null>;
 }
@@ -100,4 +102,57 @@ export class ElevenLabsTts implements TtsProvider {
     const data = Buffer.from(await response.arrayBuffer());
     return { mime: "audio/mpeg", data, durationMs: Math.round((data.length * 8 * 1000) / MP3_BITRATE_BPS) };
   }
+}
+
+export interface PocketTtsOptions {
+  /** The tts sidecar (services/tts), e.g. http://lantern-tts:8793. */
+  url: string;
+  secret: string;
+  voice: string;
+  fetch?: typeof fetch;
+}
+
+/** The sidecar batches requests itself; this only keeps one process from queueing past its 503. */
+export const pocketLimiter = new Limiter(8);
+
+const POCKET_TIMEOUT_MS = 20_000;
+
+/**
+ * Self-hosted Pocket TTS (services/tts, ADR-0021): Brazilian Portuguese on our
+ * own CPUs, no per-character bill. WAV, not Ogg/Opus: every browser decodes it
+ * and the stream re-encodes the audio anyway, so one lossy pass is enough.
+ */
+export class PocketTts implements TtsProvider {
+  readonly name = "pocket";
+  readonly language = "pt-BR";
+
+  constructor(private readonly options: PocketTtsOptions) {}
+
+  synthesize(text: string, _emotion: Emotion, signal?: AbortSignal): Promise<AudioClip> {
+    return pocketLimiter.run(() => speakPocket(this.options, text, signal));
+  }
+}
+
+/** One request to the sidecar. Also used for voice samples in the dashboard. */
+export async function speakPocket(options: PocketTtsOptions, text: string, signal?: AbortSignal): Promise<AudioClip> {
+  signal?.throwIfAborted();
+  const timeout = AbortSignal.timeout(POCKET_TIMEOUT_MS);
+  const response = await (options.fetch ?? fetch)(`${options.url.replace(/\/+$/, "")}/v1/speak`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${options.secret}`, "content-type": "application/json", accept: "audio/wav" },
+    body: JSON.stringify({ text, voice: options.voice, format: "wav" }),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  if (!response.ok) {
+    const code = await response
+      .json()
+      .then((body) => (body as { error?: unknown }).error)
+      .catch(() => undefined);
+    throw new Error(`Pocket TTS ${response.status}${typeof code === "string" ? ` ${code}` : ""}`);
+  }
+  const data = Buffer.from(await response.arrayBuffer());
+  const seconds = Number(response.headers.get("x-tts-seconds"));
+  // 24 kHz, 16-bit mono after a 44-byte header, if the header is ever missing.
+  const durationMs = Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1000) : Math.round(((data.length - 44) / 48_000) * 1000);
+  return { mime: "audio/wav", data, durationMs };
 }

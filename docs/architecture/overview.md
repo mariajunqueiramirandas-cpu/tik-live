@@ -78,6 +78,7 @@ flowchart LR
   platform -- optional cloud broadcast<br/>RTMP --> tiktok
   platform -- host turns, moderation --> anthropic[(Claude API)]
   platform -- text-to-speech --> eleven[(ElevenLabs)]
+  platform -- text-to-speech, pt-BR, optional --> pocket[[tts sidecar<br/>Pocket TTS, self-hosted]]
   platform -- subscriptions, webhooks --> mp[(Mercado Pago)]
   platform -- transactional email, later --> mail[(Resend)]
   creator -. sign-in, before launch .-> idp[(Clerk or WorkOS)]
@@ -247,6 +248,7 @@ Decided in [ADR-0004](../adr/0004-monorepo-layout.md).
 | [0010](../adr/0010-frontend-stack.md) | React 19, Vite, React Router, TanStack Query, Radix primitives, hand-written CSS |
 | [0011](../adr/0011-design-direction.md) | Visual design direction for the product |
 | [0012](../adr/0012-ai-and-voice-pipeline.md) | Claude models, moderation, cost guardrails, TTS |
+| [0021](../adr/0021-self-hosted-tts.md) | Self-hosted Brazilian Portuguese voice (services/tts) |
 | [0013](../adr/0013-billing-and-plans.md) | Plans in code, Mercado Pago billing, self-hosted mode |
 | [0014](../adr/0014-cloud-broadcast.md) | Cloud broadcast via headless Chromium and ffmpeg, as an isolated service |
 | [0020](../adr/0020-broadcast-pipeline-avx2.md) | Broadcast pipeline for AVX2 CPUs: Mesa llvmpipe, in-page H.264, copy into FLV |
