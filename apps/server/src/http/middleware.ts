@@ -4,6 +4,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { safeEqual } from "../crypto/secrets";
 import { createLogger } from "../log";
 import type { AppDeps } from "../deps";
+import { clerkFrontendApi } from "../identity/clerk-key";
 import { audit } from "../repos/audit";
 import { getUserByExternalId, upsertUser } from "../repos/users";
 import type { AppEnv } from "./env";
@@ -59,8 +60,10 @@ const API_CSP = {
 /** Strict CSP for the dashboard (ADR-0016); the stage page gets its own relaxed copy. */
 export function securityHeaders(deps: AppDeps): MiddlewareHandler<AppEnv> {
   const wsOrigin = deps.config.publicOrigin.replace(/^http/, "ws");
-  const extraScript = deps.config.AUTH_MODE === "clerk" ? ["https://*.clerk.accounts.dev", "https://challenges.cloudflare.com"] : [];
-  const extraConnect = deps.config.AUTH_MODE === "clerk" ? ["https://*.clerk.accounts.dev", "https://api.clerk.com"] : [];
+  // Clerk's frontend API host is encoded in the publishable key (a custom domain in production).
+  const clerkApi = deps.config.AUTH_MODE === "clerk" ? (clerkFrontendApi(deps.config.CLERK_PUBLISHABLE_KEY) ?? "https://*.clerk.accounts.dev") : null;
+  const extraScript = clerkApi ? [clerkApi, "https://challenges.cloudflare.com"] : [];
+  const extraConnect = clerkApi ? [clerkApi, "https://api.clerk.com"] : [];
   const extraFrame = deps.config.AUTH_MODE === "clerk" ? ["https://challenges.cloudflare.com"] : [];
   const dashboard = secureHeaders({
     contentSecurityPolicy: {
@@ -152,6 +155,7 @@ export function requireUser(deps: AppDeps): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const identity = await deps.identity.resolve(c.req.raw);
     if (!identity) return problem(c, 401, "unauthenticated", "Sign in to continue.");
+    for (const cookie of identity.setCookies ?? []) c.header("set-cookie", cookie, { append: true });
     let user = await getUserByExternalId(deps.db, identity.externalId);
     if (!user || (identity.email && identity.email !== user.email) || (identity.name && identity.name !== user.name)) {
       const existed = Boolean(user);

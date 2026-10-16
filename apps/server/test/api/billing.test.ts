@@ -47,6 +47,7 @@ class FakeMercadoPago {
 /** Identity with a real email so checkout is allowed. */
 const identity: IdentityProvider = {
   mode: "dev",
+  signInPath: null,
   async resolve(request) {
     const name = request.headers.get("x-dev-user") ?? new URL(request.url).searchParams.get("devUser") ?? "payer";
     return { externalId: `test|${name}`, email: `${name}@example.com`, name };

@@ -1,0 +1,22 @@
+@layer components {
+  .page {
+    min-height: 100dvh;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: var(--s-8);
+    padding: var(--s-6) var(--s-4);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-display);
+    font-weight: 760;
+    font-size: var(--t-29);
+    letter-spacing: -0.02em;
+  }
+  .note {
+    color: var(--haze);
+  }
+}

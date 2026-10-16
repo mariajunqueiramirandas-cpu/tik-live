@@ -1,4 +1,6 @@
 import { createBrowserRouter, redirect, type LoaderFunctionArgs } from "react-router";
+import { ApiError } from "./lib/api";
+import { signInUrl } from "./lib/config";
 import { modules } from "./lib/prefetch";
 import { queries, queryClient } from "./lib/query";
 import { NotFound, RouteError } from "./routes/errors";
@@ -19,13 +21,31 @@ function lazy<M extends { default: React.ComponentType }>(load: () => Promise<M>
 
 const hostId = ({ params }: LoaderFunctionArgs) => params.id as string;
 
+/** The signed-in user; someone who isn't signed in goes to this server's sign-in. */
+async function requireMe() {
+  try {
+    return await ensure(queries.me());
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      const url = signInUrl();
+      if (url?.startsWith("/app/")) throw redirect(url);
+      if (url) {
+        location.assign(url);
+        await new Promise(() => undefined); // navigating away
+      }
+    }
+    throw error;
+  }
+}
+
 export const router = createBrowserRouter([
+  { path: "/app/sign-in/*", lazy: lazy(() => import("./routes/sign-in")) },
   {
     path: "/app",
     Component: Root,
     ErrorBoundary: RouteError,
     HydrateFallback: ShellFallback,
-    loader: () => ensure(queries.me()),
+    loader: requireMe,
     children: [
       { index: true, lazy: lazy(modules.home, () => ensure(queries.channels())) },
       { path: "new", lazy: lazy(modules.newHost) },

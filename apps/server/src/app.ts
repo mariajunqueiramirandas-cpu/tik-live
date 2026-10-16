@@ -46,6 +46,9 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   });
 
   app.route("/", buildApi(deps));
+  // Sign-in callbacks and identity webhooks, when the provider has them.
+  const identityRoutes = deps.identity.routes?.();
+  if (identityRoutes) app.route("/", identityRoutes);
   mountRealtime(app, deps);
   app.notFound((c) => (c.req.path.startsWith("/api/") ? problem(c, 404, "not_found", "No such endpoint.") : c.text("Not found", 404)));
   mountStatic(app, deps);

@@ -1,9 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { lazy, Suspense, useState, type FormEvent } from "react";
 import { api, call, errorMessage } from "../lib/api";
 import { dateTime } from "../lib/format";
 import { useMe } from "../lib/query";
-import { Button } from "../ui/Button";
+import { Button, ButtonLink } from "../ui/Button";
 import { Banner, Panel, Skeleton } from "../ui/Display";
 import { Field, Input } from "../ui/Field";
 import { Confirm } from "../ui/Overlay";
@@ -41,6 +41,26 @@ function DevUserSwitcher({ current }: { current: string }) {
       </form>
     </Panel>
   );
+}
+
+const ClerkSignOutButton = lazy(() =>
+  import("../auth/clerk").then((m) => ({
+    default: function ClerkSignOutButton() {
+      const signOut = m.useClerkSignOut();
+      return <Button onClick={() => void signOut()}>Sign out</Button>;
+    },
+  })),
+);
+
+function SignOut({ mode }: { mode: "dev" | "clerk" | "workos" }) {
+  if (mode === "workos") return <ButtonLink to="/auth/sign-out" reloadDocument>Sign out</ButtonLink>;
+  if (mode === "clerk")
+    return (
+      <Suspense fallback={null}>
+        <ClerkSignOutButton />
+      </Suspense>
+    );
+  return null;
 }
 
 export default function Account() {
@@ -82,7 +102,12 @@ export default function Account() {
             <dd>{dateTime(me.user.createdAt)}</dd>
           </div>
         </dl>
-        {me.authMode !== "dev" && <p className={s.dim}>Change your name, email and password from the sign-in menu.</p>}
+        {me.authMode !== "dev" && (
+          <div className={s.inline}>
+            <p className={s.dim}>Your name, email and password are managed by the sign-in provider.</p>
+            <SignOut mode={me.authMode} />
+          </div>
+        )}
       </Panel>
 
       {me.devUser && <DevUserSwitcher current={me.devUser} />}

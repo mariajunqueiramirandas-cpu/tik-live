@@ -1,5 +1,6 @@
 import { isRouteErrorResponse, useRouteError } from "react-router";
 import { ApiError } from "../lib/api";
+import { signInUrl } from "../lib/config";
 import { ButtonLink, Button } from "../ui/Button";
 import { Empty } from "../ui/Display";
 
@@ -16,9 +17,12 @@ export function RouteError() {
     );
   }
   if (error instanceof ApiError && error.status === 401) {
+    const url = signInUrl();
     return (
       <div style={{ padding: "var(--s-8)" }}>
-        <Empty title="Sign in to continue" action={<Button onClick={() => location.reload()}>Try again</Button>} />
+        <Empty title="Sign in to continue" action={url ? <Button onClick={() => location.assign(url)}>Sign in</Button> : <Button onClick={() => location.reload()}>Try again</Button>}>
+          <p>Your session ended. Sign in again to pick up where you left off.</p>
+        </Empty>
       </div>
     );
   }

@@ -1,15 +1,16 @@
-import { HttpBroadcasterClient, type BroadcasterClient } from "./broadcast/client";
-import { BroadcastSupervisor } from "./broadcast/supervisor";
 import Anthropic from "@anthropic-ai/sdk";
-import { BillingService } from "./billing/service";
 import { Entitlements } from "./billing/entitlements";
 import type { MercadoPagoClient } from "./billing/mercadopago";
+import { BillingService } from "./billing/service";
+import { HttpBroadcasterClient, type BroadcasterClient } from "./broadcast/client";
+import { BroadcastSupervisor } from "./broadcast/supervisor";
 import type { AppConfig } from "./config";
 import { Secrets } from "./crypto/secrets";
 import type { Database, Db } from "./db/client";
 import { DevIdentityProvider } from "./identity/dev";
 import type { IdentityProvider } from "./identity/types";
 import { createLogger, type Logger } from "./log";
+import { listChannels } from "./repos/channels";
 import { AudioStore } from "./runtime/audio-store";
 import type { ChannelRuntimeOptions } from "./runtime/channel-runtime";
 import { RuntimeManager } from "./runtime/manager";
@@ -46,7 +47,17 @@ export async function createDeps(config: AppConfig, database: Database, override
   const now = overrides.now ?? Date.now;
   const db = database.db;
   const secrets = new Secrets(config.APP_SECRET);
-  const identity = overrides.identity ?? (await createIdentityProvider(config));
+  // The identity provider can delete accounts (Clerk webhook), which must stop their hosts first.
+  let managerRef: RuntimeManager | null = null;
+  const identity =
+    overrides.identity ??
+    (await createIdentityProvider(config, {
+      db,
+      log: createLogger("identity"),
+      onUserDeleted: async (userId) => {
+        for (const channel of await listChannels(db, userId)) await managerRef?.remove(channel.id);
+      },
+    }));
   const entitlements = new Entitlements(db, config, now);
   const billing = new BillingService(db, config, entitlements, createLogger("billing"), overrides.mercadoPago, now);
   const voices = new VoiceCatalog(config.ELEVENLABS_API_KEY, createLogger("voices"), overrides.fetch);
@@ -65,21 +76,29 @@ export async function createDeps(config: AppConfig, database: Database, override
     ...(broadcasts ? { broadcasts } : {}),
     ...(overrides.runtimeOverrides ? { runtimeOverrides: overrides.runtimeOverrides } : {}),
   });
+  managerRef = manager;
   return { config, database, db, log, secrets, identity, entitlements, billing, voices, audio, manager, now };
 }
 
 /** Picks the identity provider for AUTH_MODE (ADR-0018). */
-export async function createIdentityProvider(config: AppConfig): Promise<IdentityProvider> {
+export async function createIdentityProvider(
+  config: AppConfig,
+  options: { db?: Database["db"]; log?: Logger; onUserDeleted?: (userId: string) => Promise<void> } = {},
+): Promise<IdentityProvider> {
   switch (config.AUTH_MODE) {
     case "dev":
       return new DevIdentityProvider();
     case "clerk": {
       const { ClerkIdentityProvider } = await import("./identity/clerk");
-      return new ClerkIdentityProvider(config);
+      return new ClerkIdentityProvider(config, {
+        ...(options.db ? { database: options.db } : {}),
+        ...(options.log ? { log: options.log } : {}),
+        ...(options.onUserDeleted ? { onUserDeleted: options.onUserDeleted } : {}),
+      });
     }
     case "workos": {
       const { WorkOSIdentityProvider } = await import("./identity/workos");
-      return new WorkOSIdentityProvider(config);
+      return new WorkOSIdentityProvider(config, options.log ? { log: options.log } : {});
     }
   }
 }

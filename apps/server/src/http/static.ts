@@ -4,6 +4,7 @@ import path from "node:path";
 import type { AppDeps } from "../deps";
 import type { AppEnv } from "./env";
 import { publicPrices } from "./pricing";
+import { publicConfig } from "./routes/account";
 import { channelForStageKey } from "./routes/stage";
 
 function escapeHtml(text: string): string {
@@ -79,6 +80,16 @@ export function mountStatic(app: Hono<AppEnv>, deps: AppDeps): void {
     return html;
   };
 
+  let dashboard: string | null = null;
+  const dashboardHtml = async (): Promise<string | null> => {
+    if (dashboard) return dashboard;
+    const handle = file("/index.html");
+    if (!handle || !(await handle.exists())) return null;
+    const json = JSON.stringify(publicConfig(deps)).replace(/</g, "\\u003c");
+    dashboard = (await handle.text()).replace("</head>", `<script type="application/json" id="lantern-config">${json}</script></head>`);
+    return dashboard;
+  };
+
   app.get("/", async (c, next) => {
     const html = await landingHtml();
     if (!html) return next();
@@ -93,9 +104,9 @@ export function mountStatic(app: Hono<AppEnv>, deps: AppDeps): void {
       if (res) return res;
       return c.body(null, 404);
     }
-    // The landing page is prerendered to its own file; everything else is the SPA.
-    const page = pathname === "/" && file("/landing.html") ? "/landing.html" : "/index.html";
-    const res = (await sendFile(page, "no-cache")) ?? (await sendFile("/index.html", "no-cache"));
-    return res ?? c.text("Dashboard missing from this build.", 500);
+    // Everything else is the dashboard, with its public config inlined so the
+    // first render knows the sign-in mode without another round trip.
+    const html = await dashboardHtml();
+    return html ? c.html(html, 200, { "cache-control": "no-cache" }) : c.text("Dashboard missing from this build.", 500);
   });
 }

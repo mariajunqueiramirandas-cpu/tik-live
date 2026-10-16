@@ -21,6 +21,7 @@ export function readCookie(header: string | null, name: string): string | undefi
  */
 export class DevIdentityProvider implements IdentityProvider {
   readonly mode = "dev" as const;
+  readonly signInPath = null;
 
   async resolve(request: Request): Promise<Identity> {
     const url = new URL(request.url);

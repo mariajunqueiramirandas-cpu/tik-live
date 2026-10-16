@@ -12,19 +12,22 @@ import { requireUser } from "../middleware";
 import { valid } from "../validate";
 
 /** Public, unauthenticated settings the dashboard needs before anything else. */
+export function publicConfig(deps: AppDeps) {
+  return {
+    productName: PRODUCT_NAME,
+    authMode: deps.config.AUTH_MODE,
+    signInPath: deps.identity.signInPath,
+    clerkPublishableKey: deps.config.AUTH_MODE === "clerk" ? (deps.config.CLERK_PUBLISHABLE_KEY ?? null) : null,
+    billing: { enabled: deps.billing.enabled, currency: deps.config.BILLING_CURRENCY },
+    broadcast: { enabled: deps.config.BROADCAST_ENABLED },
+    ai: { enabled: deps.config.aiEnabled, hostModel: deps.config.aiEnabled ? deps.config.HOST_MODEL : null },
+    voice: { enabled: deps.config.ttsEnabled },
+    pricing: publicPrices(deps),
+  };
+}
+
 export function configRoutes(deps: AppDeps) {
-  return new Hono<AppEnv>().get("/", (c) =>
-    c.json({
-      productName: PRODUCT_NAME,
-      authMode: deps.config.AUTH_MODE,
-      clerkPublishableKey: deps.config.AUTH_MODE === "clerk" ? deps.config.CLERK_PUBLISHABLE_KEY ?? null : null,
-      billing: { enabled: deps.billing.enabled, currency: deps.config.BILLING_CURRENCY },
-      broadcast: { enabled: deps.config.BROADCAST_ENABLED },
-      ai: { enabled: deps.config.aiEnabled, hostModel: deps.config.aiEnabled ? deps.config.HOST_MODEL : null },
-      voice: { enabled: deps.config.ttsEnabled },
-      pricing: publicPrices(deps),
-    }),
-  );
+  return new Hono<AppEnv>().get("/", (c) => c.json(publicConfig(deps)));
 }
 
 export function meRoutes(deps: AppDeps) {

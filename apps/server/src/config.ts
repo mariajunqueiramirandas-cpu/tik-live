@@ -27,6 +27,8 @@ const envSchema = z.object({
   DEV_GATE_PASSWORD: z.string().min(8).optional(),
   CLERK_SECRET_KEY: z.string().optional(),
   CLERK_PUBLISHABLE_KEY: z.string().optional(),
+  /** Optional: Clerk user webhooks (user.updated, user.deleted) at /api/identity/clerk-webhook. */
+  CLERK_WEBHOOK_SIGNING_SECRET: z.string().optional(),
   WORKOS_API_KEY: z.string().optional(),
   WORKOS_CLIENT_ID: z.string().optional(),
   WORKOS_COOKIE_PASSWORD: z.string().min(32).optional(),
