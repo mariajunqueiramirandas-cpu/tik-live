@@ -36,7 +36,12 @@ describe("secrets at rest", () => {
     expect(sealed).toMatch(/^v1\./);
     expect(await secrets.decrypt("stream-key", sealed)).toBe("live_abc");
     await expect(secrets.decrypt("stage-key", sealed)).rejects.toThrow();
-    const tampered = sealed.slice(0, -2) + (sealed.endsWith("A") ? "B" : "A") + sealed.slice(-1);
+    // Flip one bit of the ciphertext itself (editing base64 text can leave the bytes unchanged).
+    const [version, iv, data] = sealed.split(".") as [string, string, string];
+    const bytes = Buffer.from(data, "base64url");
+    bytes[0] = (bytes[0] as number) ^ 1;
+    const tampered = `${version}.${iv}.${bytes.toString("base64url")}`;
+    expect(tampered).not.toBe(sealed);
     await expect(secrets.decrypt("stream-key", tampered)).rejects.toThrow();
     expect(await secrets.encrypt("stream-key", "live_abc")).not.toBe(sealed);
   });
