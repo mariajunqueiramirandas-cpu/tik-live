@@ -102,9 +102,13 @@ This is for regular TikTok LIVE. TikTok Shop LIVE bans AI voices.
 
 ## Deploying
 
-[`deploy/README.md`](deploy/README.md) is the runbook: a VPS with Docker,
-a domain, `deploy/.env`, and `docker compose up -d`. It covers upgrades,
-rollbacks, backups and restore, and host hardening.
+- **Dokploy:** [`deploy/DOKPLOY.md`](deploy/DOKPLOY.md). One Compose
+  service from this repository (`compose.dokploy.yaml`), a domain on port
+  8080, and the Environment tab filled from `deploy/dokploy.env.example`.
+- **Plain VPS:** [`deploy/README.md`](deploy/README.md). Docker Compose with
+  Caddy for HTTPS, `deploy/.env`, and `docker compose up -d`.
+
+Both cover upgrades, rollbacks, backups and restore.
 
 Before anyone else signs in, set up a sign-in provider (Clerk or WorkOS;
 both are built in). Until then a production server refuses to start without

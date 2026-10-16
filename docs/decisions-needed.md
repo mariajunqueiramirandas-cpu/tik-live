@@ -17,7 +17,7 @@ charging other people.
 | 2 | [Sign-in provider: Clerk or WorkOS](#2-sign-in-provider-clerk-or-workos) | No sign-in; one shared password (`DEV_GATE_PASSWORD`) | Any second user |
 | 3 | [Terms of service, privacy policy, invoices](#3-terms-privacy-and-invoices) | None | Paid launch |
 | 4 | [Cloud broadcast capacity and price](#4-cloud-broadcast-capacity-and-price) | Pro only, 1 stream per 4 vCPU | Turning cloud broadcast on |
-| 5 | [Domain, VPS and outside accounts](#5-domain-vps-and-outside-accounts) | None | Public deployment |
+| 5 | [Domain, VPS and outside accounts](#5-domain-vps-and-outside-accounts) | Dokploy setup ready ([runbook](../deploy/DOKPLOY.md)); no domain or accounts yet | Public deployment |
 | 6 | [Verify the TikTok connection on a real LIVE](#6-verify-the-tiktok-connection-on-a-real-live) | Built against the connector's documented events; not yet tried on a real stream | Going live with real chat |
 | 7 | [Sign-ups at launch](#7-sign-ups-at-launch) | Whoever the identity provider lets in | Public launch |
 | 8 | [Product name](#8-product-name) | "Lantern" | Domain, branding |
@@ -142,11 +142,12 @@ per stream.
 
 ## 5. Domain, VPS and outside accounts
 
-The runbook in [`deploy/README.md`](../deploy/README.md) covers the steps.
-Owner-only parts:
+You're deploying with Dokploy: [`deploy/DOKPLOY.md`](../deploy/DOKPLOY.md)
+covers the steps ([ADR-0019](adr/0019-dokploy.md)). Owner-only parts:
 
-- **Domain** pointing at the VPS (Caddy gets the HTTPS certificate on its
-  own) and `PUBLIC_URL` set to it.
+- **Domain** pointing at the server, added on the compose service's Domains
+  tab (service `app`, port 8080, HTTPS with Let's Encrypt) and set as
+  `DOMAIN` in the Environment tab.
 - **Anthropic API key** (`ANTHROPIC_API_KEY`), with a spend limit in the
   Anthropic console as a backstop to the in-product caps.
 - **ElevenLabs** plan and a default voice (`ELEVENLABS_API_KEY`,
@@ -223,8 +224,10 @@ that, a change of direction gets a new ADR instead of an edit.
 
 ## 12. Pre-launch checks only the owner can run
 
-- Rehearse a fresh install on a new VPS from the runbook, including a backup
-  restore ([ADR-0015](adr/0015-deployment.md) action item 4).
+- The first Dokploy deploy, following [`deploy/DOKPLOY.md`](../deploy/DOKPLOY.md)
+  through its checks, plus one backup restore drill
+  ([ADR-0019](adr/0019-dokploy.md) action item 5,
+  [ADR-0015](adr/0015-deployment.md) action item 4).
 - Go through the pre-launch security checklist
   ([ADR-0016](adr/0016-security.md) action item 6).
 - Read TikTok's current LIVE guidelines for AI-generated content and check

@@ -21,6 +21,14 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run boundaries
+      - name: Validate compose files (plain VPS and Dokploy)
+        env:
+          DOMAIN: ci.example.com
+          POSTGRES_PASSWORD: ci
+        run: |
+          cp deploy/.env.example deploy/.env
+          docker compose -f deploy/compose.yaml --profile broadcast config -q
+          docker compose -f compose.dokploy.yaml --env-file deploy/dokploy.env.example --profile broadcast config -q
       - run: bun test
       # Builds the web app (with prerender and bundle budgets), the server and the broadcaster.
       - run: bun run build

@@ -1,6 +1,6 @@
 # ADR-0015: Deployment on a VPS
 
-**Status:** Proposed
+**Status:** Proposed (amended by [ADR-0019](0019-dokploy.md): the owner deploys with Dokploy; this setup stays supported)
 **Date:** 2026-10-16
 **Deciders:** Project owner
 

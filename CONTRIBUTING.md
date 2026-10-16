@@ -35,7 +35,8 @@ apps/web           React dashboard, landing page, stage page (Vite)
 apps/broadcaster   Headless Chromium + ffmpeg to RTMP (cloud broadcast)
 packages/shared    Types, zod schemas, plans, protocol: shared by everything
 packages/engine    The WebGL2 stage engine (no React, no DOM framework)
-deploy/            Dockerfiles, Compose, Caddy, backups, runbook
+deploy/            Dockerfiles, Compose with Caddy, backups, runbooks
+compose.dokploy.yaml  The same stack for Dokploy (its Traefik replaces Caddy)
 docs/              Architecture, ADRs, API and protocol references
 e2e/               Playwright end-to-end and accessibility tests
 scripts/           Dev runner, import boundary check, load test

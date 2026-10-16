@@ -4,6 +4,9 @@ This is the runbook for [ADR-0015](../docs/adr/0015-deployment.md): one
 VPS, Docker Compose, Caddy for HTTPS, Postgres with nightly backups, and an
 optional cloud broadcaster.
 
+**Deploying with Dokploy?** Follow [DOKPLOY.md](DOKPLOY.md) instead; it uses
+`compose.dokploy.yaml` with Dokploy's Traefik in place of Caddy.
+
 | Service | What it does | Public? |
 |---|---|---|
 | `caddy` | HTTPS certificates, HTTP/2 and HTTP/3, WebSocket proxying | Ports 80 and 443 |

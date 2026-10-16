@@ -97,8 +97,8 @@ There are two ways to get video to TikTok:
 
 ```mermaid
 flowchart TB
-  subgraph vps[VPS · docker compose]
-    caddy[Caddy<br/>TLS, reverse proxy, WS upgrade]
+  subgraph vps[VPS · docker compose · Dokploy]
+    caddy[Traefik under Dokploy, or Caddy<br/>TLS, reverse proxy, WS upgrade]
     subgraph app[app · Bun]
       hono[Hono HTTP API<br/>identity, channels, analytics, billing]
       ws[WebSocket hubs<br/>stage + studio, Bun pub/sub]
@@ -113,13 +113,13 @@ flowchart TB
   hono --> db
   rm --> db
   rm <--> ws
-  bc -- loads stage page, WS --> caddy
+  bc -- loads stage page, WS<br/>internal network --> static & ws
   backup --> db
 ```
 
 | Container | Responsibility | Decided in |
 |---|---|---|
-| `caddy` | HTTPS certificates, HTTP/2, WebSocket proxying, compression of static assets | [ADR-0015](../adr/0015-deployment.md) |
+| Proxy | HTTPS certificates, HTTP/2, WebSocket proxying: Dokploy's Traefik for the owner's deployment, Caddy on a plain VPS. The app compresses its own responses, so neither proxy needs to. | [ADR-0015](../adr/0015-deployment.md), [ADR-0019](../adr/0019-dokploy.md) |
 | `app` | Everything stateful about the product: API, identity resolution, realtime hubs, channel runtimes, static files | [ADR-0002](../adr/0002-bun-runtime-and-toolchain.md), [ADR-0003](../adr/0003-hono-server.md), [ADR-0007](../adr/0007-channel-runtime.md) |
 | `db` | Accounts, channels, viewer memory, sessions, analytics, usage, billing state | [ADR-0005](../adr/0005-data-layer.md) |
 | `broadcaster` | Headless render of stage pages and RTMP push; isolated so its CPU use cannot starve the API | [ADR-0014](../adr/0014-cloud-broadcast.md) |
@@ -223,7 +223,8 @@ packages/
   shared/        Protocol messages, zod schemas (persona, channel), plans, shared types
   engine/        WebGL2 stage engine, no runtime dependencies
 docs/            This documentation
-deploy/          Dockerfiles, compose file, Caddyfile, backup script
+deploy/          Dockerfiles, compose file with Caddy, backup script, runbooks
+compose.dokploy.yaml  The same stack for Dokploy
 ```
 
 Decided in [ADR-0004](../adr/0004-monorepo-layout.md).
@@ -250,3 +251,4 @@ Decided in [ADR-0004](../adr/0004-monorepo-layout.md).
 | [0016](../adr/0016-security.md) | Security model: tenancy, secrets, CSRF, CSP, rate limits, abuse |
 | [0017](../adr/0017-testing-strategy.md) | Testing strategy: bun test, PGlite, Playwright E2E, visual checks |
 | [0018](../adr/0018-defer-authentication.md) | No authentication during development; Clerk or WorkOS later |
+| [0019](../adr/0019-dokploy.md) | Deploy with Dokploy: its Traefik replaces Caddy; app-side compression |
