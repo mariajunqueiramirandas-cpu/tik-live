@@ -1,0 +1,4 @@
+# One term per line, case-insensitive. Chat containing a term is dropped before
+# the host sees it, and any host sentence containing one is never spoken.
+# Add slurs, competitor names, personal info, or anything else you never want
+# on stream. Lines starting with # are ignored.
