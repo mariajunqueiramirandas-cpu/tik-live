@@ -34,6 +34,8 @@ export interface SpeechOutput {
   play(cue: SpeechCue, signal: AbortSignal): Promise<void>;
   /** Stop whatever is on stage right now. */
   interrupt(): void;
+  /** Optional: a cue is ready ahead of time; stages can start loading its audio. */
+  prefetch?(cue: SpeechCue): void;
 }
 
 interface Pending {
@@ -138,7 +140,7 @@ export class SpeechPipeline {
       this.events.onDropped?.(utterance.text, verdict.reason, utterance.emotion, meta);
       return null;
     }
-    return {
+    const cue: SpeechCue = {
       id,
       text: utterance.text,
       emotion: utterance.emotion,
@@ -147,6 +149,9 @@ export class SpeechPipeline {
       ...(meta ? { meta } : {}),
       ...(trusted ? { operator: true } : {}),
     };
+    // Lines usually finish preparing while the previous one is still playing.
+    if (audio && this.current) this.output.prefetch?.(cue);
+    return cue;
   }
 
   private async drain(): Promise<void> {

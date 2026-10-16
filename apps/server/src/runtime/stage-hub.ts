@@ -155,12 +155,13 @@ export class StageHub implements SpeechOutput, StageNotifier {
 
   // ---- SpeechOutput -------------------------------------------------------
 
+  prefetch(cue: SpeechCue): void {
+    const audioUrl = this.audioUrlFor(cue);
+    if (audioUrl) this.broadcast({ t: "prefetch", audioUrl });
+  }
+
   play(cue: SpeechCue, signal: AbortSignal): Promise<void> {
-    let audioUrl: string | null = null;
-    if (cue.audio) {
-      this.options.audio.put(this.options.channelId, cue.id, cue.audio);
-      audioUrl = `/api/stage/${this.options.stageKey}/audio/${cue.id}`;
-    }
+    const audioUrl = this.audioUrlFor(cue);
     this.broadcast({ t: "speak", id: cue.id, text: cue.text, emotion: cue.emotion, audioUrl, durationMs: cue.durationMs });
     this.cueListener?.(cue, this.now());
 
@@ -186,6 +187,12 @@ export class StageHub implements SpeechOutput, StageNotifier {
   interrupt(): void {
     this.broadcast({ t: "stop" });
     for (const done of [...this.waiters.values()]) done();
+  }
+
+  private audioUrlFor(cue: SpeechCue): string | null {
+    if (!cue.audio) return null;
+    this.options.audio.put(this.options.channelId, cue.id, cue.audio);
+    return `/api/stage/${this.options.stageKey}/audio/${cue.id}`;
   }
 
   // ---- StageNotifier ------------------------------------------------------

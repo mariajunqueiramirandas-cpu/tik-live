@@ -38,6 +38,8 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
     audioUrl: z.string().nullable(),
     durationMs: z.number(),
   }),
+  /** Audio for an upcoming line: fetch and decode it now so playback starts instantly. */
+  z.object({ v, t: z.literal("prefetch"), audioUrl: z.string() }),
   z.object({ v, t: z.literal("stop") }),
   z.object({
     v,
@@ -150,6 +152,8 @@ export interface LiveEventSummary {
 export type StudioServerMessage =
   | { v: 1; t: "snapshot"; state: RuntimeSnapshot }
   | { v: 1; t: "patch"; state: Partial<RuntimeSnapshot> }
+  /** Sent right after the snapshot: recent lines and events, oldest first, so the room isn't empty on reload. */
+  | { v: 1; t: "history"; transcript: TranscriptLine[]; events: LiveEventSummary[] }
   | { v: 1; t: "transcript"; line: TranscriptLine }
   | { v: 1; t: "live-event"; event: LiveEventSummary }
   | { v: 1; t: "log"; level: "info" | "warn" | "error"; msg: string; at: number }

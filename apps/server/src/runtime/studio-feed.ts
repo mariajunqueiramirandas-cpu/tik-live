@@ -1,7 +1,9 @@
-import { PROTOCOL_VERSION, type RuntimeSnapshot, type StudioServerPayload } from "@tik-live/shared";
+import { PROTOCOL_VERSION, type LiveEventSummary, type RuntimeSnapshot, type StudioServerPayload, type TranscriptLine } from "@tik-live/shared";
 import { BACKPRESSURE_BYTES, type Peer } from "./peer";
 
 const DROPPABLE = new Set(["patch", "log", "live-event"]);
+const HISTORY_LINES = 80;
+const HISTORY_EVENTS = 150;
 
 /**
  * The realtime feed for a channel's open dashboards (ADR-0008): a full
@@ -10,10 +12,13 @@ const DROPPABLE = new Set(["patch", "log", "live-event"]);
 export class StudioFeed {
   private readonly peers = new Map<string, Peer>();
   private lastSent: Record<string, string> = {};
+  private readonly recentLines: TranscriptLine[] = [];
+  private readonly recentEvents: LiveEventSummary[] = [];
 
   attach(peer: Peer, snapshot: RuntimeSnapshot): void {
     this.peers.set(peer.id, peer);
     this.sendTo(peer, { t: "snapshot", state: snapshot });
+    this.sendTo(peer, { t: "history", transcript: [...this.recentLines], events: [...this.recentEvents] });
   }
 
   detach(peerId: string): void {
@@ -29,6 +34,8 @@ export class StudioFeed {
   }
 
   publish(payload: StudioServerPayload): void {
+    if (payload.t === "transcript") remember(this.recentLines, payload.line, HISTORY_LINES);
+    else if (payload.t === "live-event") remember(this.recentEvents, payload.event, HISTORY_EVENTS);
     if (this.peers.size === 0) return;
     const data = JSON.stringify({ v: PROTOCOL_VERSION, ...payload });
     const droppable = DROPPABLE.has(payload.t);
@@ -65,4 +72,9 @@ export class StudioFeed {
     // that's harmless, while resetting the baseline would starve older peers.
     if (any) this.publish({ t: "patch", state: changed });
   }
+}
+
+function remember<T>(list: T[], item: T, max: number): void {
+  list.push(item);
+  if (list.length > max) list.splice(0, list.length - max);
 }
