@@ -18,7 +18,7 @@
     /* Ink */
     --ink: #f4f0ff;
     --haze: #a397d6;
-    --mist: #7d72ad; /* tertiary text: placeholders, disabled (large text only) */
+    --mist: #8a80ba; /* tertiary text: hints, placeholders, timestamps (AA on every surface) */
     --hairline: rgb(163 151 214 / 0.18);
     --hairline-strong: rgb(163 151 214 / 0.32);
 
