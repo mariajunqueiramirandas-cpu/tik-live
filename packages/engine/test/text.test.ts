@@ -1,0 +1,75 @@
+import { describe, expect, it } from "bun:test";
+import { syllableCount, syllableEnvelope } from "../src/audio/envelope";
+import { layoutCaption, wordAtProgress } from "../src/text/layout";
+
+// Monospace stand-in: every character is 0.5em wide.
+const measure = (size: number) => (text: string) => text.length * size * 0.5;
+
+describe("layoutCaption", () => {
+  it("keeps short lines on one line at the largest size", () => {
+    const layout = layoutCaption("Hello chat", { maxWidth: 900, maxLines: 3, fontSizes: [64, 56, 48], measure });
+    expect(layout.lines).toBe(1);
+    expect(layout.fontSize).toBe(64);
+    expect(layout.words.map((w) => w.text)).toEqual(["Hello", "chat"]);
+  });
+
+  it("shrinks the font before exceeding the line limit", () => {
+    const text = "This is a much longer caption that will not fit on three lines at the largest size, surely not";
+    const layout = layoutCaption(text, { maxWidth: 600, maxLines: 3, fontSizes: [64, 56, 48], measure });
+    expect(layout.fontSize).toBeLessThan(64);
+    for (const width of layout.lineWidths) expect(width).toBeLessThanOrEqual(600);
+  });
+
+  it("balances lines instead of leaving a lonely last word", () => {
+    const text = "one two three four five six seven";
+    const layout = layoutCaption(text, { maxWidth: 32 * 12, maxLines: 3, fontSizes: [32], measure });
+    expect(layout.lines).toBe(2);
+    const [a, b] = layout.lineWidths as [number, number];
+    expect(Math.abs(a - b)).toBeLessThanOrEqual(64); // greedy wrapping would give 368 vs 144
+  });
+
+  it("handles empty text", () => {
+    const layout = layoutCaption("   ", { maxWidth: 900, maxLines: 3, fontSizes: [64], measure });
+    expect(layout.words).toEqual([]);
+  });
+});
+
+describe("wordAtProgress", () => {
+  const words = [{ text: "a" }, { text: "longword" }, { text: "b" }];
+
+  it("walks through words weighted by length", () => {
+    expect(wordAtProgress(words, 0)).toBe(0);
+    expect(wordAtProgress(words, 0.5)).toBe(1);
+    expect(wordAtProgress(words, 0.99)).toBe(2);
+    expect(wordAtProgress(words, 1)).toBe(3);
+    expect(wordAtProgress([], 0.5)).toBe(-1);
+  });
+});
+
+describe("syllable envelope", () => {
+  it("counts vowel groups", () => {
+    expect(syllableCount("hello")).toBe(2);
+    expect(syllableCount("strength")).toBe(1);
+    expect(syllableCount("animação")).toBe(4);
+    expect(syllableCount("brr")).toBe(1);
+  });
+
+  it("opens the mouth during syllables and closes it outside the line", () => {
+    const env = syllableEnvelope("hello there friend", 1800);
+    expect(env(-1)).toBe(0);
+    expect(env(1801)).toBe(0);
+    const samples = Array.from({ length: 90 }, (_, i) => env(i * 20));
+    expect(Math.max(...samples)).toBeGreaterThan(0.85);
+    expect(Math.min(...samples)).toBeLessThan(0.4);
+  });
+
+  it("shapes the mouth from each syllable's vowel", () => {
+    const env = syllableEnvelope("oo ee aa", 900);
+    const shape = { round: 0, wide: 0 };
+    // Three one-syllable words share the time with two pauses.
+    const unit = 900 / (3 * 1.6);
+    expect(env.shape(unit * 0.5, shape)).toEqual({ round: 1, wide: 0 });
+    expect(env.shape(unit * 2.1, shape)).toEqual({ round: 0, wide: 1 });
+    expect(env.shape(unit * 3.7, shape)).toEqual({ round: 0, wide: 0 });
+  });
+});

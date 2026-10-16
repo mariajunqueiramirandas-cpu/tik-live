@@ -1,0 +1,3 @@
+[test]
+# Playwright end-to-end specs live in e2e/ and use the *.e2e.ts suffix, so bun test never picks them up.
+preload = []

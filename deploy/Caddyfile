@@ -1,0 +1,22 @@
+# Automatic HTTPS, HTTP/3 and WebSocket proxying in front of the app (ADR-0015).
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Caddy replaces any client-sent X-Forwarded-For with the real address,
+	# which the app trusts (TRUST_PROXY=true).
+	reverse_proxy app:8080 {
+		# Long-lived stage and studio WebSockets.
+		stream_timeout 24h
+		stream_close_delay 5m
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

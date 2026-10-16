@@ -1,0 +1,25 @@
+{
+  "name": "tik-live",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun scripts/dev.ts",
+    "typecheck": "bun run --filter '*' typecheck && tsc -p tsconfig.e2e.json",
+    "test": "bun test",
+    "build": "bun run --filter @tik-live/web build && bun run --filter @tik-live/server build && bun run --filter @tik-live/broadcaster build",
+    "e2e": "playwright test",
+    "check": "bun run typecheck && bun run boundaries && bun test",
+    "boundaries": "bun scripts/check-boundaries.ts"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "^1.64.1",
+    "@types/bun": "^1.4.3",
+    "typescript": "^7.0.2"
+  }
+}

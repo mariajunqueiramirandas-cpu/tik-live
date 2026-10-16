@@ -1,0 +1,156 @@
+# Lantern on one VPS (ADR-0015). Run from this directory:
+#   docker compose up -d                      # caddy, app, db, backup
+#   docker compose --profile broadcast up -d  # also the cloud broadcaster
+name: lantern
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [edge]
+    logging: *logging
+
+  app:
+    image: ${APP_IMAGE:-lantern-app:local}
+    build:
+      context: ..
+      dockerfile: deploy/app.Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8080"
+      TRUST_PROXY: "true"
+      PUBLIC_URL: https://${DOMAIN}
+      DATABASE_URL: postgres://lantern:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}@db:5432/lantern
+      BROADCASTER_URL: http://broadcaster:8090
+      # Not "http://app:8080": "app" is an HSTS-preloaded TLD, so Chromium would force HTTPS.
+      BROADCAST_STAGE_ORIGIN: http://lantern-app:8080
+    read_only: true
+    tmpfs:
+      - /tmp
+    init: true
+    # The app drains on SIGTERM: flushes stores, tells stages to hold, closes sockets.
+    stop_grace_period: 25s
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      edge: {}
+      internal:
+        aliases: [lantern-app]
+    logging: *logging
+
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lantern
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: lantern
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-512MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-2GB}
+      - -c
+      - max_connections=60
+      - -c
+      - log_min_duration_statement=500
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lantern -d lantern"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    shm_size: 256mb
+    networks: [internal]
+    logging: *logging
+
+  backup:
+    image: ${BACKUP_IMAGE:-lantern-backup:local}
+    build:
+      context: ./backup
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: lantern
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: lantern
+      BACKUP_AT: ${BACKUP_AT:-03:15}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-lantern}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${BACKUP_S3_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${BACKUP_S3_REGION:-us-east-1}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    # Needs the internal network for the database and egress for S3 uploads.
+    networks: [internal, egress]
+    logging: *logging
+
+  broadcaster:
+    profiles: [broadcast]
+    image: ${BROADCASTER_IMAGE:-lantern-broadcaster:local}
+    build:
+      context: ..
+      dockerfile: deploy/broadcaster.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8090"
+      # Required by the broadcaster itself (24+ characters); it won't start without it.
+      BROADCASTER_TOKEN: ${BROADCASTER_TOKEN:-}
+      STAGE_ORIGINS: http://lantern-app:8080
+      BROADCAST_MAX_CONCURRENT: ${BROADCAST_MAX_CONCURRENT:-1}
+    init: true
+    shm_size: 1gb
+    stop_grace_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "${BROADCASTER_CPUS:-3}"
+          memory: 3g
+    # Internal for the app; egress to reach TikTok's RTMPS ingest.
+    networks: [internal, egress]
+    logging: *logging
+
+networks:
+  edge: {}
+  egress: {}
+  internal:
+    internal: true
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  db_data: {}

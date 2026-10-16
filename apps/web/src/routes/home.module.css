@@ -1,0 +1,139 @@
+@layer components {
+  .list {
+    display: grid;
+    gap: 0;
+    border-radius: var(--r-panel);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    overflow: hidden;
+  }
+  .row {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(200px, 1.4fr) minmax(150px, 1fr) minmax(200px, 1.2fr) auto;
+    align-items: center;
+    gap: var(--s-4);
+    padding: var(--s-3) var(--s-4);
+    min-height: 72px;
+  }
+  .row + .row {
+    border-top: 1px solid var(--hairline);
+  }
+  .row:hover {
+    background: var(--trench);
+  }
+  .rowLink {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+  }
+  /* The whole row is clickable through the name link. */
+  .rowLink::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .rowLink:focus-visible {
+    outline: none;
+  }
+  .rowLink:focus-visible::after {
+    box-shadow: inset 0 0 0 2px var(--glow);
+    border-radius: var(--r-panel);
+  }
+  .identity {
+    display: grid;
+    min-width: 0;
+  }
+  .name {
+    font-family: var(--font-display);
+    font-size: var(--t-19);
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .where {
+    color: var(--haze);
+    font-size: var(--t-12);
+  }
+  .status {
+    display: grid;
+    gap: 2px;
+  }
+  .watching {
+    color: var(--haze);
+    font-size: var(--t-12);
+  }
+  .trend {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+  }
+  .trendText {
+    display: grid;
+    font-size: var(--t-12);
+  }
+  .dim {
+    color: var(--haze);
+  }
+  .rowActions {
+    position: relative;
+    z-index: 1;
+  }
+
+  .usage {
+    display: grid;
+    gap: var(--s-2);
+    max-width: 520px;
+  }
+  .usageText {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--s-3);
+    color: var(--haze);
+  }
+  .usageText strong {
+    color: var(--ink);
+  }
+  .meter {
+    height: 6px;
+    border-radius: 99px;
+    background: var(--trench);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    overflow: hidden;
+  }
+  .meter span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--glow);
+  }
+  .meter span[data-high] {
+    background: var(--offering);
+  }
+
+  @media (max-width: 860px) {
+    .row {
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        "who status"
+        "trend trend";
+      row-gap: var(--s-2);
+    }
+    .rowLink {
+      grid-area: who;
+    }
+    .status {
+      grid-area: status;
+      justify-items: end;
+    }
+    .trend {
+      grid-area: trend;
+    }
+    .rowActions {
+      display: none;
+    }
+  }
+}

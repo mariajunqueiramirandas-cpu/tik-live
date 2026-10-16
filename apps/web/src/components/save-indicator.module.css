@@ -1,0 +1,29 @@
+@layer components {
+  .indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--t-12);
+    font-weight: 650;
+    color: var(--haze);
+  }
+  .icon {
+    width: 15px;
+    height: 15px;
+  }
+  .saved {
+    color: var(--glow);
+  }
+  .invalid,
+  .error {
+    color: var(--alarm);
+  }
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      rotate: 360deg;
+    }
+  }
+}
