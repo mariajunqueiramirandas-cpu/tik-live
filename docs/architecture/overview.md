@@ -63,7 +63,7 @@ describes the production system that replaces it.
 | Dashboard initial JS | Under 200 KB gzipped for the first route | Build-size check in CI |
 | API latency | p95 under 50 ms for non-AI endpoints | Request timing logs |
 | Recovery | A restarted server resumes every running channel within 10 s | Integration test plus a manual restart drill |
-| Capacity (one 4 vCPU / 8 GB VPS) | 50 concurrent channels in browser-source mode; about 2 cloud broadcasts at 720p (to be measured) | Load test (Phase 7) and the broadcast spike (Phase 6) |
+| Capacity (one 4 vCPU / 8 GB VPS) | 50 concurrent channels in browser-source mode; one 720p cloud broadcast next to the app (measured: about 1.8 vCPU each; two at once drop to about 29 fps on 4 vCPU, [ADR-0020](../adr/0020-broadcast-pipeline-avx2.md)) | Load test (Phase 7) and the broadcast spike (Phase 6) |
 | Security | No cross-tenant reads or writes; secrets encrypted at rest; strict CSP; no unauthenticated public dashboard | Tenant-scoping tests, production-guard test, security review checklist |
 
 ## 3. System context
@@ -90,8 +90,10 @@ There are two ways to get video to TikTok:
   TikTok LIVE Studio on their own PC. It costs us almost nothing to run, and
   this is the mode most creators will use.
 - **Cloud broadcast (beta):** the platform renders the stage itself and pushes
-  RTMP straight to TikTok, so no PC is needed. It is CPU-heavy, so it is
-  plan-gated ([ADR-0014](../adr/0014-cloud-broadcast.md)).
+  RTMP straight to TikTok, so no PC is needed. It is CPU-heavy (about
+  1.8 vCPU a stream on an AVX2 server), so it is plan-gated
+  ([ADR-0014](../adr/0014-cloud-broadcast.md),
+  [ADR-0020](../adr/0020-broadcast-pipeline-avx2.md)).
 
 ## 4. Containers
 
@@ -247,6 +249,7 @@ Decided in [ADR-0004](../adr/0004-monorepo-layout.md).
 | [0012](../adr/0012-ai-and-voice-pipeline.md) | Claude models, moderation, cost guardrails, TTS |
 | [0013](../adr/0013-billing-and-plans.md) | Plans in code, Mercado Pago billing, self-hosted mode |
 | [0014](../adr/0014-cloud-broadcast.md) | Cloud broadcast via headless Chromium and ffmpeg, as an isolated service |
+| [0020](../adr/0020-broadcast-pipeline-avx2.md) | Broadcast pipeline for AVX2 CPUs: Mesa llvmpipe, in-page H.264, copy into FLV |
 | [0015](../adr/0015-deployment.md) | Docker Compose on a VPS with Caddy, Postgres and backups |
 | [0016](../adr/0016-security.md) | Security model: tenancy, secrets, CSRF, CSP, rate limits, abuse |
 | [0017](../adr/0017-testing-strategy.md) | Testing strategy: bun test, PGlite, Playwright E2E, visual checks |

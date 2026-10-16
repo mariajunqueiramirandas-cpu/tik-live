@@ -201,7 +201,7 @@ complete; all ADRs accepted or superseded.
 | The unofficial TikTok connector breaks or misbehaves on Bun | Medium | High | `EventSource` interface; verify on staging in Phase 1; Node sidecar fallback; track dropped and unknown events |
 | TikTok tightens rules on AI hosts in regular LIVE | Medium | High | Non-removable AI disclosure; ToS excludes Shop LIVE; owner reviews TikTok guidelines before launch |
 | AI cost per live hour exceeds what plans can charge | Medium | High | Measured on staging; per-plan models; audience-aware pacing; budgets |
-| Stage engine too slow under SwiftShader for broadcast | Medium | Medium | 720p default; quality governor; measure in Phase 2; GPU host option |
+| Stage engine too slow under SwiftShader for broadcast | Medium | Medium | Happened (10 fps); fixed by Mesa llvmpipe, a quarter-resolution atmosphere and in-page H.264: 30 fps at about 1.8 vCPU ([ADR-0020](../adr/0020-broadcast-pipeline-avx2.md)) |
 | Bun.SQL driver churn | Low to medium | Medium | Pin versions; full DB integration suite; postgres-js fallback |
 | Identity provider integration surprises late (WebSocket auth, user sync, CSP) | Medium | Medium | Identity seam from day one; multi-user paths exercised through impersonation; both providers document Hono and React usage; integrate early in Phase 7 |
 | A development server exposed without auth | Medium | High | Production guard refuses dev mode without `DEV_GATE_PASSWORD`; spend budgets apply to dev users |
