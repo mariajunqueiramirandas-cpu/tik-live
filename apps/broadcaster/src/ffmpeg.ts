@@ -1,38 +1,81 @@
 import type { VideoSettings } from "@tik-live/shared";
 
+export interface AudioInput {
+  /** Unix socket ffmpeg listens on for the voice (16-bit little-endian stereo PCM). */
+  socketPath: string;
+  sampleRate: number;
+}
+
+export interface EncoderInput {
+  /** "h264": H.264 encoded by the stage, in FLV (see flv.ts), copied untouched. "raw": I420 frames for x264. */
+  video: "h264" | "raw";
+  /** x264's speed preset (raw input only). */
+  x264Preset?: string;
+}
+
 /**
- * ffmpeg turns the browser's WebM (VP8/Opus, the only codecs Chromium's
- * MediaRecorder offers) into what TikTok ingest expects: H.264 and AAC in
- * FLV, constant bitrate, a keyframe every two seconds (ADR-0014).
+ * Every input is fully described up front (the FLV opens with the avcC
+ * record; raw video and PCM are declared here), so ffmpeg has nothing to
+ * probe. Left to its default it reads 5 s of the live input first: 5 s of
+ * dead air on every start and restart. Without it the stream is out in about
+ * a second.
  */
-export function ffmpegArgs(output: string, video: VideoSettings): string[] {
+const NO_PROBE = ["-analyzeduration", "0", "-probesize", "32"];
+
+/**
+ * ffmpeg turns what the stage sends into what TikTok ingest expects: H.264
+ * and AAC in FLV, constant bitrate, a keyframe every two seconds (ADR-0014).
+ * Since ADR-0020 the stage normally encodes the video itself and ffmpeg only
+ * copies it and encodes the voice; with a browser that can't encode H.264,
+ * raw I420 frames come in and x264 (AVX2 assembly, picked at runtime)
+ * encodes them. Either way nothing is decoded or scaled.
+ */
+export function ffmpegArgs(output: string, video: VideoSettings, audio: AudioInput, input: EncoderInput = { video: "raw" }): string[] {
   const kbps = video.bitrateKbps;
+  const videoIn =
+    input.video === "h264"
+      ? [...NO_PROBE, "-f", "flv", "-thread_queue_size", "256", "-i", "pipe:0"]
+      : [...NO_PROBE, "-f", "rawvideo", "-pix_fmt", "yuv420p", "-video_size", `${video.width}x${video.height}`, "-framerate", String(video.fps), "-thread_queue_size", "64", "-i", "pipe:0"];
+  const videoOut =
+    input.video === "h264"
+      ? ["-c:v", "copy"]
+      : [
+          "-c:v", "libx264",
+          "-preset", input.x264Preset ?? "superfast",
+          "-tune", "zerolatency",
+          "-profile:v", "high",
+          // The stage converts with BT.709 limited range; say so, so players decode colors the same way.
+          "-colorspace", "bt709",
+          "-color_primaries", "bt709",
+          "-color_trc", "bt709",
+          "-color_range", "tv",
+          "-b:v", `${kbps}k`,
+          "-maxrate", `${kbps}k`,
+          "-bufsize", `${kbps * 2}k`,
+          "-g", String(video.fps * 2),
+          "-keyint_min", String(video.fps * 2),
+          "-sc_threshold", "0",
+        ];
   return [
     "-hide_banner",
     "-loglevel", "warning",
     "-nostats",
     "-progress", "pipe:2",
     "-stats_period", "5",
-    "-fflags", "+genpts",
+    ...videoIn,
+    ...NO_PROBE,
+    "-f", "s16le",
+    "-ar", String(audio.sampleRate),
+    "-ch_layout", "stereo",
     "-thread_queue_size", "1024",
-    "-f", "webm",
-    "-i", "pipe:0",
+    "-listen", "1",
+    "-i", `unix:${audio.socketPath}`,
     "-map", "0:v:0",
-    "-map", "0:a:0?",
-    "-vf", `scale=${video.width}:${video.height}:flags=bicubic,fps=${video.fps},format=yuv420p`,
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-tune", "zerolatency",
-    "-profile:v", "high",
-    "-b:v", `${kbps}k`,
-    "-maxrate", `${kbps}k`,
-    "-bufsize", `${kbps * 2}k`,
-    "-g", String(video.fps * 2),
-    "-keyint_min", String(video.fps * 2),
-    "-sc_threshold", "0",
+    "-map", "1:a:0",
+    ...videoOut,
     "-c:a", "aac",
     "-b:a", "128k",
-    "-ar", "44100",
+    "-ar", "48000",
     "-ac", "2",
     "-f", "flv",
     "-flvflags", "no_duration_filesize",
@@ -57,6 +100,15 @@ export class ProgressParser {
   /** True for lines that belong to progress output (not warnings worth logging). */
   static isProgressLine(line: string): boolean {
     return /^[a-z_0-9]+=/.test(line.trim());
+  }
+
+  /**
+   * Warnings that are expected and say nothing about this stream. The frame
+   * rate one comes from not probing the input: the stage's FLV declares the
+   * rate in its metadata instead.
+   */
+  static isNoise(line: string): boolean {
+    return /not enough frames to estimate rate/.test(line);
   }
 
   feed(line: string): EncoderStats | null {

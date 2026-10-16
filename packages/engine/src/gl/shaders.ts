@@ -40,7 +40,11 @@ uniform vec3 u_gold;
 uniform vec2 u_orb;
 uniform float u_glow;
 uniform float u_flash;
+uniform vec4 u_halo;     // body radius (stage px), squash, voice amplitude, character alpha
+uniform float u_haloAa;  // about two screen pixels, in body radii
 ${NOISE}
+// Rendered at reduced resolution into an offscreen buffer (everything here is
+// soft); UPSCALE_FRAGMENT brings it to full size and adds the dither.
 void main() {
   vec2 px = v_uv * u_res;
   float y = v_uv.y;
@@ -70,10 +74,43 @@ void main() {
   col += (u_primary * 0.33 + u_secondary * 0.14) * exp(-dist / 270.0) * u_glow;
   col += u_gold * exp(-dist / 230.0) * u_flash * 0.45;
 
+  // The character's halo. It used to be part of the orb pass, which then ran
+  // the whole face shader over a quad mostly covered by halo; here it costs a
+  // sixteenth of the pixels. The body, drawn on top at full resolution, covers
+  // the inside.
+  if (u_halo.w > 0.0) {
+    vec2 bp = (px - u_orb) / u_halo.x;
+    bp /= vec2(1.0 + u_halo.y, 1.0 - u_halo.y);
+    float ang = atan(bp.y, bp.x);
+    float wob = 1.0 + 0.025 * sin(3.0 * ang + u_time * 1.7) + 0.018 * sin(2.0 * ang - u_time * 1.1) + u_halo.z * 0.022 * sin(5.0 * ang + u_time * 7.0);
+    float dBody = length(bp) - wob;
+    float halo = exp(-max(dBody, 0.0) * 4.0) * (0.3 + u_halo.z * 0.35 + u_flash * 0.35) * smoothstep(-u_haloAa, u_haloAa, dBody) * u_halo.w;
+    vec3 haloCol = mix(u_primary, u_secondary, 0.3) + u_gold * u_flash * 0.4;
+    col = col * (1.0 - 0.5 * halo) + haloCol * halo;
+  }
+
   vec2 vv = v_uv - 0.5;
   col *= 1.0 - dot(vv, vv) * 0.55;
-  // Dither so gradients don't band after video encoding.
-  col += (hash(px + fract(u_time * 7.0)) - 0.5) / 255.0;
+  o = vec4(col, 1.0);
+}`;
+
+/**
+ * Scales the reduced-resolution atmosphere to full size and dithers it, so
+ * gradients don't band after video encoding. The dither pattern is fixed,
+ * not animated: noise that changes every frame forces video encoders to
+ * re-encode the whole background each frame, instead of skipping it.
+ */
+export const UPSCALE_FRAGMENT = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 o;
+uniform sampler2D u_tex;
+uniform vec2 u_res;
+${NOISE}
+void main() {
+  // Render targets store rows bottom-up; v_uv runs top-down.
+  vec3 col = texture(u_tex, vec2(v_uv.x, 1.0 - v_uv.y)).rgb;
+  col += (hash(v_uv * u_res) - 0.5) / 255.0;
   o = vec4(col, 1.0);
 }`;
 
@@ -264,10 +301,8 @@ void main() {
   col = mix(col, u_ink, ink);
   col = mix(col, vec3(1.0), shine * 0.92);
 
-  // Soft outer glow, brighter when talking or receiving gifts.
-  float glow = exp(-max(dBody, 0.0) * 4.0) * (0.3 + u_amp * 0.35 + u_flash * 0.35) * (1.0 - body);
-  vec3 glowCol = mix(u_primary, u_secondary, 0.3) + u_gold * u_flash * 0.4;
-  o = vec4(col * body + glowCol * glow, body + glow * 0.5) * u_alpha;
+  // The soft outer glow is drawn with the atmosphere (ATMOSPHERE_FRAGMENT).
+  o = vec4(col * body, body) * u_alpha;
 }`;
 
 export const VOICE_LINE_FRAGMENT = /* glsl */ `#version 300 es
@@ -309,6 +344,17 @@ void main() {
   o = vec4(col, clamp(alpha, 0.0, 1.0)) * u_alpha;
 }`;
 
+/** A sprite showing one texture (most frames: no cross-fade running). */
+export const SPRITE_SINGLE_FRAGMENT = /* glsl */ `#version 300 es
+precision mediump float;
+in vec2 v_uv;
+out vec4 o;
+uniform sampler2D u_tex;
+uniform float u_opacity;
+void main() {
+  o = texture(u_tex, v_uv) * u_opacity;
+}`;
+
 export const SPRITE_FRAGMENT = /* glsl */ `#version 300 es
 precision mediump float;
 in vec2 v_uv;
@@ -319,4 +365,61 @@ uniform float u_mix;
 uniform float u_opacity;
 void main() {
   o = mix(texture(u_tex, v_uv), texture(u_tex2, v_uv), u_mix) * u_opacity;
+}`;
+
+// ---------------------------------------------------------------------------
+// Cloud broadcast capture (ADR-0020): the finished frame, converted on the
+// rasterizer to I420 (BT.709, limited range) in the exact byte layout the
+// encoder reads, so the CPU never converts or reorders pixels. The target is
+// W/4 texels wide (4 samples per RGBA texel) and 1.5 * H rows: the Y plane,
+// then U and V, two chroma rows per target row. Rows are numbered from the
+// bottom, which is the order readPixels returns them in.
+
+/** Covers the whole viewport; the YUV shaders work from gl_FragCoord. */
+export const FULLSCREEN_VERTEX = /* glsl */ `#version 300 es
+layout(location = 0) in vec2 a_corner;
+void main() {
+  gl_Position = vec4(a_corner * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/** Luma: target rows 0..H-1, four pixels per texel. */
+export const YUV_LUMA_FRAGMENT = /* glsl */ `#version 300 es
+precision highp float;
+out vec4 o;
+uniform sampler2D u_frame;  // the stage, W x H, rows bottom-up
+uniform ivec2 u_size;
+const vec3 KY = vec3(0.2126, 0.7152, 0.0722);
+float luma(int x, int row) {
+  // Image row "row" counts from the top; the frame texture stores it at H-1-row.
+  return dot(texelFetch(u_frame, ivec2(x, u_size.y - 1 - row), 0).rgb, KY);
+}
+void main() {
+  int x = int(gl_FragCoord.x) * 4;
+  int row = int(gl_FragCoord.y);
+  o = vec4(luma(x, row), luma(x + 1, row), luma(x + 2, row), luma(x + 3, row)) * (219.0 / 255.0) + 16.0 / 255.0;
+}`;
+
+/** Chroma: target rows H..1.5H-1 hold U then V, each 2x2 block averaged by one bilinear fetch. */
+export const YUV_CHROMA_FRAGMENT = /* glsl */ `#version 300 es
+precision highp float;
+out vec4 o;
+uniform sampler2D u_frame;
+uniform ivec2 u_size;
+const vec3 KU = vec3(-0.1146, -0.3854, 0.5);
+const vec3 KV = vec3(0.5, -0.4542, -0.0458);
+vec3 block(int cx, int crow) {
+  vec2 size = vec2(u_size);
+  // The shared corner of the 2x2 block: bilinear filtering averages all four.
+  return texture(u_frame, vec2(float(2 * cx + 1) / size.x, 1.0 - float(2 * crow + 1) / size.y)).rgb;
+}
+void main() {
+  int k = int(gl_FragCoord.y) - u_size.y;      // 0 .. H/2 - 1
+  int quarter = u_size.y / 4;
+  vec3 K = k < quarter ? KU : KV;
+  k -= k < quarter ? 0 : quarter;
+  int perRow = u_size.x / 8;                    // texels per chroma row (W/2 samples)
+  int c = int(gl_FragCoord.x);
+  int crow = 2 * k + (c >= perRow ? 1 : 0);
+  int cx = (c >= perRow ? c - perRow : c) * 4;
+  o = vec4(dot(block(cx, crow), K), dot(block(cx + 1, crow), K), dot(block(cx + 2, crow), K), dot(block(cx + 3, crow), K)) * (224.0 / 255.0) + 128.0 / 255.0;
 }`;

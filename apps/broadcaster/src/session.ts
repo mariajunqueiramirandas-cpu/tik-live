@@ -1,29 +1,51 @@
+import type { CaptureSink } from "./capture-server";
 import type { EncoderStats } from "./ffmpeg";
 import type { Logger } from "./log";
+import { AvPacer, type AvTarget } from "./pacer";
 import type { BroadcastState, BroadcastStatus, VideoSettings } from "@tik-live/shared";
 import { redact } from "./rtmp";
 
-/** The browser side: a stage page recording itself. */
+/** The browser side: a stage page that streams its frames and voice once started (ADR-0020). */
+/** What the stage sends: the voice's sample rate, and video as H.264 it encoded or raw I420 frames. */
+export interface CaptureFormat {
+  sampleRate: number;
+  video: "h264" | "raw";
+}
+
 export interface StageCapture {
-  /** Starts MediaRecorder; chunks of WebM arrive through `onChunk`. */
-  record(onChunk: (chunk: Uint8Array) => void): Promise<void>;
+  /** Starts capturing; video and voice (16-bit stereo PCM) go to `sink`. */
+  start(sink: CaptureSink): Promise<CaptureFormat>;
   /** Resolves with a reason when the page crashes, closes or the browser dies. */
   readonly closed: Promise<string>;
   close(): Promise<void>;
 }
 
-/** The ffmpeg side. */
-export interface Encoder {
-  write(chunk: Uint8Array): void;
+/** The ffmpeg side: raw frames and PCM in, FLV to the ingest server out. */
+export interface Encoder extends AvTarget {
   /** Resolves with the exit code. */
   readonly exited: Promise<number>;
   kill(): void;
 }
 
+export interface EncoderEvents {
+  onStats: (s: EncoderStats) => void;
+  onLog: (line: string) => void;
+}
+
 export interface PipelineFactory {
   openStage(stageUrl: string, video: VideoSettings): Promise<StageCapture>;
-  spawnEncoder(output: string, video: VideoSettings, events: { onStats: (s: EncoderStats) => void; onLog: (line: string) => void }): Encoder;
+  spawnEncoder(output: string, video: VideoSettings, format: CaptureFormat, events: EncoderEvents): Encoder;
 }
+
+/**
+ * How much later voice is written than video, to keep lips and voice
+ * together, measured on the reference setup. Voice reaches the encoder about
+ * 15 ms after it was rendered (half a 20 ms packet, transit). Raw frames
+ * arrive about 80 ms after they were drawn (29 ms asynchronous readback,
+ * 48 ms in the pacer's queue, transit); H.264 from the stage about 60 ms
+ * (readback, half a frame waiting for the page's encode tick, encoding).
+ */
+export const AUDIO_DELAY_MS: Record<CaptureFormat["video"], number> = { raw: 65, h264: 45 };
 
 export interface SessionConfig {
   channelId: string;
@@ -57,7 +79,7 @@ export class BroadcastSession {
   private stats: EncoderStats | null = null;
   private stopped = false;
   private wake: (() => void) | null = null;
-  private current: { stage: StageCapture | null; encoder: Encoder | null } = { stage: null, encoder: null };
+  private current: { stage: StageCapture | null; encoder: Encoder | null; pacer: AvPacer | null } = { stage: null, encoder: null, pacer: null };
   private readonly done: Promise<void>;
 
   constructor(
@@ -77,7 +99,8 @@ export class BroadcastSession {
       detail: this.detail,
       since: this.since.toISOString(),
       restarts: this.restarts,
-      stats: this.stats,
+      // Frames the stage didn't deliver in time (repeated) count as dropped.
+      stats: this.stats ? { ...this.stats, droppedFrames: (this.stats.droppedFrames ?? 0) + (this.current.pacer?.counters.repeated ?? 0) } : null,
     };
   }
 
@@ -131,25 +154,53 @@ export class BroadcastSession {
   /** Runs until something breaks; returns why. */
   private async runOnce(): Promise<string> {
     if (this.state !== "failed" && this.state !== "retrying") this.setState("starting", "Opening the stage");
-    let firstChunk = true;
+    const { video } = this.config;
     // Stage first: the encoder only starts once there's something to encode.
-    const stage = await this.factory.openStage(this.config.stageUrl, this.config.video);
+    const stage = await this.factory.openStage(this.config.stageUrl, video);
     this.current.stage = stage;
     if (this.stopped) return "stopped";
-    const encoder = this.factory.spawnEncoder(this.config.output, this.config.video, {
+    // Frames can arrive before start() resolves. Until the pacer exists they're
+    // held, so an encoded stream keeps its first keyframe.
+    let pacer: AvPacer | null = null;
+    const early: Uint8Array[] = [];
+    const format = await stage.start({
+      video: (frame) => (pacer ? pacer.video(frame) : early.length < 120 && early.push(frame)),
+      audio: (pcm) => pacer?.audio(pcm),
+    });
+    if (this.stopped) return "stopped";
+    pacer = new AvPacer({
+      video: format.video === "h264" ? "stream" : "frames",
+      fps: video.fps,
+      frameBytes: (video.width * video.height * 3) / 2,
+      sampleRate: format.sampleRate,
+      channels: 2,
+      audioDelayMs: AUDIO_DELAY_MS[format.video],
+    });
+    for (const frame of early.splice(0)) pacer.video(frame);
+    this.current.pacer = pacer;
+    this.log.info("capture started", { video: format.video === "h264" ? "H.264 from the stage" : "raw frames to x264", sampleRate: format.sampleRate });
+    const encoder = this.factory.spawnEncoder(this.config.output, video, format, {
       onStats: (stats) => {
         this.stats = stats;
       },
       onLog: (line) => this.log.warn("ffmpeg", { line: redact(line, [this.config.streamKey]) }),
     });
     this.current.encoder = encoder;
-    await stage.record((chunk) => {
-      encoder.write(chunk);
-      if (firstChunk) {
-        firstChunk = false;
-        this.setState("live", "Streaming");
-        this.log.info("broadcast live");
-      }
+    // Every 30 s: frames written, repeated (stage late), skipped (stage early), queue delay.
+    const statsTimer = setInterval(() => this.log.info("pacing", { ...pacer.counters }), 30_000);
+    void stage.closed.finally(() => clearInterval(statsTimer));
+    void encoder.exited.finally(() => clearInterval(statsTimer));
+    let first = true;
+    pacer.attach({
+      writeVideo: (frame) => {
+        encoder.writeVideo(frame);
+        if (first) {
+          first = false;
+          this.setState("live", "Streaming");
+          this.log.info("broadcast live");
+        }
+      },
+      writeAudio: (pcm) => encoder.writeAudio(pcm),
     });
     return Promise.race([
       encoder.exited.then((code) => `The encoder stopped (exit ${code})`),
@@ -161,9 +212,10 @@ export class BroadcastSession {
   }
 
   private async teardown(): Promise<void> {
-    const { stage, encoder } = this.current;
-    this.current = { stage: null, encoder: null };
+    const { stage, encoder, pacer } = this.current;
+    this.current = { stage: null, encoder: null, pacer: null };
     this.stats = null;
+    pacer?.stop();
     encoder?.kill();
     await stage?.close().catch(() => undefined);
   }

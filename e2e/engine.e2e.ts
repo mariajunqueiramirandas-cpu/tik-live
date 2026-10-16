@@ -84,3 +84,49 @@ test("the stage recovers from a lost GPU context", async ({ page }) => {
   const telemetry = await page.evaluate(() => (window as any).__lab.telemetry());
   expect(telemetry.error).toBeNull();
 });
+
+test("broadcast capture reads the stage back as I420, top row first", async ({ page }) => {
+  const W = 360;
+  const H = 640;
+  const result = await page.evaluate(
+    async ([w, h]) => {
+      const lab = (window as any).__lab;
+      const frames: Uint8Array[] = [];
+      const stop = lab.engine.startCapture({ width: w, height: h, onFrame: (f: Uint8Array) => frames.push(f.slice()) });
+      // Readback is asynchronous: frames arrive a few draws later.
+      for (let i = 0; i < 60 && frames.length < 3; i++) {
+        lab.frame(2 + i / 30);
+        await new Promise((r) => setTimeout(r, 15));
+      }
+      const stats = lab.engine.captureStats();
+      stop();
+      const frame = frames.at(-1)!;
+      // Mean luma of an 8x8 block centred on a stage point (1080x1920 coordinates, y down).
+      const luma = (sx: number, sy: number) => {
+        const cx = Math.round((sx / 1080) * w);
+        const cy = Math.round((sy / 1920) * h);
+        let sum = 0;
+        for (let y = cy - 4; y < cy + 4; y++) for (let x = cx - 4; x < cx + 4; x++) sum += frame[y * w + x]!;
+        return sum / 64;
+      };
+      let [yMin, yMax, cMin, cMax] = [255, 0, 255, 0];
+      for (let i = 0; i < w * h; i++) [yMin, yMax] = [Math.min(yMin, frame[i]!), Math.max(yMax, frame[i]!)];
+      for (let i = w * h; i < frame.length; i++) [cMin, cMax] = [Math.min(cMin, frame[i]!), Math.max(cMax, frame[i]!)];
+      return { count: frames.length, bytes: frame.length, orb: luma(540, 625), below: luma(540, 1920 - 625), yMin, yMax, cMin, cMax, stats };
+    },
+    [W, H] as const,
+  );
+  expect(result.count, "frames delivered").toBeGreaterThanOrEqual(3);
+  expect(result.bytes).toBe(W * H * 1.5);
+  // BT.709 limited range: luma 16-235, chroma 16-240.
+  expect(result.yMin).toBeGreaterThanOrEqual(16);
+  expect(result.yMax).toBeLessThanOrEqual(235);
+  expect(result.cMin).toBeGreaterThanOrEqual(16);
+  expect(result.cMax).toBeLessThanOrEqual(240);
+  // The orb sits in the upper half; flipped rows would put it in the lower half.
+  expect(result.orb - result.below, `orb ${result.orb} vs mirrored ${result.below}`).toBeGreaterThan(40);
+  expect(result.stats.frames).toBeGreaterThanOrEqual(3);
+  // Stopping hands drawing back to the canvas.
+  await page.evaluate(() => (window as any).__lab.frame(5));
+  expect(brightness(await probe(page, 540, 625))).toBeGreaterThan(300);
+});

@@ -17,7 +17,8 @@ export interface PlaybackHandle {
 
 export interface AudioEngineOptions {
   muted?: boolean;
-  capture?: boolean;
+  /** Fixes the AudioContext's rate (cloud broadcast: 48 kHz, what the encoder is told). */
+  sampleRate?: number;
   now?: () => number;
   fetch?: (url: string) => Promise<Response>;
 }
@@ -30,7 +31,6 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private output: GainNode | null = null;
-  private capture: MediaStreamAudioDestinationNode | null = null;
   private readonly samples = new Float32Array(1024);
   private readonly spectrum = new Uint8Array(512);
   private source: AudioBufferSourceNode | null = null;
@@ -79,15 +79,13 @@ export class AudioEngine {
     this.applyGain();
   }
 
-  /** A MediaStream of the voice, for cloud broadcast capture. */
-  captureStream(): MediaStream | null {
+  /**
+   * The voice as it leaves the engine, before volume and mute: cloud
+   * broadcast capture connects its PCM tap here (ADR-0020).
+   */
+  tap(): { context: AudioContext; node: AudioNode } | null {
     const ctx = this.ensure();
-    if (!ctx) return null;
-    if (!this.capture) {
-      this.capture = ctx.createMediaStreamDestination();
-      this.analyser?.connect(this.capture);
-    }
-    return this.capture.stream;
+    return ctx && this.analyser ? { context: ctx, node: this.analyser } : null;
   }
 
   /** Starts fetching and decoding a clip so `play` can start it without delay. */
@@ -217,16 +215,12 @@ export class AudioEngine {
   private ensure(): AudioContext | null {
     if (this.ctx) return this.ctx;
     if (typeof AudioContext === "undefined") return null;
-    const ctx = new AudioContext({ latencyHint: "interactive" });
+    const ctx = new AudioContext({ latencyHint: "interactive", ...(this.options.sampleRate ? { sampleRate: this.options.sampleRate } : {}) });
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 1024;
     this.analyser.smoothingTimeConstant = 0.5;
     this.output = ctx.createGain();
     this.analyser.connect(this.output).connect(ctx.destination);
-    if (this.options.capture) {
-      this.capture = ctx.createMediaStreamDestination();
-      this.analyser.connect(this.capture);
-    }
     ctx.addEventListener("statechange", () => {
       const state: AudioState = ctx.state === "running" ? "running" : "suspended";
       for (const listener of this.stateListeners) listener(state);

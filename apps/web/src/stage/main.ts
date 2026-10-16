@@ -49,15 +49,19 @@ if (role !== "broadcast" && !isObs) {
   sync();
 }
 
-// The cloud broadcaster drives the page through this handle (ADR-0014).
+// The cloud broadcaster drives the page through this handle (ADR-0014, ADR-0020).
+// The capture code loads only here, so OBS sources never download it.
 if (role === "broadcast") {
   (window as unknown as { __lantern: unknown }).__lantern = {
     engine,
     connection,
-    captureStream(frameRate = 30): MediaStream {
-      const stream = canvas.captureStream(frameRate);
-      for (const track of engine.audio.captureStream()?.getAudioTracks() ?? []) stream.addTrack(track);
-      return stream;
+    async startCapture(request: import("./capture").CaptureRequest) {
+      const { startCapture } = await import("./capture");
+      return startCapture(engine, request);
+    },
+    async captureStats() {
+      const { counters } = await import("./capture");
+      return { ...engine.captureStats?.(), ...counters };
     },
   };
 }

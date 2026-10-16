@@ -1,4 +1,5 @@
 export {
+  BROADCAST_SAMPLE_RATE,
   createEngine,
   Engine,
   ENGINE_VERSION,
@@ -12,6 +13,7 @@ export {
   type StageEngine,
   type Telemetry,
 } from "./engine";
+export { FrameCapture, type CaptureOptions, type CaptureStats } from "./capture";
 export {
   CLOSE_GONE,
   CLOSE_REVOKED,
