@@ -14,6 +14,7 @@ optional cloud broadcaster.
 | `db` | Postgres 17 | No (internal network only) |
 | `backup` | Nightly `pg_dump`, 7 daily and 4 weekly copies, optional S3 upload | No |
 | `broadcaster` | Cloud broadcast: renders the stage and streams to TikTok (profile `broadcast`) | No |
+| `tts` | Self-hosted Brazilian Portuguese voice, Pocket TTS (profile `tts`, [ADR-0021](../docs/adr/0021-self-hosted-tts.md)) | No |
 
 ## 1. Prepare the server
 
@@ -54,7 +55,8 @@ Fill in `.env`. The essentials:
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24` |
 | `DEV_GATE_PASSWORD` | Required while `AUTH_MODE=dev` (no sign-in yet): the whole site asks for this password, except stage links, webhooks and health checks |
 | `ANTHROPIC_API_KEY` | Without it, hosts run an offline scripted brain |
-| `ELEVENLABS_API_KEY` | Without it, hosts speak in captions only |
+| `ELEVENLABS_API_KEY` | Without it (and without the self-hosted voice), hosts speak in captions only |
+| `POCKET_TTS_SECRET` | The self-hosted voice: `openssl rand -hex 24`, then `docker compose --profile tts up -d --build` |
 | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago; leave both empty to run without billing |
 
 The app checks its configuration at boot and refuses to start with a clear

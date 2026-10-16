@@ -1,43 +1,90 @@
+import type { VoiceSettings } from "@tik-live/shared";
 import type { Logger } from "../log";
+import { speakPocket, type AudioClip } from "../runtime/voice/tts";
+
+export type VoiceProvider = Exclude<VoiceSettings["provider"], "none">;
 
 export interface VoiceOption {
   id: string;
+  provider: VoiceProvider;
   name: string;
   previewUrl: string | null;
   description: string | null;
   tags: string[];
 }
 
+export interface PocketCatalogOptions {
+  url: string;
+  secret: string;
+}
+
 const CACHE_MS = 60 * 60 * 1000;
+const SAMPLE_TEXT = "Oi, pessoal! Bem-vindos à live. Hoje eu comando o show, então manda um oi no chat!";
 
 /**
  * The voices creators can pick from: the ElevenLabs voices available to the
- * platform's account, fetched live (so voice ids never go stale) and cached.
+ * platform's account and the voices the Pocket TTS sidecar ships, fetched live
+ * (so voice ids never go stale) and cached.
  */
 export class VoiceCatalog {
   private cache: { at: number; voices: VoiceOption[] } | null = null;
   private inflight: Promise<VoiceOption[]> | null = null;
+  private pocketCache: { at: number; voices: VoiceOption[] } | null = null;
+  private pocketInflight: Promise<VoiceOption[]> | null = null;
+  private readonly samples = new Map<string, Promise<AudioClip>>();
 
   constructor(
     private readonly apiKey: string | undefined,
     private readonly log: Logger,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly pocket: PocketCatalogOptions | null = null,
   ) {}
 
   get enabled(): boolean {
-    return Boolean(this.apiKey);
+    return this.providers.length > 0;
+  }
+
+  get providers(): VoiceProvider[] {
+    return [...(this.apiKey ? (["elevenlabs"] as const) : []), ...(this.pocket ? (["pocket"] as const) : [])];
   }
 
   async list(): Promise<VoiceOption[]> {
-    if (!this.apiKey) return [];
-    if (this.cache && Date.now() - this.cache.at < CACHE_MS) return this.cache.voices;
-    this.inflight ??= this.fetchVoices().finally(() => {
+    const [eleven, pocket] = await Promise.all([this.listElevenLabs(), this.listPocket()]);
+    return [...eleven, ...pocket];
+  }
+
+  /** A short spoken sample of a Pocket voice, synthesized once per voice; null for an unknown voice. */
+  async pocketSample(voice: string): Promise<AudioClip | null> {
+    const pocket = this.pocket;
+    if (!pocket || !(await this.listPocket()).some((v) => v.id === voice)) return null;
+    let sample = this.samples.get(voice);
+    if (!sample) {
+      sample = speakPocket({ ...pocket, voice, fetch: this.fetchImpl }, SAMPLE_TEXT);
+      this.samples.set(voice, sample);
+      sample.catch(() => this.samples.delete(voice));
+    }
+    return sample;
+  }
+
+  private listElevenLabs(): Promise<VoiceOption[]> {
+    if (!this.apiKey) return Promise.resolve([]);
+    if (this.cache && Date.now() - this.cache.at < CACHE_MS) return Promise.resolve(this.cache.voices);
+    this.inflight ??= this.fetchElevenLabs().finally(() => {
       this.inflight = null;
     });
     return this.inflight;
   }
 
-  private async fetchVoices(): Promise<VoiceOption[]> {
+  private listPocket(): Promise<VoiceOption[]> {
+    if (!this.pocket) return Promise.resolve([]);
+    if (this.pocketCache && Date.now() - this.pocketCache.at < CACHE_MS) return Promise.resolve(this.pocketCache.voices);
+    this.pocketInflight ??= this.fetchPocket().finally(() => {
+      this.pocketInflight = null;
+    });
+    return this.pocketInflight;
+  }
+
+  private async fetchElevenLabs(): Promise<VoiceOption[]> {
     try {
       const response = await this.fetchImpl("https://api.elevenlabs.io/v1/voices", {
         headers: { "xi-api-key": this.apiKey as string },
@@ -50,6 +97,7 @@ export class VoiceCatalog {
       const voices = (body.voices ?? [])
         .map((v) => ({
           id: v.voice_id,
+          provider: "elevenlabs" as const,
           name: v.name,
           previewUrl: v.preview_url ?? null,
           description: v.description ?? v.labels?.description ?? null,
@@ -61,6 +109,33 @@ export class VoiceCatalog {
     } catch (err) {
       this.log.warn("could not load voices from ElevenLabs", err);
       return this.cache?.voices ?? [];
+    }
+  }
+
+  private async fetchPocket(): Promise<VoiceOption[]> {
+    const pocket = this.pocket as PocketCatalogOptions;
+    try {
+      const response = await this.fetchImpl(`${pocket.url.replace(/\/+$/, "")}/healthz`, { signal: AbortSignal.timeout(5_000) });
+      if (!response.ok) throw new Error(`Pocket TTS ${response.status}`);
+      const body = (await response.json()) as { voices?: unknown };
+      const ids = Array.isArray(body.voices) ? body.voices.filter((v): v is string => typeof v === "string" && /^[a-z0-9_-]{1,64}$/i.test(v)) : [];
+      const voices = ids
+        .map((id) => ({
+          id,
+          provider: "pocket" as const,
+          name: id.charAt(0).toUpperCase() + id.slice(1),
+          previewUrl: `/api/voices/pocket/${encodeURIComponent(id)}/sample`,
+          // Kyutai's Portuguese release: rafael is the one native speaker (services/tts/README.md).
+          description: id === "rafael" ? "Native Brazilian Portuguese speaker" : "Speaks Brazilian Portuguese with a foreign accent",
+          tags: id === "rafael" ? ["Portuguese", "native"] : ["Portuguese"],
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      // A warming sidecar answers 503: don't cache an empty list for an hour.
+      if (voices.length > 0) this.pocketCache = { at: Date.now(), voices };
+      return voices;
+    } catch (err) {
+      this.log.warn("could not load voices from Pocket TTS", err);
+      return this.pocketCache?.voices ?? [];
     }
   }
 }

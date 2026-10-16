@@ -12,7 +12,7 @@ export const tiktokHandleSchema = z
   .pipe(z.string().regex(/^[A-Za-z0-9._]{2,24}$/, "That doesn't look like a TikTok handle"));
 
 export const voiceSettingsSchema = z.object({
-  provider: z.enum(["elevenlabs", "none"]).default("none"),
+  provider: z.enum(["elevenlabs", "pocket", "none"]).default("none"),
   voiceId: z.string().trim().max(64).nullable().default(null),
 });
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;

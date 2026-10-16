@@ -80,7 +80,7 @@ export function channelRoutes(deps: AppDeps) {
       if (!check.ok) return problem(c, 402, check.code, check.message);
       const preset = findPreset(input.presetId);
       const stage = await newStageKey();
-      const voice: VoiceSettings = deps.config.ttsEnabled ? { provider: "elevenlabs", voiceId: null } : { provider: "none", voiceId: null };
+      const voice: VoiceSettings = { provider: deps.voices.providers[0] ?? "none", voiceId: null };
       const row = await createChannel(deps.db, {
         id: Bun.randomUUIDv7(),
         ownerId: user.id,

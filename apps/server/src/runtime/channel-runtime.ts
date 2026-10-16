@@ -32,7 +32,7 @@ import { StreamRecorder } from "./stream-recorder";
 import type { StudioFeed } from "./studio-feed";
 import { UsageMeter, type UsageReport } from "./usage";
 import { SpeechPipeline, type SpeechCue } from "./voice/pipeline";
-import { ElevenLabsTts, NoTts, type TtsProvider } from "./voice/tts";
+import { ElevenLabsTts, NoTts, PocketTts, type TtsProvider } from "./voice/tts";
 
 export interface RuntimeContext {
   db: Db;
@@ -139,10 +139,11 @@ export class ChannelRuntime {
       log: this.log,
       ...(this.moderator ? { moderator: this.moderator } : {}),
     });
-    this.host = this.options.makeHost?.(channel) ?? this.defaultHost(channel);
+    const tts = this.options.makeTts?.(channel) ?? this.defaultTts(channel);
+    this.host = this.options.makeHost?.(channel) ?? this.defaultHost(channel, tts.language);
 
     this.speech = new SpeechPipeline(
-      this.options.makeTts?.(channel) ?? this.defaultTts(channel),
+      tts,
       this.gate,
       stage,
       {
@@ -237,11 +238,14 @@ export class ChannelRuntime {
     this.triage.reconfigure({ blocklist: channel.safety.blocklist, hostName: channel.persona.name });
     this.gate.setBlocklist(channel.safety.blocklist);
     this.moderator?.updateSettings(channel.safety);
-    this.host.reconfigure({ persona: channel.persona, safety: channel.safety });
-    this.director.reconfigure(channel.persona);
+    let speechLanguage: string | null | undefined;
     if (JSON.stringify(previous.voice) !== JSON.stringify(channel.voice)) {
-      this.speech.setTts(this.options.makeTts?.(channel) ?? this.defaultTts(channel));
+      const tts = this.options.makeTts?.(channel) ?? this.defaultTts(channel);
+      this.speech.setTts(tts);
+      speechLanguage = tts.language ?? null;
     }
+    this.host.reconfigure({ persona: channel.persona, safety: channel.safety, ...(speechLanguage !== undefined ? { speechLanguage } : {}) });
+    this.director.reconfigure(channel.persona);
   }
 
   /** Whether a restart is needed to apply this change (different audience source). */
@@ -484,13 +488,14 @@ export class ChannelRuntime {
     };
   }
 
-  private defaultHost(channel: ChannelRow): HostBrain {
+  private defaultHost(channel: ChannelRow, speechLanguage: string | undefined): HostBrain {
     const { ctx } = this.options;
     if (!ctx.anthropic) return new ScriptedHost(channel.persona);
     return new ClaudeHost({
       client: ctx.anthropic,
       persona: channel.persona,
       safety: channel.safety,
+      ...(speechLanguage ? { speechLanguage } : {}),
       memory: this.memory,
       model: ctx.config.HOST_MODEL ?? this.plan.models.host,
       effort: ctx.config.HOST_EFFORT,
@@ -501,8 +506,13 @@ export class ChannelRuntime {
 
   private defaultTts(channel: ChannelRow): TtsProvider {
     const { config } = this.options.ctx;
+    const curated = this.plan.limits.voices === "curated";
+    if (channel.voice.provider === "pocket" && config.pocketEnabled) {
+      const voice = (curated ? channel.voice.voiceId : null) ?? config.POCKET_TTS_VOICE;
+      return new PocketTts({ url: config.POCKET_TTS_URL!, secret: config.POCKET_TTS_SECRET!, voice });
+    }
     if (!config.ELEVENLABS_API_KEY || channel.voice.provider !== "elevenlabs") return new NoTts();
-    const voiceId = this.plan.limits.voices === "curated" ? channel.voice.voiceId ?? config.DEFAULT_VOICE_ID : config.DEFAULT_VOICE_ID;
+    const voiceId = curated ? channel.voice.voiceId ?? config.DEFAULT_VOICE_ID : config.DEFAULT_VOICE_ID;
     if (!voiceId) return new NoTts();
     return new ElevenLabsTts({ apiKey: config.ELEVENLABS_API_KEY, voiceId, model: config.ELEVENLABS_MODEL });
   }

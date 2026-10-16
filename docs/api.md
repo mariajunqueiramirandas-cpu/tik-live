@@ -159,9 +159,17 @@ streams over the studio WebSocket ([protocol.md](protocol.md#studio)).
 
 ### `GET /api/voices`
 
-`{ enabled, canChoose, defaultVoiceId, voices: [{ id, name, previewUrl, description, tags }] }`. `enabled`
-is false without an ElevenLabs key; `canChoose` is false on plans limited to
-the default voice. The list is cached for a few minutes.
+`{ enabled, providers, canChoose, defaultVoiceId, defaultPocketVoiceId, voices: [{ id, provider, name, previewUrl, description, tags }] }`.
+`providers` lists the configured voice providers (`elevenlabs` with a key,
+`pocket` with the self-hosted service, [ADR-0021](adr/0021-self-hosted-tts.md));
+`enabled` is false when there are none; `canChoose` is false on plans limited
+to the default voice. The list is cached for an hour.
+
+### `GET /api/voices/pocket/:voice/sample`
+
+A short spoken sample of a self-hosted voice, `audio/wav`, synthesized once
+per voice. `404 voice_not_found` for a voice the service doesn't have, `503
+voice_unavailable` when it can't answer.
 
 ## Billing
 

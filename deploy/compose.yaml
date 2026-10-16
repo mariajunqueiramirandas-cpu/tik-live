@@ -1,6 +1,7 @@
 # Lantern on one VPS (ADR-0015). Run from this directory:
 #   docker compose up -d                      # caddy, app, db, backup
 #   docker compose --profile broadcast up -d  # also the cloud broadcaster
+#   docker compose --profile tts up -d        # also the self-hosted voice
 name: lantern
 
 x-logging: &logging
@@ -46,6 +47,8 @@ services:
       BROADCASTER_URL: http://broadcaster:8090
       # Not "http://app:8080": "app" is an HSTS-preloaded TLD, so Chromium would force HTTPS.
       BROADCAST_STAGE_ORIGIN: http://lantern-app:8080
+      # Used only with POCKET_TTS_SECRET set in .env (and the tts profile running).
+      POCKET_TTS_URL: http://lantern-tts:8793
     read_only: true
     tmpfs:
       - /tmp
@@ -144,6 +147,39 @@ services:
           memory: 3g
     # Internal for the app; egress to reach TikTok's RTMPS ingest.
     networks: [internal, egress]
+    logging: *logging
+
+  # Self-hosted pt-BR voice (services/tts, ADR-0021): docker compose --profile tts up -d,
+  # with POCKET_TTS_SECRET set. The build downloads the model (360 MB) from Hugging Face.
+  tts:
+    profiles: [tts]
+    image: ${TTS_IMAGE:-lantern-tts:local}
+    build:
+      context: ../services/tts
+    restart: unless-stopped
+    environment:
+      # Without it the service idles and refuses every call.
+      TTS_SECRET: ${POCKET_TTS_SECRET:-}
+      TTS_VOICE: ${POCKET_TTS_VOICE:-rafael}
+      # Spelled out: the service parses these with int(), so an empty value would crash it.
+      TTS_MAX_ACTIVE: "16"
+      TTS_MAX_CHARS: "2000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8793/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    init: true
+    deploy:
+      resources:
+        limits:
+          # Its threads follow this quota (cgroup).
+          cpus: "${TTS_CPUS:-2}"
+          memory: 1g
+    networks:
+      internal:
+        aliases: [lantern-tts]
     logging: *logging
 
 networks:

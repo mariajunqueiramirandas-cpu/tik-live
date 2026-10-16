@@ -58,12 +58,13 @@ describe("compose.dokploy.yaml", () => {
   it("reaches other services only through lantern-* aliases on the internal network", () => {
     expect(dokploy.networks?.internal?.internal).toBe(true);
     const declared = new Set(Object.values(dokploy.services).flatMap((s) => aliases(s, "internal")));
-    expect([...declared].sort()).toEqual(["lantern-app", "lantern-broadcaster", "lantern-db"]);
+    expect([...declared].sort()).toEqual(["lantern-app", "lantern-broadcaster", "lantern-db", "lantern-tts"]);
     const app = dokploy.services.app?.environment ?? {};
     const hosts = [
       new URL((app.DATABASE_URL as string).replace(/\$\{[^}]+\}/g, "x")).hostname,
       new URL(app.BROADCASTER_URL as string).hostname,
       new URL(app.BROADCAST_STAGE_ORIGIN as string).hostname,
+      new URL(app.POCKET_TTS_URL as string).hostname,
       new URL(dokploy.services.broadcaster?.environment?.STAGE_ORIGINS as string).hostname,
       dokploy.services.backup?.environment?.PGHOST as string,
     ];
@@ -79,7 +80,7 @@ describe("compose.dokploy.yaml", () => {
 
 describe("the two deployments run the same app", () => {
   it("passes the same settings to every service", () => {
-    for (const name of ["app", "db", "backup", "broadcaster"]) {
+    for (const name of ["app", "db", "backup", "broadcaster", "tts"]) {
       expect({ name, env: keys(dokploy.services[name]?.environment) }).toEqual({ name, env: keys(vps.services[name]?.environment) });
     }
   });
@@ -92,6 +93,9 @@ describe("the two deployments run the same app", () => {
     for (const field of ["image", "command", "healthcheck"] as const) expect(dokploy.services.db?.[field]).toEqual(vps.services.db?.[field]);
     expect(dokploy.services.broadcaster?.deploy).toEqual(vps.services.broadcaster?.deploy);
     expect(dokploy.services.broadcaster?.profiles).toEqual(["broadcast"]);
+    expect(dokploy.services.tts?.image).toBe(vps.services.tts?.image as string);
+    for (const field of ["healthcheck", "deploy", "profiles"] as const) expect(dokploy.services.tts?.[field]).toEqual(vps.services.tts?.[field]);
+    expect(aliases(vps.services.tts as Service, "internal")).toEqual(["lantern-tts"]);
   });
 
   it("documents the same variables in both env examples", async () => {

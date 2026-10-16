@@ -27,8 +27,8 @@ jobs:
           POSTGRES_PASSWORD: ci
         run: |
           cp deploy/.env.example deploy/.env
-          docker compose -f deploy/compose.yaml --profile broadcast config -q
-          docker compose -f compose.dokploy.yaml --env-file deploy/dokploy.env.example --profile broadcast config -q
+          docker compose -f deploy/compose.yaml --profile broadcast --profile tts config -q
+          docker compose -f compose.dokploy.yaml --env-file deploy/dokploy.env.example --profile broadcast --profile tts config -q
       - run: bun test
       # Builds the web app (with prerender and bundle budgets), the server and the broadcaster.
       - run: bun run build
@@ -37,6 +37,24 @@ jobs:
           name: web-dist
           path: apps/web/dist
           retention-days: 7
+
+  # services/tts: the C++ engine against its numpy reference (a tiny random model, no download).
+  tts:
+    name: Voice service (services/tts)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/tts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: services/tts/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: make -C engine -j"$(nproc)" CXXFLAGS="-O3 -Werror"
+      - run: python -m unittest discover -s tests -t . -v
 
   e2e:
     name: End-to-end (Playwright)
@@ -64,7 +82,7 @@ jobs:
     name: Publish images
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    needs: [check, e2e]
+    needs: [check, tts, e2e]
     permissions:
       contents: read
       packages: write
@@ -81,6 +99,7 @@ jobs:
           owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           echo "app=ghcr.io/${owner}/lantern-app" >> "$GITHUB_OUTPUT"
           echo "broadcaster=ghcr.io/${owner}/lantern-broadcaster" >> "$GITHUB_OUTPUT"
+          echo "tts=ghcr.io/${owner}/lantern-tts" >> "$GITHUB_OUTPUT"
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
@@ -98,3 +117,10 @@ jobs:
           tags: ${{ steps.meta.outputs.broadcaster }}:${{ steps.meta.outputs.version }},${{ steps.meta.outputs.broadcaster }}:latest
           cache-from: type=gha,scope=broadcaster
           cache-to: type=gha,mode=max,scope=broadcaster
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/tts
+          push: true
+          tags: ${{ steps.meta.outputs.tts }}:${{ steps.meta.outputs.version }},${{ steps.meta.outputs.tts }}:latest
+          cache-from: type=gha,scope=tts
+          cache-to: type=gha,mode=max,scope=tts

@@ -7,7 +7,7 @@ import { createDeps } from "./deps";
 import { configureLogging, createLogger } from "./log";
 import { lagMonitor } from "./http/lag";
 import { RetentionJob } from "./runtime/retention";
-import { elevenLabsLimiter } from "./runtime/voice/tts";
+import { elevenLabsLimiter, pocketLimiter } from "./runtime/voice/tts";
 
 const log = createLogger("main");
 // src/index.ts in development, dist/index.js in production: both sit one level below the package.
@@ -17,6 +17,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   configureLogging({ level: config.LOG_LEVEL, format: config.isProduction ? "json" : "pretty" });
   elevenLabsLimiter.limit = config.ELEVENLABS_MAX_CONCURRENCY;
+  pocketLimiter.limit = config.POCKET_TTS_MAX_CONCURRENCY;
 
   const database = await openDatabase(config.DATABASE_URL, MIGRATIONS);
   await database.migrate();

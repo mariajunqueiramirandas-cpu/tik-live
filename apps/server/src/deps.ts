@@ -62,7 +62,12 @@ export async function createDeps(config: AppConfig, database: Database, override
     }));
   const entitlements = new Entitlements(db, config, now);
   const billing = new BillingService(db, config, entitlements, createLogger("billing"), overrides.mercadoPago, now);
-  const voices = new VoiceCatalog(config.ELEVENLABS_API_KEY, createLogger("voices"), overrides.fetch);
+  const voices = new VoiceCatalog(
+    config.ELEVENLABS_API_KEY,
+    createLogger("voices"),
+    overrides.fetch,
+    config.pocketEnabled ? { url: config.POCKET_TTS_URL!, secret: config.POCKET_TTS_SECRET! } : null,
+  );
   const audio = new AudioStore(undefined, undefined, now);
   const anthropic = overrides.anthropic !== undefined ? overrides.anthropic : config.aiEnabled ? new Anthropic({ apiKey: config.ANTHROPIC_API_KEY }) : null;
   const broadcasterClient =
