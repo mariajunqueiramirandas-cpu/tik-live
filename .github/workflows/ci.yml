@@ -20,6 +20,7 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
+      - run: bun run boundaries
       - run: bun test
       # Builds the web app (with prerender and bundle budgets), the server and the broadcaster.
       - run: bun run build

@@ -38,6 +38,12 @@ export function createApi(manager: BroadcastManager, token: string) {
     }
   });
 
+  app.post("/broadcasts/check", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { rtmpUrl?: unknown } | null;
+    if (typeof body?.rtmpUrl !== "string") return c.json(problem("invalid_input", "rtmpUrl is required."), 400);
+    return c.json(await manager.check(body.rtmpUrl));
+  });
+
   app.get("/broadcasts/:channelId", (c) => {
     const status = manager.get(c.req.param("channelId"));
     return status ? c.json({ broadcast: status }) : c.json(problem("not_found", "No broadcast for that channel."), 404);

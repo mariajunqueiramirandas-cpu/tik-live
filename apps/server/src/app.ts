@@ -8,6 +8,7 @@ import { configRoutes, meRoutes } from "./http/routes/account";
 import { billingRoutes, billingWebhookRoutes, voiceRoutes } from "./http/routes/billing";
 import { channelRoutes } from "./http/routes/channels";
 import { stageApiRoutes } from "./http/routes/stage";
+import { lagMonitor } from "./http/lag";
 import { mountStatic } from "./http/static";
 
 /** The typed API surface the dashboard calls through `hc<AppType>` (ADR-0003). */
@@ -37,12 +38,14 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
 
   app.get("/healthz", (c) => c.json({ ok: true }));
   app.get("/readyz", async (c) => {
+    const eventLoopLagMs = lagMonitor.maxLagMs();
     try {
       await deps.database.ping();
-      return c.json({ ok: true, database: deps.database.kind });
     } catch {
       return problem(c, 503, "not_ready", "Database unreachable.");
     }
+    if (eventLoopLagMs > 200) return problem(c, 503, "overloaded", `Event loop lag is ${eventLoopLagMs} ms.`, { eventLoopLagMs });
+    return c.json({ ok: true, database: deps.database.kind, eventLoopLagMs });
   });
 
   app.route("/", buildApi(deps));

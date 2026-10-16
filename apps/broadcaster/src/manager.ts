@@ -1,6 +1,6 @@
 import type { Logger } from "./log";
 import { startBroadcastSchema, type BroadcasterList, type BroadcastStatus, type StartBroadcast } from "@tik-live/shared";
-import { ingestUrl, RtmpUrlError, validateRtmpUrl, type RtmpCheckOptions } from "./rtmp";
+import { checkRtmpServer, ingestUrl, RtmpUrlError, validateRtmpUrl, type RtmpCheckOptions } from "./rtmp";
 import { BroadcastSession, type PipelineFactory } from "./session";
 
 export class BroadcastError extends Error {
@@ -22,6 +22,8 @@ export interface ManagerOptions {
   rtmp?: RtmpCheckOptions;
   /** Tests: faster restarts. */
   backoff?: (attempt: number) => number;
+  /** Tests: a fake TCP connect for connection checks. */
+  connect?: (host: string, port: number, timeoutMs: number) => Promise<void>;
 }
 
 /** All broadcasts on this host, one session per channel, capped by capacity. */
@@ -71,6 +73,11 @@ export class BroadcastManager {
     this.sessions.set(req.channelId, { session, fingerprint });
     log.info("broadcast requested", { server: server.host, video: req.video });
     return session.status();
+  }
+
+  /** Checks an ingest server without starting a broadcast. */
+  check(rtmpUrl: string): Promise<{ ok: boolean; detail: string }> {
+    return checkRtmpServer(rtmpUrl, { ...this.options.rtmp, ...(this.options.connect ? { connect: this.options.connect } : {}) });
   }
 
   async stop(channelId: string): Promise<boolean> {

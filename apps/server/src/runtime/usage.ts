@@ -1,5 +1,5 @@
 import { estimateCostUsd } from "@tik-live/shared";
-import { EMPTY_USAGE, type UsageDelta } from "../repos/usage";
+import { dayKey, EMPTY_USAGE, type UsageDelta } from "../repos/usage";
 
 /** One metered AI call, reported by the host brain, the moderator or TTS. */
 export type UsageReport =
@@ -23,6 +23,20 @@ export class UsageMeter {
 
   constructor(private readonly now: () => number = Date.now) {}
 
+  private today = { day: "", costUsd: 0 };
+
+  /** Starts the day's running total from what's already recorded (after a restart). */
+  seedToday(day: string, costUsd: number): void {
+    this.today = { day, costUsd };
+  }
+
+  /** Estimated AI spend so far today (UTC), for the daily cap. */
+  spentToday(): number {
+    const day = dayKey(new Date(this.now()));
+    if (this.today.day !== day) this.today = { day, costUsd: 0 };
+    return this.today.costUsd;
+  }
+
   record(report: UsageReport): void {
     if (report.kind === "tts") {
       this.pending.ttsCharacters += report.characters;
@@ -34,7 +48,10 @@ export class UsageMeter {
     this.pending.cacheReadTokens += report.cacheReadTokens;
     this.pending.cacheWriteTokens += report.cacheWriteTokens;
     this.pending.outputTokens += report.outputTokens;
-    this.pending.costUsd += estimateCostUsd(report.model, report);
+    const cost = estimateCostUsd(report.model, report);
+    this.pending.costUsd += cost;
+    this.spentToday();
+    this.today.costUsd += cost;
     this.window.push({ at: this.now(), tokens: report.inputTokens + report.cacheWriteTokens + report.outputTokens });
   }
 

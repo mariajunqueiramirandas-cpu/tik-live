@@ -1,7 +1,8 @@
 import { broadcastUpdateSchema, tiktokHandleSchema } from "@tik-live/shared";
 import { RefreshCw } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { errorMessage } from "../../lib/api";
+import { useMutation } from "@tanstack/react-query";
+import { api, call, errorMessage } from "../../lib/api";
 import { useConfig, useMe, useRotateStageKey, useUpdateBroadcast, useUpdateChannel } from "../../lib/query";
 import { useStudio } from "../../lib/studio";
 import { Button, ButtonLink } from "../../ui/Button";
@@ -136,6 +137,12 @@ function CloudBroadcast() {
   const { store } = useHost();
   const live = useStudio(store, (st) => st.snapshot?.health.broadcast ?? null);
   const allowed = me?.plan.limits.cloudBroadcast ?? false;
+  const [checked, setChecked] = useState<{ ok: boolean; detail: string } | null>(null);
+  const check = useMutation({
+    mutationFn: (url: string) => call(api.api.channels[":id"].broadcast.check.$post({ param: { id: channel.id }, json: { rtmpUrl: url } })),
+    onSuccess: (result) => setChecked(result),
+    onError: (err) => setChecked({ ok: false, detail: errorMessage(err) }),
+  });
   const available = config?.broadcast.enabled ?? false;
 
   const save = async (patch: { enabled?: boolean }) => {
@@ -195,9 +202,18 @@ function CloudBroadcast() {
             </Field>
           </div>
           {error && <p className={s.error}>{error}</p>}
+          {checked && (
+            <p className={s.status} data-ok={checked.ok} role="status">
+              <span className={s.statusDot} aria-hidden />
+              {checked.detail}
+            </p>
+          )}
           <div className={p.formActions}>
             <Button type="submit" busy={update.isPending}>
               Save broadcast settings
+            </Button>
+            <Button variant="ghost" busy={check.isPending} disabled={!rtmpUrl.trim()} onClick={() => check.mutate(rtmpUrl.trim())}>
+              Check connection
             </Button>
           </div>
         </form>

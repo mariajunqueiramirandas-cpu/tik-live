@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { sessionSample, streamSession, utterance } from "../db/schema";
 
@@ -86,5 +86,15 @@ export async function purgeUtterances(db: Db, channelId: string, before: Date): 
     .delete(utterance)
     .where(and(eq(utterance.channelId, channelId), lt(utterance.at, before)))
     .returning({ id: utterance.id });
+  return rows.length;
+}
+
+/** Retention: deletes per-minute samples older than `before` for one channel's streams. */
+export async function purgeSamples(db: Db, channelId: string, before: Date): Promise<number> {
+  const sessions = db.select({ id: streamSession.id }).from(streamSession).where(eq(streamSession.channelId, channelId));
+  const rows = await db
+    .delete(sessionSample)
+    .where(and(inArray(sessionSample.sessionId, sessions), lt(sessionSample.minute, before)))
+    .returning({ sessionId: sessionSample.sessionId });
   return rows.length;
 }

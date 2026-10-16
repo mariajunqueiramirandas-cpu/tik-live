@@ -15,7 +15,7 @@ import type { AppConfig } from "../config";
 import type { Db } from "../db/client";
 import type { Logger } from "../log";
 import type { ChannelRow } from "../repos/channels";
-import { addUsage, dayKey } from "../repos/usage";
+import { addUsage, channelCostOn, dayKey } from "../repos/usage";
 import { loadViewers, saveViewers, type ViewerRow } from "../repos/viewers";
 import { Director } from "./brain/director";
 import { ClaudeHost, ScriptedHost, type HostBrain } from "./brain/host";
@@ -91,6 +91,7 @@ export class ChannelRuntime {
   private flushCount = 0;
   private lastTickAt: number;
   private budgetWarned = false;
+  private dailyCapNoticed = false;
   private sayTimes: number[] = [];
   private eventCounter = 0;
 
@@ -121,13 +122,16 @@ export class ChannelRuntime {
     const { ctx, stage } = this.options;
     const channel = this.channel;
 
+    // Today's earlier spend counts toward the daily cap, even across restarts.
+    const today = dayKey(new Date(this.now()));
+    this.meter.seedToday(today, await channelCostOn(ctx.db, channel.id, today).catch(() => 0));
     this.memory = new ViewerMemory({ persistence: this.persistence(), now: this.now, log: this.log });
     this.triage = new Triage({ blocklist: channel.safety.blocklist, hostName: channel.persona.name, memory: this.memory, now: this.now });
 
     const ai = ctx.anthropic;
     this.moderator =
       ai && ctx.config.MODERATION_ENABLED
-        ? new ClaudeModerator({ client: ai, model: ctx.config.MODERATION_MODEL, settings: channel.safety, onUsage: (u) => this.usage(u) })
+        ? new ClaudeModerator({ client: ai, model: ctx.config.MODERATION_MODEL ?? this.plan.models.moderator, settings: channel.safety, onUsage: (u) => this.usage(u) })
         : null;
     this.gate = new SafetyGate({
       blocklist: channel.safety.blocklist,
@@ -282,23 +286,32 @@ export class ChannelRuntime {
     }
   }
 
-  /** Called once a minute by the manager: accrues live time and enforces the token budget. */
+  /** Called once a minute by the manager: accrues live time and enforces the AI budgets. */
   tickMinute(): void {
     this.accrue();
+    if (!this.director) return;
     const limit = this.plan.limits.tokenBudgetPerHour;
-    if (isUnlimited(limit) || !this.director) return;
+    const cap = this.plan.limits.dailySpendCapUsd;
     const used = this.meter.tokensLastHour();
-    if (used >= limit) {
-      this.director.setBudgetReactOnly(true);
-      this.notice("warn", "budget_reached", "This host used its hourly AI budget. It will still react to viewers but won't fill quiet moments for a while.");
-    } else {
-      this.director.setBudgetReactOnly(false);
-      if (used >= limit * BUDGET_WARN_RATIO && !this.budgetWarned) {
-        this.budgetWarned = true;
-        this.notice("info", "budget_warning", "This host is close to its hourly AI budget.");
-      } else if (used < limit * BUDGET_WARN_RATIO) {
-        this.budgetWarned = false;
+    const hourly = !isUnlimited(limit) && used >= limit;
+    const daily = !isUnlimited(cap) && this.meter.spentToday() >= cap;
+    this.director.setBudgetReactOnly(hourly || daily);
+    if (daily) {
+      if (!this.dailyCapNoticed) {
+        this.dailyCapNoticed = true;
+        this.notice("warn", "daily_cap_reached", "This host reached today's AI spending limit. It still reacts to viewers, and fills quiet moments again after midnight UTC.");
       }
+      return;
+    }
+    this.dailyCapNoticed = false;
+    if (isUnlimited(limit)) return;
+    if (hourly) {
+      this.notice("warn", "budget_reached", "This host used its hourly AI budget. It will still react to viewers but won't fill quiet moments for a while.");
+    } else if (used >= limit * BUDGET_WARN_RATIO && !this.budgetWarned) {
+      this.budgetWarned = true;
+      this.notice("info", "budget_warning", "This host is close to its hourly AI budget.");
+    } else if (used < limit * BUDGET_WARN_RATIO) {
+      this.budgetWarned = false;
     }
   }
 
@@ -479,7 +492,7 @@ export class ChannelRuntime {
       persona: channel.persona,
       safety: channel.safety,
       memory: this.memory,
-      model: ctx.config.HOST_MODEL,
+      model: ctx.config.HOST_MODEL ?? this.plan.models.host,
       effort: ctx.config.HOST_EFFORT,
       onUsage: (u) => this.usage(u),
       log: this.log,

@@ -20,7 +20,7 @@ export function publicConfig(deps: AppDeps) {
     clerkPublishableKey: deps.config.AUTH_MODE === "clerk" ? (deps.config.CLERK_PUBLISHABLE_KEY ?? null) : null,
     billing: { enabled: deps.billing.enabled, currency: deps.config.BILLING_CURRENCY },
     broadcast: { enabled: deps.config.BROADCAST_ENABLED },
-    ai: { enabled: deps.config.aiEnabled, hostModel: deps.config.aiEnabled ? deps.config.HOST_MODEL : null },
+    ai: { enabled: deps.config.aiEnabled },
     voice: { enabled: deps.config.ttsEnabled },
     pricing: publicPrices(deps),
   };

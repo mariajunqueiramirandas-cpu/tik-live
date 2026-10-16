@@ -72,3 +72,12 @@ export function monthStartKey(date: Date): string {
 function snake(value: string): string {
   return value.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 }
+
+/** Estimated AI spend recorded for one channel on one day. */
+export async function channelCostOn(db: Db, channelId: string, day: string): Promise<number> {
+  const [row] = await db
+    .select({ costUsd: sql<number>`coalesce(sum(${usageDaily.costUsd}), 0)::float8` })
+    .from(usageDaily)
+    .where(and(eq(usageDaily.channelId, channelId), eq(usageDaily.day, day)));
+  return Number(row?.costUsd ?? 0);
+}

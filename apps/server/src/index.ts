@@ -5,6 +5,9 @@ import { ConfigError, loadConfig } from "./config";
 import { openDatabase } from "./db/client";
 import { createDeps } from "./deps";
 import { configureLogging, createLogger } from "./log";
+import { lagMonitor } from "./http/lag";
+import { RetentionJob } from "./runtime/retention";
+import { elevenLabsLimiter } from "./runtime/voice/tts";
 
 const log = createLogger("main");
 // src/index.ts in development, dist/index.js in production: both sit one level below the package.
@@ -13,6 +16,7 @@ const MIGRATIONS = path.resolve(import.meta.dir, "../drizzle");
 async function main(): Promise<void> {
   const config = loadConfig();
   configureLogging({ level: config.LOG_LEVEL, format: config.isProduction ? "json" : "pretty" });
+  elevenLabsLimiter.limit = config.ELEVENLABS_MAX_CONCURRENCY;
 
   const database = await openDatabase(config.DATABASE_URL, MIGRATIONS);
   await database.migrate();
@@ -31,12 +35,16 @@ async function main(): Promise<void> {
   if (config.AUTH_MODE === "dev") log.warn("AUTH_MODE=dev: there is no sign-in (ADR-0018)");
 
   await deps.manager.boot();
+  lagMonitor.start();
+  const retention = new RetentionJob({ db: deps.db, entitlements: deps.entitlements, log: createLogger("retention") });
+  retention.start();
 
   let stopping = false;
   const shutdown = async (signal: string) => {
     if (stopping) return;
     stopping = true;
     log.info(`${signal}: draining`);
+    retention.stop();
     await deps.manager.shutdown();
     server.stop();
     deps.audio.close();

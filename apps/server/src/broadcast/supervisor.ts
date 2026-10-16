@@ -68,6 +68,13 @@ export class BroadcastSupervisor {
     clearInterval(this.timer);
   }
 
+  check(rtmpUrl: string): Promise<{ ok: boolean; detail: string }> {
+    return this.options.client.check(rtmpUrl).catch((err: unknown) => ({
+      ok: false,
+      detail: err instanceof BroadcasterError ? err.message : "The broadcast service didn't answer.",
+    }));
+  }
+
   private async ensure(channelId: string): Promise<void> {
     const want = this.wanted.get(channelId);
     if (!want) return;

@@ -5,6 +5,8 @@ export interface BroadcasterClient {
   start(request: StartBroadcast): Promise<BroadcastStatus>;
   stop(channelId: string): Promise<void>;
   list(): Promise<BroadcasterList>;
+  /** Validates an ingest server and checks it's reachable, without streaming. */
+  check(rtmpUrl: string): Promise<{ ok: boolean; detail: string }>;
 }
 
 export class BroadcasterError extends Error {
@@ -53,5 +55,9 @@ export class HttpBroadcasterClient implements BroadcasterClient {
 
   list(): Promise<BroadcasterList> {
     return this.request<BroadcasterList>("GET", "/broadcasts");
+  }
+
+  check(rtmpUrl: string): Promise<{ ok: boolean; detail: string }> {
+    return this.request("POST", "/broadcasts/check", { rtmpUrl });
   }
 }

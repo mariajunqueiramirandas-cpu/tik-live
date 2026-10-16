@@ -43,12 +43,43 @@ const STYLE: Partial<Record<Emotion, { stability: number; style: number }>> = {
 
 const MP3_BITRATE_BPS = 128_000;
 
+/** A counting semaphore: at most `limit` tasks run at once, the rest wait in order. */
+export class Limiter {
+  private active = 0;
+  private readonly waiting: Array<() => void> = [];
+
+  constructor(public limit: number) {}
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) await new Promise<void>((resolve) => this.waiting.push(resolve));
+    this.active += 1;
+    try {
+      return await task();
+    } finally {
+      this.active -= 1;
+      this.waiting.shift()?.();
+    }
+  }
+
+  get pending(): number {
+    return this.waiting.length;
+  }
+}
+
+/** One limiter for every host in the process: ElevenLabs rate limits are per account (ADR-0012). */
+export const elevenLabsLimiter = new Limiter(4);
+
 export class ElevenLabsTts implements TtsProvider {
   readonly name = "elevenlabs";
 
   constructor(private readonly options: ElevenLabsOptions) {}
 
-  async synthesize(text: string, emotion: Emotion, signal?: AbortSignal): Promise<AudioClip> {
+  synthesize(text: string, emotion: Emotion, signal?: AbortSignal): Promise<AudioClip> {
+    return elevenLabsLimiter.run(() => this.request(text, emotion, signal));
+  }
+
+  private async request(text: string, emotion: Emotion, signal?: AbortSignal): Promise<AudioClip> {
+    signal?.throwIfAborted();
     const { apiKey, voiceId, model } = this.options;
     const style = STYLE[emotion] ?? { stability: 0.45, style: 0.35 };
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`;

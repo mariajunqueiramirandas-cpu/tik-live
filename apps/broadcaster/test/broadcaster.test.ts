@@ -151,6 +151,21 @@ describe("BroadcastManager", () => {
   });
 });
 
+describe("connection check", () => {
+  it("validates and connects without streaming", async () => {
+    const { checkRtmpServer } = await import("../src/rtmp");
+    const reached: string[] = [];
+    const connect = async (host: string, port: number) => {
+      reached.push(`${host}:${port}`);
+      if (host === "down.example.com") throw new Error("refused");
+    };
+    expect(await checkRtmpServer("rtmps://push.example.com/live", { resolve: publicDns, connect })).toEqual({ ok: true, detail: "Reached push.example.com:443." });
+    expect((await checkRtmpServer("rtmp://down.example.com/live", { resolve: publicDns, connect })).ok).toBe(false);
+    expect(reached).toEqual(["push.example.com:443", "down.example.com:1935"]);
+    expect((await checkRtmpServer("rtmp://10.0.0.1/live", { connect })).detail).toContain("isn't allowed");
+  });
+});
+
 describe("internal API", () => {
   it("requires the bearer token", async () => {
     const { api } = setup();

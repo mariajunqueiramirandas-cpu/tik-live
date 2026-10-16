@@ -21,6 +21,9 @@ class FakeBroadcaster implements BroadcasterClient {
   async list(): Promise<BroadcasterList> {
     return { broadcasts: [...this.live.values()], capacity: { max: 2, used: this.live.size } };
   }
+  async check(rtmpUrl: string): Promise<{ ok: boolean; detail: string }> {
+    return rtmpUrl.includes("unreachable") ? { ok: false, detail: "Couldn't reach it." } : { ok: true, detail: "Reached it." };
+  }
 }
 
 const broadcaster = new FakeBroadcaster();
@@ -79,6 +82,17 @@ describe("cloud broadcast", () => {
     await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "caster" });
     expect(broadcaster.started).toHaveLength(2);
     studio.close();
+  });
+
+  it("checks an ingest server without streaming", async () => {
+    const created = await server.json<{ channel: ChannelDto }>("/api/channels", { method: "POST", user: "checker", json: { name: "Check" } });
+    const id = created.body.channel.id;
+    expect((await server.json(`/api/channels/${id}/broadcast/check`, { method: "POST", user: "checker", json: {} })).body.error.code).toBe("broadcast_incomplete");
+    const good = await server.json(`/api/channels/${id}/broadcast/check`, { method: "POST", user: "checker", json: { rtmpUrl: "rtmps://push.example.com/live" } });
+    expect(good.body).toEqual({ ok: true, detail: "Reached it." });
+    const bad = await server.json(`/api/channels/${id}/broadcast/check`, { method: "POST", user: "checker", json: { rtmpUrl: "rtmps://unreachable.example/live" } });
+    expect(bad.body.ok).toBe(false);
+    expect(broadcaster.started).toHaveLength(2);
   });
 
   it("refuses incomplete settings", async () => {

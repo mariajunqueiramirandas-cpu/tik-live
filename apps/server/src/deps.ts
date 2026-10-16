@@ -28,6 +28,8 @@ export interface AppDeps {
   voices: VoiceCatalog;
   audio: AudioStore;
   manager: RuntimeManager;
+  /** Present when cloud broadcast is on for this server. */
+  broadcasts: BroadcastSupervisor | null;
   now: () => number;
 }
 
@@ -77,7 +79,7 @@ export async function createDeps(config: AppConfig, database: Database, override
     ...(overrides.runtimeOverrides ? { runtimeOverrides: overrides.runtimeOverrides } : {}),
   });
   managerRef = manager;
-  return { config, database, db, log, secrets, identity, entitlements, billing, voices, audio, manager, now };
+  return { config, database, db, log, secrets, identity, entitlements, billing, voices, audio, manager, broadcasts: broadcasts ?? null, now };
 }
 
 /** Picks the identity provider for AUTH_MODE (ADR-0018). */

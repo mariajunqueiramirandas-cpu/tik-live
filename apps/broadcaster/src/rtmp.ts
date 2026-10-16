@@ -85,3 +85,56 @@ export function redact(text: string, secrets: readonly string[]): string {
   for (const secret of secrets) if (secret.length >= 4) out = out.split(secret).join("[stream key]");
   return out;
 }
+
+/**
+ * "Check connection" (ADR-0014): validates the URL and opens a TCP
+ * connection to the ingest server, without publishing anything.
+ */
+export async function checkRtmpServer(
+  raw: string,
+  options: RtmpCheckOptions & { timeoutMs?: number; connect?: (host: string, port: number, timeoutMs: number) => Promise<void> } = {},
+): Promise<{ ok: boolean; detail: string }> {
+  let url: URL;
+  try {
+    url = await validateRtmpUrl(raw, options);
+  } catch (err) {
+    return { ok: false, detail: err instanceof RtmpUrlError ? err.message : "That server URL isn't usable." };
+  }
+  const port = url.port ? Number(url.port) : url.protocol === "rtmps:" ? 443 : 1935;
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  try {
+    await (options.connect ?? tcpConnect)(host, port, options.timeoutMs ?? 5000);
+    return { ok: true, detail: `Reached ${host}:${port}.` };
+  } catch {
+    return { ok: false, detail: `Couldn't reach ${host}:${port}. Check the server URL.` };
+  }
+}
+
+function tcpConnect(host: string, port: number, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+    Bun.connect({
+      hostname: host,
+      port,
+      socket: {
+        open(socket) {
+          clearTimeout(timer);
+          socket.end();
+          resolve();
+        },
+        data() {},
+        error(_socket, error) {
+          clearTimeout(timer);
+          reject(error);
+        },
+        connectError(_socket, error) {
+          clearTimeout(timer);
+          reject(error);
+        },
+      },
+    }).catch((error: unknown) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}

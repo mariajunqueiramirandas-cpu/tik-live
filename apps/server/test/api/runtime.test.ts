@@ -160,3 +160,21 @@ describe("autonomy (ADR-0007)", () => {
     await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "crashy" });
   });
 });
+
+describe("retention", () => {
+  it("removes transcript lines older than the plan keeps", async () => {
+    const { RetentionJob } = await import("../../src/runtime/retention");
+    const { createLogger } = await import("../../src/log");
+    const { insertUtterances } = await import("../../src/repos/streams");
+    const channel = await newChannel("keeper");
+    const sessionId = crypto.randomUUID();
+    await createSession(server.deps.db, { id: sessionId, channelId: channel.id, startedAt: new Date(), source: "simulator" });
+    const line = (text: string, at: Date) => ({ sessionId, channelId: channel.id, at, text, emotion: "neutral", status: "spoken" as const });
+    await insertUtterances(server.deps.db, [line("old line", new Date(Date.now() - 400 * 86_400_000)), line("new line", new Date())]);
+    const job = new RetentionJob({ db: server.deps.db, entitlements: server.deps.entitlements, log: createLogger("test") });
+    const result = await job.runOnce();
+    expect(result.lines).toBeGreaterThanOrEqual(1);
+    const left = (await listUtterances(server.deps.db, sessionId)).map((u) => u.text);
+    expect(left).toEqual(["new line"]);
+  });
+});

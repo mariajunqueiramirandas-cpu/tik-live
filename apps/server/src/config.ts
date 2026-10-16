@@ -34,10 +34,14 @@ const envSchema = z.object({
   WORKOS_COOKIE_PASSWORD: z.string().min(32).optional(),
 
   ANTHROPIC_API_KEY: z.string().optional(),
-  HOST_MODEL: z.string().default("claude-opus-5-5"),
+  /** Deployment override for every plan's host model (ADR-0012); unset = each plan's own. */
+  HOST_MODEL: z.string().optional(),
   HOST_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
   MODERATION_ENABLED: bool.default(true),
-  MODERATION_MODEL: z.string().default("claude-opus-5-5"),
+  /** Deployment override for every plan's moderator model; unset = each plan's own. */
+  MODERATION_MODEL: z.string().optional(),
+  /** Concurrent ElevenLabs requests across all hosts in this process (protects rate limits). */
+  ELEVENLABS_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
   MODERATION_FAIL_OPEN: bool.default(false),
 
   ELEVENLABS_API_KEY: z.string().optional(),

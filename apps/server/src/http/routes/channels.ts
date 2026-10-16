@@ -172,6 +172,13 @@ export function channelRoutes(deps: AppDeps) {
       await deps.manager.apply(row);
       return c.json({ channel: await toChannelDto(deps, row) });
     })
+    .post("/:id/broadcast/check", valid("param", idParam), valid("json", z.object({ rtmpUrl: z.string().trim().max(300).optional() })), async (c) => {
+      const row = await owned(c.get("user").id, c.req.valid("param").id);
+      const rtmpUrl = c.req.valid("json").rtmpUrl || row.broadcast.rtmpUrl;
+      if (!rtmpUrl) return problem(c, 400, "broadcast_incomplete", "Add the server URL first.");
+      if (!deps.broadcasts) return problem(c, 409, "broadcast_disabled", "Cloud broadcast isn't turned on for this server.");
+      return c.json(await deps.broadcasts.check(rtmpUrl));
+    })
     .post(
       "/:id/start",
       rateLimit({ windowMs: 60_000, max: 20, key: (c) => `start:${c.get("user").id}` }),

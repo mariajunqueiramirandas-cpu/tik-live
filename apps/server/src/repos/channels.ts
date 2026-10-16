@@ -66,6 +66,11 @@ export async function getChannelByStageLookup(db: Db, lookup: string): Promise<C
   return row;
 }
 
+/** Internal (jobs only): every channel's id and owner. */
+export async function listAllChannelOwners(db: Db): Promise<Array<{ id: string; ownerId: string }>> {
+  return db.select({ id: channel.id, ownerId: channel.ownerId }).from(channel);
+}
+
 export async function listDesiredRunning(db: Db): Promise<ChannelRow[]> {
   return db.select().from(channel).where(eq(channel.desiredState, "running")).orderBy(asc(channel.updatedAt));
 }

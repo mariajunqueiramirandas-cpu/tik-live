@@ -20,6 +20,14 @@ export interface PlanLimits {
   transcriptRetentionDays: number;
   /** Claude tokens (input + output) per live hour before the host goes react-only. */
   tokenBudgetPerHour: number;
+  /** Estimated AI spend (USD) per channel per UTC day before the host goes react-only. */
+  dailySpendCapUsd: number;
+}
+
+/** Which Claude models a plan's hosts use (ADR-0012); a deployment can override both. */
+export interface PlanModels {
+  host: string;
+  moderator: string;
 }
 
 export interface Plan {
@@ -28,6 +36,7 @@ export interface Plan {
   /** One line for the pricing table. */
   summary: string;
   limits: PlanLimits;
+  models: PlanModels;
   /** Shown on the billing page. */
   highlights: string[];
   purchasable: boolean;
@@ -46,7 +55,10 @@ export const PLANS: Record<PlanId, Plan> = {
       voices: "default",
       transcriptRetentionDays: 7,
       tokenBudgetPerHour: 400_000,
+      dailySpendCapUsd: 8,
     },
+    // Defaults stay on Opus 5.5 until the owner picks per-plan models (ADR-0012).
+    models: { host: "claude-opus-5-5", moderator: "claude-opus-5-5" },
     highlights: ["1 host live at a time", "5 live hours a month", "Default voice"],
     purchasable: false,
   },
@@ -62,7 +74,10 @@ export const PLANS: Record<PlanId, Plan> = {
       voices: "curated",
       transcriptRetentionDays: 90,
       tokenBudgetPerHour: 600_000,
+      dailySpendCapUsd: 60,
     },
+    // Defaults stay on Opus 5.5 until the owner picks per-plan models (ADR-0012).
+    models: { host: "claude-opus-5-5", moderator: "claude-opus-5-5" },
     highlights: ["2 hosts live at a time", "150 live hours a month", "Choose any voice", "90 days of transcripts"],
     purchasable: true,
   },
@@ -78,7 +93,10 @@ export const PLANS: Record<PlanId, Plan> = {
       voices: "curated",
       transcriptRetentionDays: 365,
       tokenBudgetPerHour: 800_000,
+      dailySpendCapUsd: 200,
     },
+    // Defaults stay on Opus 5.5 until the owner picks per-plan models (ADR-0012).
+    models: { host: "claude-opus-5-5", moderator: "claude-opus-5-5" },
     highlights: ["5 hosts live at a time", "600 live hours a month", "Cloud broadcast (no PC)", "A year of transcripts"],
     purchasable: true,
   },
@@ -94,7 +112,10 @@ export const PLANS: Record<PlanId, Plan> = {
       voices: "curated",
       transcriptRetentionDays: 365,
       tokenBudgetPerHour: Number.POSITIVE_INFINITY,
+      dailySpendCapUsd: Number.POSITIVE_INFINITY,
     },
+    // Defaults stay on Opus 5.5 until the owner picks per-plan models (ADR-0012).
+    models: { host: "claude-opus-5-5", moderator: "claude-opus-5-5" },
     highlights: ["Everything unlocked"],
     purchasable: false,
   },
