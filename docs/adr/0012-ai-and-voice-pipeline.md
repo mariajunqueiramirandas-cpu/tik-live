@@ -163,9 +163,9 @@ choice make the risk explicit and tunable instead of hidden.
 
 ## Action Items
 
-1. [ ] Move model settings into plan definitions with deployment overrides.
-2. [ ] Implement audience-aware pacing in the director and the budget guardrails.
-3. [ ] Implement metering from `usage` and the price table.
-4. [ ] Add per-turn latency timestamps and p50/p95 health metrics.
-5. [ ] Build the curated voice list and per-channel voice selection; add a provider concurrency limiter.
-6. [ ] Add channel safety settings (strictness, topics) to the prompts and moderator.
+1. [x] Move model settings into plan definitions with deployment overrides.
+2. [x] Implement audience-aware pacing in the director and the budget guardrails.
+3. [x] Implement metering from `usage` and the price table.
+4. [x] Add per-turn latency timestamps and p50/p95 health metrics.
+5. [x] Build the curated voice list and per-channel voice selection; add a provider concurrency limiter.
+6. [x] Add channel safety settings (strictness, topics) to the prompts and moderator.

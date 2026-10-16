@@ -106,7 +106,7 @@ that risk.
 
 ## Action Items
 
-1. [ ] Replace npm/tsx/vitest with Bun in the root and every workspace; commit `bun.lock`.
-2. [ ] Port the v0.1 tests from vitest to `bun test` (same `expect` API; replace `vi` helpers).
-3. [ ] Add `oven-sh/setup-bun` to CI; pin the Bun version in `package.json` (`packageManager`) and the Dockerfile.
+1. [x] Replace npm/tsx/vitest with Bun in the root and every workspace; commit `bun.lock`.
+2. [x] Port the v0.1 tests from vitest to `bun test` (same `expect` API; replace `vi` helpers).
+3. [x] Add `oven-sh/setup-bun` to CI; pin the Bun version in `package.json` (`packageManager`) and the Dockerfile.
 4. [ ] Verify a real TikTok LIVE connection under Bun in Phase 1; if it fails, build the Node sidecar.

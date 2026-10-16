@@ -69,7 +69,16 @@ flowchart LR
 | 1080x1920 @ 30 | ~1–1.5 cores | ~1–1.5 cores | ~2–3 |
 | 720x1280 @ 30 | ~0.5–0.8 cores | ~0.5–0.8 cores | ~1–1.5 |
 
-On a 4 vCPU VPS that means about two 720p broadcasts alongside the app.
+**Measured (2026-10-16, Phase 6):** in a 4-vCPU container with no GPU,
+one 720x1280 broadcast at 30 fps used about **2.5–3 vCPU** for Chromium
+(SwiftShader rendering plus MediaRecorder's VP8 encode) and about **0.3 vCPU**
+for the x264 transcode: higher than the estimate, because software
+rendering of the full-screen atmosphere shader dominates. The default is
+therefore `BROADCAST_MAX_CONCURRENT=1` per 4 vCPU next to the app, with the
+broadcaster CPU-capped in compose. Ways to bring this down are listed under
+Consequences. 1080p was not measured.
+
+On a 4 vCPU VPS that means about one 720p broadcast alongside the app.
 Broadcast-heavy customers need dedicated broadcaster hosts (the service is
 already separate) or GPU instances.
 
@@ -140,11 +149,19 @@ broadcast becomes the dominant usage.
 - Easier: a true "no PC needed" product tier.
 - Harder: operating Chromium and ffmpeg in containers; capacity planning per host.
 - Revisit: B after measurements; C if broadcasts exceed what a few hosts can serve.
+- Cheaper rendering options to measure: lock broadcast quality to the
+  governor's "balanced" level (85% render scale, upscaled by ffmpeg); a GPU
+  host (VA-API or NVENC) for both rendering and encoding.
+- Implementation notes: the broadcaster loads stage pages from the app
+  over the private network, as `http://lantern-app:8080`. A bare `app`
+  hostname doesn't work: `.app` is an HSTS-preloaded top-level domain, and
+  Chromium forces it to HTTPS. Chunks travel from the page to ffmpeg over a
+  Playwright binding (CDP), which isn't subject to the stage page's CSP.
 
 ## Action Items
 
-1. [ ] Phase 6 spike: measure CPU per stream at 720p and 1080p on the target VPS size, both SwiftShader and (if available) GPU.
-2. [ ] Build `apps/broadcaster` (internal API, Chromium lifecycle, MediaRecorder bridge, ffmpeg supervisor).
-3. [ ] Add the broadcast settings UI with stream key entry (write-only), test-connection, and the live status panel.
-4. [ ] Add RTMP URL validation (scheme, SSRF guard) and secret redaction in logs.
+1. [x] Phase 6 spike: measure CPU per stream at 720p and 1080p on the target VPS size, both SwiftShader and (if available) GPU (720p measured; see above).
+2. [x] Build `apps/broadcaster` (internal API, Chromium lifecycle, MediaRecorder bridge, ffmpeg supervisor).
+3. [x] Add the broadcast settings UI with stream key entry (write-only), test-connection, and the live status panel.
+4. [x] Add RTMP URL validation (scheme, SSRF guard) and secret redaction in logs.
 5. [ ] Trial Chrome stable H.264 passthrough (Option B) and record the results in a follow-up ADR.

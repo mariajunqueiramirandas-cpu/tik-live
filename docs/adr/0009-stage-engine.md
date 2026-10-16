@@ -187,9 +187,9 @@ screenshot tests.
 
 ## Action Items
 
-1. [ ] Build the resource layer (programs, buffers, textures, owned descriptors for rebuild).
-2. [ ] Implement the clock, spring utilities, seeded RNG and quality governor (pure TS, unit-tested).
-3. [ ] Implement the layers: atmosphere, motes, offerings, character (orb, voice-line) and UI sprites (text rasterizer and layout).
-4. [ ] Implement the audio engine (prefetch, gapless scheduling, analyser, capture stream).
-5. [ ] Implement the protocol client (connection, backoff, resync, telemetry) and the stage page entry.
-6. [ ] Add deterministic screenshot tests for each emotion and alert, a context-loss test (`WEBGL_lose_context`), and a bundle-size check.
+1. [x] Build the resource layer (programs, buffers, textures, owned descriptors for rebuild).
+2. [x] Implement the clock, spring utilities, seeded RNG and quality governor (pure TS, unit-tested).
+3. [x] Implement the layers: atmosphere, motes, offerings, character (orb, voice-line) and UI sprites (text rasterizer and layout).
+4. [x] Implement the audio engine (prefetch, gapless scheduling, analyser, capture stream).
+5. [x] Implement the protocol client (connection, backoff, resync, telemetry) and the stage page entry.
+6. [x] Add deterministic screenshot tests for each emotion and alert, a context-loss test (`WEBGL_lose_context`), and a bundle-size check (pixel-probe checks instead of baseline images, so they hold across GPUs and font hinting (`e2e/engine.e2e.ts`)).

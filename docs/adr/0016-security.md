@@ -56,8 +56,8 @@ Per [ADR-0018](0018-defer-authentication.md):
 ### Request protection
 
 - **CSRF:** SameSite=Lax cookies plus Hono's `csrf()` origin check on every
-  state-changing request; the Stripe webhook is exempt and uses its signature
-  instead.
+  state-changing request; the Mercado Pago webhook is exempt and uses its
+  `x-signature` HMAC instead.
 - **Security headers:** `secureHeaders()` with a strict CSP for the dashboard:
   `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'
   data: blob:; media-src 'self' blob:; connect-src 'self' wss:; font-src
@@ -153,9 +153,9 @@ small SaaS gets breached.
 
 ## Action Items
 
-1. [ ] Implement the repository-layer scoping and the cross-tenant test suite (two dev users via impersonation).
-2. [ ] Implement the dev-mode production guard and the `DEV_GATE_PASSWORD` gate ([ADR-0018](0018-defer-authentication.md)).
-3. [ ] Implement `crypto.ts` (HKDF, AES-GCM, versioned ciphertext) and the stage-key HMAC lookup.
-4. [ ] Configure CSP and security headers per surface (dashboard, stage, landing).
-5. [ ] Add log redaction, `audit_log`, and the RTMP SSRF guard.
+1. [x] Implement the repository-layer scoping and the cross-tenant test suite (two dev users via impersonation).
+2. [x] Implement the dev-mode production guard and the `DEV_GATE_PASSWORD` gate ([ADR-0018](0018-defer-authentication.md)).
+3. [x] Implement `crypto.ts` (HKDF, AES-GCM, versioned ciphertext) and the stage-key HMAC lookup.
+4. [x] Configure CSP and security headers per surface (dashboard, stage, landing).
+5. [x] Add log redaction, `audit_log`, and the RTMP SSRF guard.
 6. [ ] Run the pre-launch security checklist (Phase 7).

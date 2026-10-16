@@ -104,7 +104,7 @@ which all of ours are. Add Turborepo when builds take long enough to matter.
 
 ## Action Items
 
-1. [ ] Move v0.1 `src/` into `apps/server/src/runtime/` (see the [plan](../architecture/plan.md#migration-from-v01)).
-2. [ ] Create `packages/shared` and move the persona schema, event types and protocol types there.
-3. [ ] Add `tsconfig.base.json`, workspace `tsconfig.json`s and root scripts.
-4. [ ] Add an import-boundary check (a small script over `bun build --metafile` or a lint rule).
+1. [x] Move v0.1 `src/` into `apps/server/src/runtime/` (see the [plan](../architecture/plan.md#migration-from-v01)).
+2. [x] Create `packages/shared` and move the persona schema, event types and protocol types there.
+3. [x] Add `tsconfig.base.json`, workspace `tsconfig.json`s and root scripts.
+4. [x] Add an import-boundary check (a small script over `bun build --metafile` or a lint rule) (`scripts/check-boundaries.ts`, run in CI).

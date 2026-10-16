@@ -124,7 +124,7 @@ dashboard its instant feel without event-sourcing complexity.
 
 ## Action Items
 
-1. [ ] Define the message unions and version constant in `packages/shared/src/protocol/`.
-2. [ ] Implement `StageHub` and `StudioFeed` with validation, coalescing and backpressure.
-3. [ ] Implement the client-side connection helper (backoff, jitter, resync) shared by engine and dashboard.
-4. [ ] Contract tests: every message type round-trips through its schema; unknown or old versions are handled.
+1. [x] Define the message unions and version constant in `packages/shared/src/protocol/` (in `packages/shared/src/protocol.ts`).
+2. [x] Implement `StageHub` and `StudioFeed` with validation, coalescing and backpressure.
+3. [x] Implement the client-side connection helper (backoff, jitter, resync) shared by engine and dashboard (`packages/engine/src/client.ts` and `apps/web/src/lib/studio.ts`).
+4. [x] Contract tests: every message type round-trips through its schema; unknown or old versions are handled.

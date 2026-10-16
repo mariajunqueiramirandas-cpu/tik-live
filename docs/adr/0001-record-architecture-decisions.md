@@ -66,4 +66,4 @@ better in a wiki, but drift costs more over time.
 ## Action Items
 
 1. [x] Create `docs/adr/` with an index.
-2. [ ] Link the relevant ADRs from each implementation PR.
+2. [x] Link the relevant ADRs from each implementation PR (PR #1 links them).

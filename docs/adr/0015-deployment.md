@@ -47,9 +47,10 @@ something required is missing):
 | `DEV_GATE_PASSWORD` | Required to run `AUTH_MODE=dev` with `NODE_ENV=production`; puts the dashboard and API behind HTTP Basic auth |
 | `DATABASE_URL` | `postgres://…` |
 | `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY` | Platform AI keys |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*` | Billing (omit for self-hosted mode) |
+| `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `BILLING_CURRENCY`, `PLAN_PRICE_*` | Mercado Pago billing (omit both MP values for self-hosted mode) |
+| `TRUST_PROXY` | `true` behind Caddy, so client addresses come from `X-Forwarded-For` |
 | `MAIL_FROM`, `SMTP_URL` or `RESEND_API_KEY` | Email |
-| `BROADCAST_ENABLED`, `BROADCAST_MAX_CONCURRENT`, `BROADCASTER_TOKEN` | Cloud broadcast |
+| `BROADCAST_ENABLED`, `BROADCAST_MAX_CONCURRENT`, `BROADCASTER_TOKEN`, `BROADCAST_STAGE_ORIGIN` | Cloud broadcast (the stage origin is `http://lantern-app:8080` inside compose: a bare `app` host is an HSTS-preloaded TLD that Chromium forces to HTTPS) |
 | `CLERK_SECRET_KEY` / `CLERK_PUBLISHABLE_KEY` or `WORKOS_API_KEY` / `WORKOS_CLIENT_ID` | Identity provider (later) |
 
 ### Operations
@@ -150,7 +151,7 @@ and runtimes can move later ([ADR-0007](0007-channel-runtime.md)).
 
 ## Action Items
 
-1. [ ] Write `deploy/app.Dockerfile`, `deploy/compose.yaml`, `deploy/Caddyfile` and `deploy/backup.sh`.
-2. [ ] Write `deploy/README.md`: first-time setup, DNS, `.env` reference, upgrade, rollback, backup and restore, host hardening.
-3. [ ] Update CI to Bun with build budgets and an image publish on tags.
+1. [x] Write `deploy/app.Dockerfile`, `deploy/compose.yaml`, `deploy/Caddyfile` and `deploy/backup.sh`.
+2. [x] Write `deploy/README.md`: first-time setup, DNS, `.env` reference, upgrade, rollback, backup and restore, host hardening.
+3. [x] Update CI to Bun with build budgets and an image publish on tags.
 4. [ ] Rehearse: fresh VPS → running stack → restore from backup.

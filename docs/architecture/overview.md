@@ -24,7 +24,7 @@ describes the production system that replaces it.
 4. **Simple to operate.** One VPS, one `docker compose up`, automatic HTTPS,
    nightly backups.
 5. **Ready to charge for.** Accounts, plans, limits, usage metering and
-   Stripe billing.
+   Mercado Pago billing.
 
 ### Non-goals for v1
 
@@ -50,7 +50,7 @@ describes the production system that replaces it.
 | Stage | A per-channel browser-source URL for OBS / TikTok LIVE Studio, rotatable secret key |
 | Broadcast | Optional cloud broadcast: the server renders the stage and pushes RTMP to TikTok (beta, plan-gated) |
 | Analytics | Per-stream sessions: viewers over time, gifts and diamonds, messages, follows, top supporters, host activity |
-| Billing | Plans with limits, Stripe Checkout and Customer Portal, usage metering, self-hosted mode with no limits |
+| Billing | Plans with limits, Mercado Pago subscriptions (hosted checkout, plan changes, cancellation), usage metering, self-hosted mode with no limits |
 
 ### Non-functional
 
@@ -78,7 +78,7 @@ flowchart LR
   platform -- optional cloud broadcast<br/>RTMP --> tiktok
   platform -- host turns, moderation --> anthropic[(Claude API)]
   platform -- text-to-speech --> eleven[(ElevenLabs)]
-  platform -- checkout, portal, webhooks --> stripe[(Stripe)]
+  platform -- subscriptions, webhooks --> mp[(Mercado Pago)]
   platform -- transactional email, later --> mail[(Resend)]
   creator -. sign-in, before launch .-> idp[(Clerk or WorkOS)]
   platform -. verify sessions, user sync .-> idp
@@ -244,7 +244,7 @@ Decided in [ADR-0004](../adr/0004-monorepo-layout.md).
 | [0010](../adr/0010-frontend-stack.md) | React 19, Vite, React Router, TanStack Query, Radix primitives, hand-written CSS |
 | [0011](../adr/0011-design-direction.md) | Visual design direction for the product |
 | [0012](../adr/0012-ai-and-voice-pipeline.md) | Claude models, moderation, cost guardrails, TTS |
-| [0013](../adr/0013-billing-and-plans.md) | Plans in code, Stripe billing, self-hosted mode |
+| [0013](../adr/0013-billing-and-plans.md) | Plans in code, Mercado Pago billing, self-hosted mode |
 | [0014](../adr/0014-cloud-broadcast.md) | Cloud broadcast via headless Chromium and ffmpeg, as an isolated service |
 | [0015](../adr/0015-deployment.md) | Docker Compose on a VPS with Caddy, Postgres and backups |
 | [0016](../adr/0016-security.md) | Security model: tenancy, secrets, CSRF, CSP, rate limits, abuse |

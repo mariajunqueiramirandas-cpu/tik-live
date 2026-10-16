@@ -211,7 +211,7 @@ generated designs fall into. Where a first instinct matched one, it was revised:
 
 ## Action Items
 
-1. [ ] Implement `tokens.css` (color, type scale, spacing on a 4 px grid, radii, motion durations and easing).
-2. [ ] Self-host and preload both fonts with metric-matched fallbacks.
-3. [ ] Build primitives on the tokens and review them on one page before building screens.
-4. [ ] Take screenshots of each screen at 390 px, 1280 px and 1600 px and critique them against the principles before calling a screen done.
+1. [x] Implement `tokens.css` (color, type scale, spacing on a 4 px grid, radii, motion durations and easing).
+2. [x] Self-host and preload both fonts with metric-matched fallbacks.
+3. [x] Build primitives on the tokens and review them on one page before building screens.
+4. [x] Take screenshots of each screen at 390 px, 1280 px and 1600 px and critique them against the principles before calling a screen done (reviewed at 390 px and 1280 px).

@@ -165,6 +165,12 @@ export type StudioServerMessage =
 type StudioPayloadOf<T> = T extends unknown ? Omit<T, "v"> : never;
 export type StudioServerPayload = StudioPayloadOf<StudioServerMessage>;
 
+/** Every studio message type, for docs and contract tests; the check below fails to compile if one is missing. */
+export const STUDIO_SERVER_MESSAGE_TYPES = ["snapshot", "patch", "history", "transcript", "live-event", "log", "notice", "ack"] as const;
+type MissingStudioType = Exclude<StudioServerMessage["t"], (typeof STUDIO_SERVER_MESSAGE_TYPES)[number]>;
+const _allStudioTypesListed: [MissingStudioType] extends [never] ? true : MissingStudioType = true;
+void _allStudioTypesListed;
+
 // ---------------------------------------------------------------------------
 // Studio: studio -> server
 

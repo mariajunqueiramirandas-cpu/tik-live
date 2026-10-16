@@ -124,7 +124,7 @@ server. Radix gives behavior and accessibility; our own CSS gives the look.
 
 ## Action Items
 
-1. [ ] Scaffold `apps/web` (Vite multi-entry: `index.html`, `stage.html`), router, query client and RPC client.
-2. [ ] Build the design system: tokens, base styles, Radix-styled primitives (Button, Field, Dialog, Menu, Tabs, Toast, Switch, Slider, Tooltip).
-3. [ ] Build the studio store (`useSyncExternalStore`) and realtime hook with resync.
-4. [ ] Build the landing prerender script and size budgets in CI.
+1. [x] Scaffold `apps/web` (Vite multi-entry: `index.html`, `stage.html`), router, query client and RPC client.
+2. [x] Build the design system: tokens, base styles, Radix-styled primitives (Button, Field, Dialog, Menu, Tabs, Toast, Switch, Slider, Tooltip).
+3. [x] Build the studio store (`useSyncExternalStore`) and realtime hook with resync.
+4. [x] Build the landing prerender script and size budgets in CI.

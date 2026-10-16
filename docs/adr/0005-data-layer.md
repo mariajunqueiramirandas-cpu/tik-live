@@ -50,8 +50,8 @@ tests should get a real database without Docker.
 | `session_sample` | (`session_id`, `minute`) | Per-minute time series | `viewers`, `likes`, `messages`, `diamonds` |
 | `utterance` | `id` (bigserial) | Spoken and blocked host lines | `session_id`, `at`, `text`, `emotion`, `status`, `reason`, `turn_kind`; purged after the plan's retention window |
 | `usage_daily` | (`user_id`, `channel_id`, `day`) | Metering | LLM requests and tokens (input, cached input, output), moderation requests, TTS characters, runtime seconds, broadcast seconds |
-| `subscription` | `user_id` | Billing state mirrored from Stripe | `plan`, `status`, `stripe_customer_id`, `stripe_subscription_id`, `current_period_end`, `cancel_at_period_end` |
-| `stripe_event` | `id` | Webhook idempotency | `processed_at` |
+| `subscription` | `user_id` | Billing state mirrored from Mercado Pago ([ADR-0013](0013-billing-and-plans.md)) | `plan`, `status`, `provider`, `provider_subscription_id`, `amount`, `currency`, `next_payment_at`, `last_payment_status`, `grace_until` |
+| `billing_event` | `id` | Webhook idempotency | `type`, `payload`, `received_at` |
 | `audit_log` | `id` | Security-relevant actions | `user_id`, `action`, `target`, `meta` jsonb, `ip`, `at` |
 
 All channel-scoped tables cascade on channel delete. Every query in the
@@ -142,8 +142,8 @@ without setup cost.
 
 ## Action Items
 
-1. [ ] Define the Drizzle schema (including `app_user`) and generate the first migration.
-2. [ ] Implement `createDb()` that returns a Bun.SQL- or PGlite-backed Drizzle instance from `DATABASE_URL` (`postgres://…` or `pglite://path` or `pglite://memory`).
-3. [ ] Migrate at boot under an advisory lock; add a test helper that creates a migrated in-memory PGlite per test file.
-4. [ ] Implement write-behind stores (viewers, samples, utterances, usage) with flush-on-stop tests.
-5. [ ] Add a nightly retention job for `utterance` and expired sessions.
+1. [x] Define the Drizzle schema (including `app_user`) and generate the first migration.
+2. [x] Implement `createDb()` that returns a Bun.SQL- or PGlite-backed Drizzle instance from `DATABASE_URL` (`postgres://…` or `pglite://path` or `pglite://memory`).
+3. [x] Migrate at boot under an advisory lock; add a test helper that creates a migrated in-memory PGlite per test file.
+4. [x] Implement write-behind stores (viewers, samples, utterances, usage) with flush-on-stop tests.
+5. [x] Add a nightly retention job for `utterance` and expired sessions (`apps/server/src/runtime/retention.ts`).

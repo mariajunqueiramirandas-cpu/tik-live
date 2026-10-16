@@ -7,7 +7,7 @@
 ## Context
 
 The backend serves a JSON API (auth, channels, runtime control, analytics,
-billing), Stripe webhooks, static assets (the dashboard SPA and the stage
+billing), Mercado Pago webhooks, static assets (the dashboard SPA and the stage
 page), audio clips for the stage, and two kinds of WebSocket connection
 (stage and studio). It runs on Bun ([ADR-0002](0002-bun-runtime-and-toolchain.md)).
 The React dashboard should call the API with compile-time type safety, so
@@ -108,6 +108,6 @@ handlers would run on Node or at the edge if a piece of the system ever moved.
 
 ## Action Items
 
-1. [ ] Scaffold `apps/server` with the Hono app, middleware chain and error shape.
-2. [ ] Export `AppType` and wire `hc<AppType>` in `apps/web`.
-3. [ ] Add a CI check that fails if `apps/web` doesn't type-check against the server types.
+1. [x] Scaffold `apps/server` with the Hono app, middleware chain and error shape.
+2. [x] Export `AppType` and wire `hc<AppType>` in `apps/web`.
+3. [x] Add a CI check that fails if `apps/web` doesn't type-check against the server types (`bun run typecheck` covers the web app against `AppType`).

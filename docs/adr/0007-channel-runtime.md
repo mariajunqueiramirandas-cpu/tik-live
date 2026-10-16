@@ -115,8 +115,8 @@ every component behind interfaces (`EventSource`, `SpeechOutput`,
 
 ## Action Items
 
-1. [ ] Port v0.1 modules into `apps/server/src/runtime/` and make every dependency injectable from a channel config.
-2. [ ] Implement `ChannelRuntime` (lifecycle, supervision hooks, flush on stop).
-3. [ ] Implement `RuntimeManager` (boot reconcile, batching, backoff, graceful shutdown, plan checks, hour accrual).
-4. [ ] Expose event-loop lag and per-runtime health in `/readyz` and the studio.
-5. [ ] Tests: start/stop, crash and restart with backoff, boot resume, shutdown flush, hour exhaustion.
+1. [x] Port v0.1 modules into `apps/server/src/runtime/` and make every dependency injectable from a channel config.
+2. [x] Implement `ChannelRuntime` (lifecycle, supervision hooks, flush on stop).
+3. [x] Implement `RuntimeManager` (boot reconcile, batching, backoff, graceful shutdown, plan checks, hour accrual).
+4. [x] Expose event-loop lag and per-runtime health in `/readyz` and the studio (event-loop lag in `/readyz`, runtime health in the studio).
+5. [x] Tests: start/stop, crash and restart with backoff, boot resume, shutdown flush, hour exhaustion.

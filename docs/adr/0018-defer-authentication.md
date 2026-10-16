@@ -157,8 +157,9 @@ use to drive a stream or spend money.
 
 ## Action Items
 
-1. [ ] Implement `IdentityProvider`, `DevIdentityProvider` (with impersonation), the identity middleware and `requireUser`.
-2. [ ] Add the `app_user` table with JIT provisioning.
-3. [ ] Implement the production guard and the `DEV_GATE_PASSWORD` Basic-auth gate with stage and webhook exclusions.
-4. [ ] Add a dev-user switcher to the dashboard (dev mode only).
-5. [ ] Before launch: choose Clerk or WorkOS, implement the adapter and user-sync webhook, and add a follow-up ADR recording the choice.
+1. [x] Implement `IdentityProvider`, `DevIdentityProvider` (with impersonation), the identity middleware and `requireUser`.
+2. [x] Add the `app_user` table with JIT provisioning.
+3. [x] Implement the production guard and the `DEV_GATE_PASSWORD` Basic-auth gate with stage and webhook exclusions.
+4. [x] Add a dev-user switcher to the dashboard (dev mode only).
+5. [x] Implement both adapters (`apps/server/src/identity/clerk.ts`, `workos.ts`), the Clerk user-sync webhook, and the dashboard sign-in flows.
+6. [ ] Owner: choose Clerk or WorkOS ([decisions needed](../decisions-needed.md)), set its keys, and record the choice in a follow-up ADR.

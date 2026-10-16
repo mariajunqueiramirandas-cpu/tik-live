@@ -29,7 +29,7 @@ flowchart LR
 | 1. Backend core | Dev identity, channels, multi-channel runtimes, realtime hubs, metering; a simulated channel runs end to end through the API | L | 0003, 0005, 0007, 0008, 0012, 0016, 0018 |
 | 2. Stage engine | WebGL2 engine and stage page; deterministic visual tests | L | 0009 |
 | 3. Dashboard + landing | The whole creator-facing app and the public landing page | XL | 0010, 0011 |
-| 4. Billing + plans | Plans, entitlements, Stripe, self-hosted mode | M | 0013 |
+| 4. Billing + plans | Plans, entitlements, Mercado Pago, self-hosted mode | M | 0013 |
 | 5. Deployment | Production compose stack, backups, runbook, image publishing | M | 0015 |
 | 6. Cloud broadcast (beta) | Server-rendered RTMP streaming, measured capacity | L | 0014 |
 | 7. Hardening + launch | Identity provider (Clerk or WorkOS), load test, security checklist, performance pass, docs | M | 0016, 0017, 0018 |
@@ -122,13 +122,14 @@ Bun).
 
 ## Phase 4: Billing and plans
 
-**Deliverables:** `plans.ts`, entitlement service, Stripe Checkout, Portal and
-webhooks, enforcement at create, start and the minute ticker, billing page,
-upgrade prompts, self-hosted mode.
+**Deliverables:** `plans.ts`, entitlement service, Mercado Pago subscriptions
+(preapproval checkout, in-place plan changes, cancellation) and webhooks,
+enforcement at create, start and the minute ticker, billing page, upgrade
+prompts, self-hosted mode.
 
 **Exit criteria:** webhook fixture tests (signature, idempotency, upgrade,
 downgrade, payment failure with grace period); enforcement tests;
-self-hosted mode test with no Stripe variables set.
+self-hosted mode test with no Mercado Pago variables set.
 
 ## Phase 5: Deployment
 
@@ -186,7 +187,7 @@ complete; all ADRs accepted or superseded.
 | Document | Audience | Phase |
 |---|---|---|
 | `docs/architecture/*`, `docs/adr/*` | Contributors | Now; kept current |
-| `docs/protocol.md`: realtime protocol reference generated from the zod schemas | Contributors | 1 |
+| `docs/protocol.md`: realtime protocol reference, checked against the zod schemas by a contract test | Contributors | 1 |
 | `docs/api.md`: HTTP API reference | Contributors, future integrators | 1 |
 | `deploy/README.md`: runbook (install, configure, upgrade, roll back, back up, restore, harden) | Operators | 5 |
 | In-app guides: OBS and TikTok LIVE Studio setup, going live checklist, safety tips | Creators | 3 |
@@ -210,21 +211,22 @@ complete; all ADRs accepted or superseded.
 
 ## Open questions
 
-These need the owner's decision. Each has a proposed default that the plan
-assumes until answered.
+These need the owner's decision. Each has a proposed default that the code
+uses until answered. [Decisions needed](../decisions-needed.md) has the
+current list with costs, where to change each setting, and recommendations.
 
 | # | Question | Proposed default |
 |---|---|---|
 | 1 | Product name | **Lantern** (working name, one constant) |
-| 2 | Models per plan, given the [cost table](../adr/0012-ai-and-voice-pipeline.md#cost-model-estimates-to-be-replaced-by-metered-data) (Opus 5.5 host + moderator ≈ $7.55 per live hour; Sonnet 5.5 + Haiku 5.5 ≈ $2.25; Haiku 5.5 for both ≈ $0.20) | Opus 5.5 everywhere until staging measurements are in, then decide per plan |
-| 3 | Plan names, prices and limits | Free / Creator / Pro as in [ADR-0013](../adr/0013-billing-and-plans.md), prices TBD |
-| 4 | Stripe directly or a merchant of record (Paddle, Lemon Squeezy) for sales tax | Stripe, with the integration isolated |
+| 2 | Models per plan, given the [cost table](../adr/0012-ai-and-voice-pipeline.md#cost-model-estimates-to-be-replaced-by-metered-data) (Opus 5.5 host + moderator ≈ $7.55 per live hour; Sonnet 5.5 + Haiku 5.5 ≈ $2.25; Haiku 5.5 for both ≈ $0.20) | Opus 5.5 everywhere until staging measurements are in, then decide per plan ([decision 1](../decisions-needed.md#1-prices-hours-and-ai-models-per-plan)) |
+| 3 | Plan names, prices and limits | Free / Creator / Pro as in [ADR-0013](../adr/0013-billing-and-plans.md); placeholder prices R$ 49,90 and R$ 149,90 ([decision 1](../decisions-needed.md#1-prices-hours-and-ai-models-per-plan)) |
+| 4 | Payment provider | **Decided:** Mercado Pago ([ADR-0013](../adr/0013-billing-and-plans.md)) |
 | 5 | Transactional email (billing notices, stream alerts); sign-in emails will come from the identity provider | Resend, added when the first email feature lands |
-| 6 | Clerk or WorkOS | Decide before Phase 7: Clerk if individual creators are the focus, WorkOS if agencies and enterprise SSO matter |
-| 7 | Cloud broadcast in the launch scope | Yes, as a Pro beta after browser-source mode ships |
+| 6 | Clerk or WorkOS | Both are built behind the identity seam; Clerk recommended ([decision 2](../decisions-needed.md#2-sign-in-provider-clerk-or-workos)) |
+| 7 | Cloud broadcast in the launch scope | Built for Pro; whether it's in the launch depends on its CPU cost ([decision 4](../decisions-needed.md#4-cloud-broadcast-capacity-and-price)) |
 | 8 | Sign-ups at launch | Invite-only beta through the provider, then open |
 | 9 | Domain for the deployment | Needed before Phase 5 |
-| 10 | Delivery: everything on the current branch and PR #1, or one PR per phase | One PR per phase, for reviewable diffs (needs permission to open new branches) |
+| 10 | Delivery: everything on the current branch and PR #1, or one PR per phase | **Decided:** everything on PR #1, at the owner's request |
 
 ## Definition of done (every phase)
 
