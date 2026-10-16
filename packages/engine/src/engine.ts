@@ -3,23 +3,31 @@ import { QualityGovernor } from "./anim/governor";
 import { createRandom } from "./anim/random";
 import { Spring, SpringVector, SPRINGS } from "./anim/spring";
 import { AudioEngine, type PlaybackHandle } from "./audio/audio";
+import { FrameCapture, type CaptureOptions, type CaptureStats } from "./capture";
 import type { MouthShape } from "./audio/envelope";
 import { FaceController } from "./character/face";
 import { hexToRgb, type Rgb } from "./color";
-import { Gl, ShaderError, type Program, type QuadGeometry } from "./gl/gl";
+import { Gl, ShaderError, type Program, type QuadGeometry, type RenderTarget } from "./gl/gl";
 import {
   ATMOSPHERE_FRAGMENT,
+  FULLSCREEN_VERTEX,
   GLOW_DOT_FRAGMENT,
   MOTES_VERTEX,
   OFFERINGS_VERTEX,
   ORB_FRAGMENT,
   RECT_VERTEX,
   SPRITE_FRAGMENT,
+  SPRITE_SINGLE_FRAGMENT,
+  UPSCALE_FRAGMENT,
   VOICE_LINE_FRAGMENT,
+  YUV_CHROMA_FRAGMENT,
+  YUV_LUMA_FRAGMENT,
 } from "./gl/shaders";
 import { Alerts, Caption, Chrome, FONT_FAMILY, type TextSprite } from "./text/sprites";
 
-export const ENGINE_VERSION = "1.0.0";
+export const ENGINE_VERSION = "1.1.0";
+/** Cloud broadcast audio rate; the broadcaster's encoder reads PCM at this rate. */
+export const BROADCAST_SAMPLE_RATE = 48_000;
 export const STAGE_WIDTH = 1080;
 export const STAGE_HEIGHT = 1920;
 
@@ -68,11 +76,26 @@ export interface StageEngine {
   on<K extends keyof EngineEvents>(event: K, listener: EngineEvents[K]): () => void;
   resize(): void;
   destroy(): void;
+  /**
+   * Cloud broadcast only: draw frames offscreen at a fixed size and hand
+   * them over as I420 (ADR-0020). Returns a function that stops capturing.
+   * Absent on the no-WebGL fallback.
+   */
+  startCapture?(options: CaptureOptions): () => void;
+  captureStats?(): CaptureStats | null;
 }
 
 const QUALITY_LEVEL: Record<Exclude<QualitySetting, "auto">, number> = { high: 0, balanced: 1, low: 2 };
 
-const ORB = { x: 540, y: 720, r: 165, extent: 2.4 };
+// extent: the orb quad's half-size in body radii. The body (wobble and squash
+// included) stays inside 1.2; the halo around it is drawn with the atmosphere.
+const ORB = { x: 540, y: 720, r: 165, extent: 1.25 };
+/**
+ * The atmosphere renders at 1/4 of the output size in each direction (1/16
+ * of the pixels): it's all soft gradients, light and slow caustics, and
+ * comparisons against full resolution stay above 46 dB PSNR.
+ */
+const ATMOSPHERE_DOWNSCALE = 4;
 const MOTES = 96;
 const OFFERING_SLOTS = 192;
 const GOLD: Rgb = hexToRgb("#FFD15C");
@@ -196,6 +219,13 @@ export class Engine implements StageEngine {
   private orb: Program | null = null;
   private voiceLine: Program | null = null;
   private sprite: Program | null = null;
+  private spriteSingle: Program | null = null;
+  private upscale: Program | null = null;
+  /** The atmosphere renders here at reduced resolution, then UPSCALE_FRAGMENT draws it full size. */
+  private atmosphereTarget!: RenderTarget;
+  /** Where frames go: the canvas (null) or an offscreen target (cloud broadcast capture). */
+  private output: RenderTarget | null = null;
+  private capture: FrameCapture | null = null;
   private quad!: QuadGeometry;
   private moteQuad!: QuadGeometry;
   private offeringQuad!: QuadGeometry;
@@ -245,7 +275,8 @@ export class Engine implements StageEngine {
     this.mode = options.mode;
     this.random = createRandom(options.seed ?? 0x7a11);
     this.face = new FaceController(this.random);
-    const quality = options.quality ?? "auto";
+    // A broadcast's output size is fixed: never trade resolution for frame rate there.
+    const quality = options.quality ?? (options.mode === "broadcast" ? "high" : "auto");
     this.governor = new QualityGovernor(quality === "auto" ? 0 : QUALITY_LEVEL[quality], quality !== "auto");
     const gl = (() => {
       try {
@@ -256,7 +287,8 @@ export class Engine implements StageEngine {
           stencil: false,
           premultipliedAlpha: true,
           powerPreference: "high-performance",
-          preserveDrawingBuffer: options.mode === "broadcast" || options.manualClock === true,
+          // Tests read the canvas back after renderAt(); everyone else lets the browser swap buffers.
+          preserveDrawingBuffer: options.manualClock === true,
         });
       } catch {
         throw new WebGLUnavailableError();
@@ -265,7 +297,7 @@ export class Engine implements StageEngine {
     this.gl = gl;
     this.audio = new AudioEngine({
       muted: options.muted ?? options.mode === "preview",
-      capture: options.mode === "broadcast",
+      ...(options.mode === "broadcast" ? { sampleRate: BROADCAST_SAMPLE_RATE } : {}),
       ...(options.fetch ? { fetch: options.fetch } : {}),
     });
     this.speaker = new Speaker(this.audio, this.mode, this.events);
@@ -337,12 +369,37 @@ export class Engine implements StageEngine {
 
   /** Renders one frame at time `t` seconds (manual clock, for tests and thumbnails). */
   renderAt(t: number): void {
+    this.capture?.poll();
     while (this.time < t - 1e-6) {
       const dt = Math.min(1 / 60, t - this.time);
       this.time += dt;
       this.update(dt);
     }
     this.draw();
+    this.capture?.afterDraw();
+  }
+
+  startCapture(options: CaptureOptions): () => void {
+    if (this.capture) throw new Error("This engine is already capturing");
+    const luma = this.gl.program("yuv-luma", FULLSCREEN_VERTEX, YUV_LUMA_FRAGMENT);
+    const chroma = this.gl.program("yuv-chroma", FULLSCREEN_VERTEX, YUV_CHROMA_FRAGMENT);
+    const capture = new FrameCapture(this.gl, { luma, chroma, quad: this.quad }, options);
+    this.capture = capture;
+    this.output = capture.frame;
+    this.layout();
+    return () => {
+      if (this.capture !== capture) return;
+      capture.dispose();
+      this.gl.untrack(luma);
+      this.gl.untrack(chroma);
+      this.capture = null;
+      this.output = null;
+      this.layout();
+    };
+  }
+
+  captureStats(): CaptureStats | null {
+    return this.capture?.counters ?? null;
   }
 
   telemetry(): Telemetry {
@@ -376,13 +433,42 @@ export class Engine implements StageEngine {
       this.canvas.height = height;
       changed = true;
     }
+    this.layout();
+    // A resized canvas is cleared; redraw now so there's never a blank frame.
+    if (changed && !this.running && this.caption) this.draw();
+  }
+
+  /** The size frames are drawn at: the canvas, or the capture target while capturing. */
+  private get outputWidth(): number {
+    return this.output?.width ?? this.canvas.width;
+  }
+
+  private get outputHeight(): number {
+    return this.output?.height ?? this.canvas.height;
+  }
+
+  /** Sizes what follows the output: the half-resolution atmosphere and the text scale. */
+  private layout(): void {
+    const width = this.outputWidth;
+    this.atmosphereTarget?.resize(
+      Math.max(1, Math.ceil(width / ATMOSPHERE_DOWNSCALE)),
+      Math.max(1, Math.ceil(this.outputHeight / ATMOSPHERE_DOWNSCALE)),
+    );
     const nextScale = Math.max(0.25, Math.min(2, width / STAGE_WIDTH));
     if (Math.abs(nextScale - this.scale) > 0.01) {
       this.scale = nextScale;
       this.repaintText();
     }
-    // A resized canvas is cleared; redraw now so there's never a blank frame.
-    if (changed && !this.running && this.caption) this.draw();
+  }
+
+  /** Binds the output (canvas or capture target) as the draw target. */
+  private bindOutput(): void {
+    const gl = this.gl.gl;
+    if (this.output) this.output.bindForDrawing();
+    else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    }
   }
 
   destroy(): void {
@@ -455,10 +541,12 @@ export class Engine implements StageEngine {
       if (interval < minInterval) return;
       this.lastFrame = now;
       const workStart = performance.now();
+      this.capture?.poll();
       const dt = Math.min(0.05, interval / 1000);
       this.time += dt;
       this.update(dt);
       this.draw();
+      this.capture?.afterDraw();
       const work = performance.now() - workStart;
       if (this.governor.record(interval, work, now)) this.resize();
       if (now - this.lastTelemetryAt > 10_000) {
@@ -509,11 +597,20 @@ export class Engine implements StageEngine {
       background[i] = this.colors.get(6 + i);
     }
     const orbY = ORB.y + Math.sin(t * 1.3) * 14 + this.bounce.value * 6;
+    const mix = this.characterMix.value;
+    const orbAlpha = mix > 0.01 ? Math.min(1, mix) : 0;
+    const orbR = ORB.r * (1 + this.amplitude * 0.05 + this.flash * 0.04) * (0.6 + 0.4 * orbAlpha);
+    const squash = Math.max(-0.08, Math.min(0.08, this.bounce.velocity * 0.012));
 
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
 
+    // The atmosphere is soft everywhere: render it small (its cost was half of
+    // every frame in software rendering), then scale it up with dithering.
+    // Without the upscale program, draw it directly.
+    const halfRes = this.upscale !== null;
+    if (halfRes) this.atmosphereTarget.bindForDrawing();
+    else this.bindOutput();
     this.atmosphere
       .use()
       .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
@@ -525,8 +622,16 @@ export class Engine implements StageEngine {
       .rgb("u_gold", GOLD)
       .v2("u_orb", ORB.x, orbY)
       .f("u_glow", this.glow.value)
-      .f("u_flash", this.flash);
+      .f("u_flash", this.flash)
+      .v4("u_halo", orbR, squash, this.amplitude, orbAlpha)
+      .f("u_haloAa", 2.4 / (orbR * this.scale));
     this.quad.draw();
+    if (this.upscale) {
+      this.bindOutput();
+      this.atmosphereTarget.bind(0);
+      this.upscale.use().v2("u_res", STAGE_WIDTH, STAGE_HEIGHT).v4("u_rect", 0, 0, STAGE_WIDTH, STAGE_HEIGHT).i("u_tex", 0);
+      this.quad.draw();
+    }
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
@@ -546,8 +651,7 @@ export class Engine implements StageEngine {
     }
 
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    const mix = this.characterMix.value;
-    if (mix > 0.01) this.drawOrb(t, orbY, primary, secondary, Math.min(1, mix));
+    if (orbAlpha > 0) this.drawOrb(t, orbY, orbR, squash, primary, secondary, orbAlpha);
     if (mix < 0.99) this.drawVoiceLine(t, primary, secondary, Math.min(1, 1 - mix));
 
     this.drawSprite(this.chrome.title);
@@ -556,12 +660,10 @@ export class Engine implements StageEngine {
     this.drawSprite(this.caption.sprite);
   }
 
-  private drawOrb(t: number, orbY: number, primary: Rgb, secondary: Rgb, alpha: number): void {
+  private drawOrb(t: number, orbY: number, r: number, squash: number, primary: Rgb, secondary: Rgb, alpha: number): void {
     if (!this.orb) return;
     const face = this.face.state;
-    const r = ORB.r * (1 + this.amplitude * 0.05 + this.flash * 0.04) * (0.6 + 0.4 * alpha);
     const half = r * ORB.extent;
-    const squash = Math.max(-0.08, Math.min(0.08, this.bounce.velocity * 0.012));
     this.orb
       .use()
       .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
@@ -607,6 +709,20 @@ export class Engine implements StageEngine {
 
   private readonly drawSprite = (sprite: TextSprite): void => {
     if (!this.sprite || !sprite.visible()) return;
+    const opacity = Math.max(0, Math.min(1, sprite.opacity.value));
+    const settled = sprite.mix <= 0.001 || sprite.mix >= 0.999;
+    // Outside a cross-fade only one texture shows: sample just that one.
+    if (settled && this.spriteSingle) {
+      sprite.textures[sprite.mix >= 0.999 ? 1 : 0].bind(0);
+      this.spriteSingle
+        .use()
+        .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
+        .v4("u_rect", sprite.x, sprite.y + sprite.offsetY.value, sprite.width, sprite.height)
+        .i("u_tex", 0)
+        .f("u_opacity", opacity);
+      this.quad.draw();
+      return;
+    }
     sprite.textures[0].bind(0);
     sprite.textures[1].bind(1);
     this.sprite
@@ -616,7 +732,7 @@ export class Engine implements StageEngine {
       .i("u_tex", 0)
       .i("u_tex2", 1)
       .f("u_mix", sprite.mix)
-      .f("u_opacity", Math.max(0, Math.min(1, sprite.opacity.value)));
+      .f("u_opacity", opacity);
     this.quad.draw();
   };
 
@@ -637,13 +753,16 @@ export class Engine implements StageEngine {
       }
     };
     this.atmosphere = tryProgram("atmosphere", RECT_VERTEX, ATMOSPHERE_FRAGMENT);
+    this.upscale = tryProgram("upscale", RECT_VERTEX, UPSCALE_FRAGMENT);
     this.sprite = tryProgram("sprite", RECT_VERTEX, SPRITE_FRAGMENT);
+    this.spriteSingle = tryProgram("sprite-single", RECT_VERTEX, SPRITE_SINGLE_FRAGMENT);
     this.motes = tryProgram("motes", MOTES_VERTEX, GLOW_DOT_FRAGMENT);
     this.offerings = tryProgram("offerings", OFFERINGS_VERTEX, GLOW_DOT_FRAGMENT);
     this.orb = tryProgram("orb", RECT_VERTEX, ORB_FRAGMENT);
     this.voiceLine = tryProgram("voice-line", RECT_VERTEX, VOICE_LINE_FRAGMENT);
     if (this.error) queueMicrotask(() => this.events.emit("telemetry", this.telemetry()));
 
+    this.atmosphereTarget = this.gl.target("high");
     this.quad = this.gl.quad();
     this.moteQuad = this.gl.quad();
     const seeds = new Float32Array(MOTES * 4);
@@ -759,7 +878,7 @@ class FallbackEngine implements StageEngine {
     this.mode = options.mode;
     this.audio = new AudioEngine({
       muted: options.muted ?? options.mode === "preview",
-      capture: options.mode === "broadcast",
+      ...(options.mode === "broadcast" ? { sampleRate: BROADCAST_SAMPLE_RATE } : {}),
       ...(options.fetch ? { fetch: options.fetch } : {}),
     });
     this.speaker = new Speaker(this.audio, this.mode, this.events);

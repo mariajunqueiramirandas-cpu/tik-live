@@ -1,8 +1,15 @@
 # ADR-0014: Cloud broadcast
 
-**Status:** Proposed
+**Status:** Proposed (the pipeline below is amended by [ADR-0020](0020-broadcast-pipeline-avx2.md))
 **Date:** 2026-10-16
 **Deciders:** Project owner
+
+> **Superseded in part.** The rendering, capture and encoding pipeline in
+> this record (SwiftShader, MediaRecorder, x264 transcode) was replaced by
+> [ADR-0020](0020-broadcast-pipeline-avx2.md): Mesa llvmpipe, in-page H.264
+> and a copy into FLV, at about 1.8 cores a stream instead of 3.7. The
+> service split, control API, resilience, capacity cap and secrets handling
+> below still apply.
 
 ## Context
 
@@ -164,4 +171,4 @@ broadcast becomes the dominant usage.
 2. [x] Build `apps/broadcaster` (internal API, Chromium lifecycle, MediaRecorder bridge, ffmpeg supervisor).
 3. [x] Add the broadcast settings UI with stream key entry (write-only), test-connection, and the live status panel.
 4. [x] Add RTMP URL validation (scheme, SSRF guard) and secret redaction in logs.
-5. [ ] Trial Chrome stable H.264 passthrough (Option B) and record the results in a follow-up ADR.
+5. [x] Trial Chrome stable H.264 passthrough (Option B) and record the results in a follow-up ADR: done in [ADR-0020](0020-broadcast-pipeline-avx2.md), with WebCodecs rather than MediaRecorder.

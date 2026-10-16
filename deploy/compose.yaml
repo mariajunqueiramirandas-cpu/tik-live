@@ -132,6 +132,8 @@ services:
       BROADCASTER_TOKEN: ${BROADCASTER_TOKEN:-}
       STAGE_ORIGINS: http://lantern-app:8080
       BROADCAST_MAX_CONCURRENT: ${BROADCAST_MAX_CONCURRENT:-1}
+      # auto: the stage encodes H.264 in Chrome (ADR-0020). x264: raw frames, encoded by ffmpeg (about 1 vCPU more).
+      VIDEO_ENCODER: ${VIDEO_ENCODER:-auto}
     init: true
     shm_size: 1gb
     stop_grace_period: 15s

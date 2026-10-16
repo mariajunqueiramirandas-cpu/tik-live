@@ -1,4 +1,4 @@
-# The cloud broadcaster: headless Chromium + ffmpeg (ADR-0014).
+# The cloud broadcaster: headless Chrome + ffmpeg (ADR-0014, ADR-0020).
 # Build from the repository root: docker build -f deploy/broadcaster.Dockerfile .
 
 FROM oven/bun:1.4.2-slim AS build
@@ -14,11 +14,18 @@ RUN bun install --frozen-lockfile
 COPY . .
 RUN bun run --filter @tik-live/broadcaster build
 
-# The Playwright image ships Chromium (matching playwright-core 1.64.1) with
-# the fonts the stage needs, including color emoji for viewer names.
+# The Playwright image ships the fonts the stage needs (color emoji for viewer
+# names included) and Mesa's llvmpipe, which renders WebGL with AVX2 code.
+# Google Chrome is added for its H.264 encoder: the stage encodes video in
+# the page, which saves about a core per broadcast (ADR-0020). Without it,
+# the bundled Chromium works too, sending raw frames to x264.
 FROM mcr.microsoft.com/playwright:v1.64.1-noble AS runtime
+ARG CHROME_DEB=https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg \
+ && apt-get install -y --no-install-recommends ffmpeg mesa-vulkan-drivers curl ca-certificates \
+ && curl -fsSL "$CHROME_DEB" -o /tmp/chrome.deb \
+ && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+ && rm -f /tmp/chrome.deb \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=oven/bun:1.4.2-slim /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /app
@@ -29,7 +36,8 @@ COPY --from=build --chown=pwuser:pwuser /src/apps/broadcaster/dist/ /app/dist/
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8090 \
-    FFMPEG_PATH=/usr/bin/ffmpeg
+    FFMPEG_PATH=/usr/bin/ffmpeg \
+    CHROMIUM_PATH=/opt/google/chrome/chrome
 USER pwuser
 EXPOSE 8090
 HEALTHCHECK --interval=20s --timeout=4s --start-period=20s --retries=3 \

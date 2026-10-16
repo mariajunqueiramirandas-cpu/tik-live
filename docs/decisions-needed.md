@@ -16,7 +16,7 @@ charging other people.
 | 1 | [Prices, hours and AI models per plan](#1-prices-hours-and-ai-models-per-plan) | R$ 49,90 / R$ 149,90, every plan on Opus 5.5 | Paid launch |
 | 2 | [Sign-in provider: Clerk or WorkOS](#2-sign-in-provider-clerk-or-workos) | No sign-in; one shared password (`DEV_GATE_PASSWORD`) | Any second user |
 | 3 | [Terms of service, privacy policy, invoices](#3-terms-privacy-and-invoices) | None | Paid launch |
-| 4 | [Cloud broadcast capacity and price](#4-cloud-broadcast-capacity-and-price) | Pro only, 1 stream per 4 vCPU | Turning cloud broadcast on |
+| 4 | [Cloud broadcast capacity and price](#4-cloud-broadcast-capacity-and-price) | Pro only, 1 stream next to the app on 4 vCPU, about 2 vCPU a stream on a dedicated host; uses Google Chrome | Turning cloud broadcast on |
 | 5 | [Domain, VPS and outside accounts](#5-domain-vps-and-outside-accounts) | Dokploy setup ready ([runbook](../deploy/DOKPLOY.md)); no domain or accounts yet | Public deployment |
 | 6 | [Verify the TikTok connection on a real LIVE](#6-verify-the-tiktok-connection-on-a-real-live) | Built against the connector's documented events; not yet tried on a real stream | Going live with real chat |
 | 7 | [Sign-ups at launch](#7-sign-ups-at-launch) | Whoever the identity provider lets in | Public launch |
@@ -116,15 +116,30 @@ the sign-in screen of the chosen identity provider.
 
 ## 4. Cloud broadcast capacity and price
 
-**Measured** ([ADR-0014](adr/0014-cloud-broadcast.md)): one 720p30 stream
-uses about 2.5–3 vCPU for Chromium (software rendering) plus about 0.3 for
-the video encoder. That's the most expensive thing the product does.
+**Measured** ([ADR-0020](adr/0020-broadcast-pipeline-avx2.md)): one 720p30
+stream uses about **1.8 vCPU** on an AVX2 server with no GPU. Rendering is
+1.1 of that and the stage page 0.5; the encoder is almost free, because the
+page encodes H.264 itself. That's the most expensive thing the product does,
+but half of what it was (3.7 vCPU, and the old pipeline couldn't keep 30 fps).
 
 **Today:** only Pro can turn it on; `BROADCAST_MAX_CONCURRENT=1` per
 broadcaster host (sized for a 4 vCPU VPS next to the app); when the host is
 full, starting another broadcast fails with a clear message and the channel
 keeps working in browser-source mode. A Pro account may run up to 5 channels
-at once, and each could ask for a cloud broadcast.
+at once, and each could ask for a cloud broadcast. A dedicated broadcaster
+host should take about one stream per 2 vCPU (an estimate: 8 vCPU for 3
+streams, with headroom). Two at once on a 4-vCPU host don't keep a clean
+30 fps.
+
+**Google Chrome.** The broadcaster image installs Google Chrome stable,
+because it has the H.264 encoder the stage uses; that saves about a core per
+stream. Chrome is free to use but comes under Google's terms of service,
+not an open-source license, and pushing the built image to a public
+registry would redistribute it. If you'd rather not depend on Chrome,
+remove the Chrome lines and `CHROMIUM_PATH` from
+`deploy/broadcaster.Dockerfile`. The broadcaster then uses the open-source
+Chromium that comes with the base image and encodes with x264 instead, at
+about 2.8 vCPU per stream. No code change is needed.
 
 **Decide:**
 
@@ -134,7 +149,8 @@ at once, and each could ask for a cloud broadcast.
   running channels, limited only by server capacity), or whether it's a paid
   add-on per stream.
 - Where it runs: extra CPU VPSs (set `BROADCASTER_URL` per host), or a GPU
-  host, which would cut the Chromium cost sharply but costs more per month.
+  host, which would cut the rendering cost further but costs more per month.
+- Whether to keep Google Chrome in the broadcaster image (above).
 
 **Recommendation:** launch with browser-source mode only, then open cloud
 broadcast as an add-on priced per broadcast hour once you know the VPS cost
@@ -232,7 +248,7 @@ that, a change of direction gets a new ADR instead of an edit.
   ([ADR-0016](adr/0016-security.md) action item 6).
 - Read TikTok's current LIVE guidelines for AI-generated content and check
   that the always-on disclosure still satisfies them.
-- Optional engineering follow-up, no decision needed: try Google Chrome's
-  H.264 recorder so the video passes through without re-encoding
-  ([ADR-0014](adr/0014-cloud-broadcast.md) action item 5). Low priority:
-  the encoder is only about 0.3 of the 3 vCPU a stream uses.
+- Before selling cloud broadcast, run one real TikTok stream and check
+  lip sync with a clap test
+  ([ADR-0020](adr/0020-broadcast-pipeline-avx2.md) action item 6). No
+  decision needed unless it's off.

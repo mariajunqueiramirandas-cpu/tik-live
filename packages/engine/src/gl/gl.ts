@@ -57,6 +57,11 @@ export class Gl {
   texture(): Texture {
     return this.track(new Texture(this.gl));
   }
+
+  /** An offscreen color buffer to render into and sample from. */
+  target(precision: "low" | "high" = "low"): RenderTarget {
+    return this.track(new RenderTarget(this.gl, precision));
+  }
 }
 
 export class Program implements Rebuildable {
@@ -144,6 +149,11 @@ export class Program implements Rebuildable {
     this.gl.uniform1i(this.loc(name), x);
     return this;
   }
+
+  i2(name: string, x: number, y: number): this {
+    this.gl.uniform2i(this.loc(name), x, y);
+    return this;
+  }
 }
 
 /** Unit quad plus optional per-instance buffers (instanced drawing for particles). */
@@ -200,6 +210,69 @@ export class QuadGeometry implements Rebuildable {
     if (instances === 1 && this.instanceBuffers.length === 0) gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     else gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, instances);
     gl.bindVertexArray(null);
+  }
+}
+
+/**
+ * A texture with a framebuffer: draw into it, then sample it (the
+ * half-resolution atmosphere, the broadcast frame). "high" precision uses
+ * half floats where the driver can render to them, so smooth gradients
+ * aren't quantized before the final dithered pass.
+ */
+export class RenderTarget implements Rebuildable {
+  texture!: WebGLTexture;
+  framebuffer!: WebGLFramebuffer;
+  width = 0;
+  height = 0;
+
+  constructor(
+    private readonly gl: WebGL2RenderingContext,
+    private readonly precision: "low" | "high",
+  ) {
+    this.rebuild();
+  }
+
+  /** Reallocates storage only when the size changes. */
+  resize(width: number, height: number): void {
+    if (width === this.width && height === this.height) return;
+    this.width = width;
+    this.height = height;
+    this.allocate();
+  }
+
+  rebuild(): void {
+    const { gl } = this;
+    this.texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.framebuffer = gl.createFramebuffer()!;
+    if (this.width > 0) this.allocate();
+  }
+
+  private allocate(): void {
+    const { gl } = this;
+    const half = this.precision === "high" && (gl.getExtension("EXT_color_buffer_half_float") || gl.getExtension("EXT_color_buffer_float"));
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+    if (half) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, this.width, this.height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  /** Makes this the draw target, covering all of it. */
+  bindForDrawing(): void {
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.framebuffer);
+    this.gl.viewport(0, 0, this.width, this.height);
+  }
+
+  bind(unit: number): void {
+    const { gl } = this;
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, this.texture);
   }
 }
 

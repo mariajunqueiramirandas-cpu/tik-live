@@ -18,7 +18,7 @@ optional cloud broadcaster.
 ## 1. Prepare the server
 
 Recommended: 4 vCPU, 8 GB RAM, 80 GB SSD, Ubuntu 24.04 LTS. Each cloud
-broadcast needs about 3 more vCPU (see [Capacity](#capacity)).
+broadcast needs about 2 more vCPU (see [Capacity](#capacity)).
 
 ```sh
 # As root on a fresh server
@@ -156,11 +156,22 @@ shown again.
 
 ### Capacity
 
-Measured on a 4-vCPU container with no GPU (Chromium renders WebGL through
-SwiftShader): one 720x1280 broadcast at 30 fps uses about **2.5–3 vCPU** for
-rendering and about **0.3 vCPU** for the x264 encode. Plan on one broadcast
-per 4 vCPU next to the app, or run the broadcaster on its own server. Set
-`BROADCASTER_CPUS` to cap it so it can never starve the app.
+Measured on a 4-vCPU AVX2 container with no GPU
+([ADR-0020](../docs/adr/0020-broadcast-pipeline-avx2.md)): one 720x1280
+broadcast at 30 fps uses about **1.8 vCPU**. Chrome renders the stage with
+Mesa's llvmpipe (AVX2 shader code) and encodes H.264 in the page; ffmpeg
+only copies the video and encodes the voice. Plan on one broadcast next to
+the app on a 4-vCPU server, or about 2 vCPU per broadcast on a server of
+its own. `BROADCASTER_CPUS` caps the broadcaster so it can never starve the
+app.
+
+Any x86-64 server from the last ten years has AVX2. Check with
+`grep -c avx2 /proc/cpuinfo` (anything above 0). Without AVX2, llvmpipe
+falls back to SSE and rendering costs roughly twice as much.
+
+`VIDEO_ENCODER=x264` makes the stage send raw frames that ffmpeg encodes
+with x264 instead (about 1 vCPU more per broadcast). Use it only if Chrome's
+H.264 encoder ever misbehaves.
 
 To run the broadcaster on a separate server, start only that service there,
 put both servers on a private network, set `BROADCASTER_URL` on the app to

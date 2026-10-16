@@ -29,7 +29,7 @@ Dokploy panel its own domain with HTTPS and close port 3000 in your
 firewall, so the panel isn't reachable over plain HTTP.
 
 Size the server for Dokploy plus Lantern: 4 vCPU and 8 GB RAM is a
-comfortable start. Each cloud broadcast needs about 3 more vCPU (see
+comfortable start. Each cloud broadcast needs about 2 more vCPU (see
 [Capacity](README.md#capacity)).
 
 ## 2. Create the service
