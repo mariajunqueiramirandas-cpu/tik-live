@@ -131,7 +131,7 @@ export class ChannelRuntime {
 
   async start(): Promise<void> {
     if (this.status !== "stopped" && this.status !== "failed") return;
-    this.setStatus("starting", "Getting ready");
+    this.setStatus("starting", "Preparando");
     const { ctx, stage } = this.options;
     const channel = this.channel;
 
@@ -182,7 +182,8 @@ export class ChannelRuntime {
       gate: this.gate,
       stage,
       blocklist: () => this.channel.safety.blocklist,
-      language: () => this.speech.ttsLanguage,
+      // The product is Brazilian: games are in Portuguese unless the voice only speaks another language.
+      language: () => this.speech.ttsLanguage ?? "pt-BR",
       sounds: () => this.channel.persona.sound?.effects !== false,
       now: this.now,
       log: this.log,
@@ -222,7 +223,7 @@ export class ChannelRuntime {
         onEvent: (event, result) => this.onEvent(event, result),
         onTurn: () => this.recorder.countTurn(),
         onTurnFailed: (err) =>
-          this.notice("warn", "turn_failed", `The host couldn't think of a reply (${err instanceof Error ? err.message : "unknown error"}). Retrying shortly.`),
+          this.notice("warn", "turn_failed", `O apresentador não conseguiu pensar numa resposta (${err instanceof Error ? err.message : "erro desconhecido"}). Tentando de novo em instantes.`),
         onStandbyChange: (standby) => void this.onStandbyChange(standby),
       },
     });
@@ -241,16 +242,16 @@ export class ChannelRuntime {
     if (simulated) {
       await this.recorder.begin();
       this.director.resetSession();
-      this.setStatus("live", "Test mode: simulated audience");
+      this.setStatus("live", "Modo de treino: plateia simulada");
     } else {
-      this.setStatus("standby", `Waiting for @${channel.tiktokUsername} to go live on TikTok`);
+      this.setStatus("standby", `Aguardando @${channel.tiktokUsername} entrar ao vivo no TikTok`);
     }
     this.log.info(`host started (${this.host.name}, ${this.speech.ttsName} voice, ${this.source.name})`);
   }
 
   async stop(reason = "stopped"): Promise<void> {
     if (this.status === "stopped" || this.status === "stopping") return;
-    this.setStatus("stopping", "Stopping");
+    this.setStatus("stopping", "Parando");
     clearInterval(this.flushTimer);
     this.flushTimer = undefined;
     this.director?.stop();
@@ -295,28 +296,28 @@ export class ChannelRuntime {
 
   command(command: StudioCommand): CommandResult {
     if (!this.director || this.status === "stopped" || this.status === "stopping") {
-      return { ok: false, error: "Start the host first." };
+      return { ok: false, error: "Coloque o apresentador no ar primeiro." };
     }
     switch (command.kind) {
       case "pause":
         this.director.pause();
-        this.notice("warn", "paused", "Host paused. Nothing will be said until you resume.");
+        this.notice("warn", "paused", "Apresentador pausado. Nada será dito até você retomar.");
         return { ok: true };
       case "resume":
         this.director.resume();
-        this.notice("info", "resumed", "Host resumed.");
+        this.notice("info", "resumed", "Apresentador retomado.");
         return { ok: true };
       case "skip":
         this.director.skip();
         return { ok: true };
       case "segment":
-        return this.director.forceSegment(command.id) ? { ok: true } : { ok: false, error: "That segment doesn't exist." };
+        return this.director.forceSegment(command.id) ? { ok: true } : { ok: false, error: "Esse quadro não existe." };
       case "say": {
         const now = this.now();
         this.sayTimes = this.sayTimes.filter((t) => now - t < 60_000);
-        if (this.sayTimes.length >= SAY_LIMIT_PER_MINUTE) return { ok: false, error: "That's a lot of lines in a minute. Wait a moment." };
+        if (this.sayTimes.length >= SAY_LIMIT_PER_MINUTE) return { ok: false, error: "São muitas falas em um minuto. Espere um pouco." };
         const utterance = toUtterance(command.text);
-        if (!utterance) return { ok: false, error: "There's nothing speakable in that line." };
+        if (!utterance) return { ok: false, error: "Não tem nada para falar nessa frase." };
         this.sayTimes.push(now);
         // Right after the sentence on stage, ahead of the host's queued lines.
         this.speech.enqueue(utterance, { trusted: true, front: true });
@@ -324,18 +325,18 @@ export class ChannelRuntime {
       }
       case "inject": {
         const parsed = injectEventSchema.safeParse(command.event);
-        if (!parsed.success) return { ok: false, error: "That test event isn't valid." };
+        if (!parsed.success) return { ok: false, error: "Esse evento de teste não é válido." };
         this.director.handleEvent(this.toLiveEvent(parsed.data));
         return { ok: true };
       }
       case "game_start":
         return this.games.start(command.game, "studio", this.director.chatSample());
       case "game_stop":
-        if (!this.games.isActive()) return { ok: false, error: "No game is running." };
+        if (!this.games.isActive()) return { ok: false, error: "Nenhum jogo está rolando." };
         this.games.stop();
         return { ok: true };
       case "music_play": {
-        if (this.channel.persona.sound?.music === false) return { ok: false, error: "Music is turned off for this host. Turn it on in Character." };
+        if (this.channel.persona.sound?.music === false) return { ok: false, error: "A música está desligada para este apresentador. Ligue em Personagem." };
         if (command.library) {
           const track = musicTrackSchema.parse(MUSIC_LIBRARY[command.library]);
           void this.playMusic(track, false);
@@ -354,7 +355,7 @@ export class ChannelRuntime {
           );
           return { ok: true };
         }
-        return { ok: false, error: "Pick a piece or describe one." };
+        return { ok: false, error: "Escolha uma música ou descreva uma." };
       }
       case "music_stop":
         this.stopMusic();
@@ -409,17 +410,17 @@ export class ChannelRuntime {
     if (daily) {
       if (!this.dailyCapNoticed) {
         this.dailyCapNoticed = true;
-        this.notice("warn", "daily_cap_reached", "This host reached today's AI spending limit. It still reacts to viewers, and fills quiet moments again after midnight UTC.");
+        this.notice("warn", "daily_cap_reached", "Este apresentador atingiu o limite de gasto com IA de hoje. Ele continua respondendo ao chat e volta a puxar assunto depois da meia-noite (UTC).");
       }
       return;
     }
     this.dailyCapNoticed = false;
     if (isUnlimited(limit)) return;
     if (hourly) {
-      this.notice("warn", "budget_reached", "This host used its hourly AI budget. It will still react to viewers but won't fill quiet moments for a while.");
+      this.notice("warn", "budget_reached", "Este apresentador usou o orçamento de IA desta hora. Ele continua respondendo ao chat, mas não vai puxar assunto por um tempo.");
     } else if (used >= limit * BUDGET_WARN_RATIO && !this.budgetWarned) {
       this.budgetWarned = true;
-      this.notice("info", "budget_warning", "This host is close to its hourly AI budget.");
+      this.notice("info", "budget_warning", "Este apresentador está perto do orçamento de IA desta hora.");
     } else if (used < limit * BUDGET_WARN_RATIO) {
       this.budgetWarned = false;
     }
@@ -525,12 +526,12 @@ export class ChannelRuntime {
     if (standby) {
       this.accrue();
       await this.recorder.end("stream ended", this.director.stats()).catch((err) => this.log.warn("could not close the stream session", err));
-      this.setStatus("standby", `Waiting for @${this.channel.tiktokUsername} to go live on TikTok`);
+      this.setStatus("standby", `Aguardando @${this.channel.tiktokUsername} entrar ao vivo no TikTok`);
     } else {
       this.director.resetSession();
       await this.recorder.begin().catch((err) => this.log.warn("could not open a stream session", err));
       this.lastTickAt = this.now();
-      this.setStatus("live", `Live on TikTok as @${this.channel.tiktokUsername}`);
+      this.setStatus("live", `Ao vivo no TikTok como @${this.channel.tiktokUsername}`);
     }
   }
 

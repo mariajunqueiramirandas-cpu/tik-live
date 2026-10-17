@@ -2,6 +2,7 @@ import type { SafetySettings } from "@tik-live/shared";
 import { useMemo, useState } from "react";
 import { SaveIndicator } from "../../components/SaveIndicator";
 import { time } from "../../lib/format";
+import { blockReason } from "../../lib/reasons";
 import { useSession, useSessions, useUpdateChannel } from "../../lib/query";
 import { useStudio } from "../../lib/studio";
 import { useAutosave } from "../../lib/use-autosave";
@@ -51,58 +52,58 @@ export default function Safety() {
       <div className={s.settings}>
         <div className={s.head}>
           <div className={p.sectionHead}>
-            <h2>What {channel.name} won't say</h2>
-            <p>Every line is checked before it's spoken. These settings add your own limits on top.</p>
+            <h2>O que {channel.name} não fala</h2>
+            <p>Toda fala é conferida antes de ser dita. Aqui você adiciona seus próprios limites.</p>
           </div>
           <SaveIndicator state={state} />
         </div>
 
         <Field
-          label="How careful"
+          label="Nível de cuidado"
           hint={
             safety.strictness === "strict"
-              ? "Strict also steers away from romance, horror, slang and edgy humor. Best for younger audiences."
-              : "Standard allows playful banter and blocks anything hurtful, sexual, dangerous or hateful."
+              ? "O rigoroso também evita romance, terror, gírias e humor ácido. Melhor para público mais jovem."
+              : "O padrão permite brincadeiras e bloqueia tudo o que for ofensivo, sexual, perigoso ou de ódio."
           }
         >
           {() => (
             <Segmented
-              label="How careful"
+              label="Nível de cuidado"
               value={safety.strictness}
               onChange={(strictness) => setSafety((v) => ({ ...v, strictness }))}
               options={[
-                { value: "standard", label: "Standard" },
-                { value: "strict", label: "Strict" },
+                { value: "standard", label: "Padrão" },
+                { value: "strict", label: "Rigoroso" },
               ]}
             />
           )}
         </Field>
 
-        <Field label="Blocked words" optional hint="The host never says these, and chat messages containing them are ignored. Press Enter after each one.">
-          {(props) => <Chips {...props} values={safety.blocklist} onChange={(blocklist) => setSafety((v) => ({ ...v, blocklist }))} max={500} maxLength={60} placeholder="Add a word or phrase" />}
+        <Field label="Palavras bloqueadas" optional hint="O apresentador nunca fala essas palavras, e mensagens do chat com elas são ignoradas. Aperte Enter depois de cada uma.">
+          {(props) => <Chips {...props} values={safety.blocklist} onChange={(blocklist) => setSafety((v) => ({ ...v, blocklist }))} max={500} maxLength={60} placeholder="Adicione uma palavra ou frase" />}
         </Field>
 
-        <Field label="Topics to avoid" optional hint="The host steers away from these, even when asked. Example: politics, other streamers, my real name.">
-          {(props) => <Chips {...props} values={safety.avoidTopics} onChange={(avoidTopics) => setSafety((v) => ({ ...v, avoidTopics }))} max={30} maxLength={60} placeholder="Add a topic" />}
+        <Field label="Assuntos a evitar" optional hint="O apresentador foge desses assuntos, mesmo quando perguntam. Exemplo: política, outros streamers, meu nome real.">
+          {(props) => <Chips {...props} values={safety.avoidTopics} onChange={(avoidTopics) => setSafety((v) => ({ ...v, avoidTopics }))} max={30} maxLength={60} placeholder="Adicione um assunto" />}
         </Field>
       </div>
 
       <Panel className={s.blocked} aria-labelledby="blocked-heading">
         <div className={p.sectionHead}>
-          <h2 id="blocked-heading">Blocked before it was said</h2>
-          <p>Lines the safety check stopped, newest first. Nobody heard these.</p>
+          <h2 id="blocked-heading">Bloqueado antes de ser dito</h2>
+          <p>Falas barradas pela checagem de segurança, das mais novas para as mais antigas. Ninguém ouviu.</p>
         </div>
         {blocked.loading ? (
           <Skeleton height={80} />
         ) : blocked.lines.length === 0 ? (
-          <p className={s.none}>Nothing blocked recently.</p>
+          <p className={s.none}>Nada bloqueado recentemente.</p>
         ) : (
           <ol className={s.blockedList}>
             {blocked.lines.map((line) => (
               <li key={line.key}>
                 <span className={s.when}>{time(line.at)}</span>
                 <del className={s.text}>{line.text}</del>
-                {line.reason && <span className={s.reason}>{line.reason}</span>}
+                {line.reason && <span className={s.reason}>{blockReason(line.reason)}</span>}
               </li>
             ))}
           </ol>

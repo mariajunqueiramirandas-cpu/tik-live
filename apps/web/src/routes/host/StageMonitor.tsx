@@ -31,7 +31,7 @@ export function StageMonitor({ stageUrl, name }: { stageUrl: string; name: strin
     <div className={s.monitor}>
       <EngineCanvas
         mode="preview"
-        label={`Live preview of ${name}'s stage`}
+        label={`Prévia ao vivo do palco de ${name}`}
         onReady={(created) => {
           engine.current = created;
           let connection: StageConnection | null = null;
@@ -49,7 +49,7 @@ export function StageMonitor({ stageUrl, name }: { stageUrl: string; name: strin
         }}
       />
       <Button size="sm" variant="ghost" className={s.listen} icon={listening ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />} onClick={toggle} aria-pressed={listening}>
-        {listening ? "Listening" : "Listen"}
+        {listening ? "Ouvindo" : "Ouvir"}
       </Button>
     </div>
   );

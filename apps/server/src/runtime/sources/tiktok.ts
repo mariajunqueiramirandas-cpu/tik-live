@@ -39,7 +39,7 @@ export class TikTokSource implements EventSource {
   private stopped = false;
   private connected = false;
   private live = false;
-  private detail = "idle";
+  private detail = "parado";
   private retryTimer: NodeJS.Timeout | undefined;
   private failures = 0;
 
@@ -58,7 +58,7 @@ export class TikTokSource implements EventSource {
     this.connection = undefined;
     this.connected = false;
     this.live = false;
-    this.detail = "stopped";
+    this.detail = "desligado";
   }
 
   status(): SourceStatus {
@@ -75,26 +75,26 @@ export class TikTokSource implements EventSource {
     if (this.stopped) return;
     const connection = this.createConnection();
     this.connection = connection;
-    this.detail = `connecting to @${this.options.username}`;
+    this.detail = `conectando a @${this.options.username}`;
     try {
       const state = await connection.connect();
       this.connected = true;
       this.live = true;
       this.failures = 0;
-      this.detail = `live in room ${state.roomId}`;
+      this.detail = `ao vivo na sala ${state.roomId}`;
       this.options.log.info(`connected to @${this.options.username} (room ${state.roomId})`);
     } catch (err) {
       this.connected = false;
       this.live = false;
       if (err instanceof UserOfflineError) {
         const wait = this.options.offlineRetryMs ?? 30_000;
-        this.detail = `@${this.options.username} is offline; retrying in ${Math.round(wait / 1000)}s`;
+        this.detail = `@${this.options.username} não está ao vivo; tentando de novo em ${Math.round(wait / 1000)} s`;
         this.options.log.info(this.detail);
         this.scheduleRetry(wait);
       } else {
         this.failures += 1;
         const wait = Math.min(60_000, 2_000 * 2 ** Math.min(this.failures, 5));
-        this.detail = `connect failed (${(err as Error).message}); retrying in ${Math.round(wait / 1000)}s`;
+        this.detail = `falha ao conectar (${(err as Error).message}); tentando de novo em ${Math.round(wait / 1000)} s`;
         this.options.log.warn(this.detail);
         this.scheduleRetry(wait);
       }
@@ -140,7 +140,7 @@ export class TikTokSource implements EventSource {
       if (this.stopped) return;
       this.failures += 1;
       const wait = Math.min(60_000, 2_000 * 2 ** Math.min(this.failures, 5));
-      this.detail = `disconnected; reconnecting in ${Math.round(wait / 1000)}s`;
+      this.detail = `desconectado; reconectando em ${Math.round(wait / 1000)} s`;
       this.options.log.warn(this.detail);
       this.scheduleRetry(wait);
     });

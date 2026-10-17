@@ -48,7 +48,7 @@ describe("protocol v1 contracts", () => {
   });
 
   it("fills test-event defaults", () => {
-    expect(injectEventSchema.parse({ kind: "gift", handle: "maria" })).toEqual({ kind: "gift", handle: "maria", giftName: "Rose", count: 1, diamonds: 1 });
+    expect(injectEventSchema.parse({ kind: "gift", handle: "maria" })).toEqual({ kind: "gift", handle: "maria", giftName: "Rosa", count: 1, diamonds: 1 });
   });
 });
 

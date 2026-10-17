@@ -111,7 +111,7 @@ export class BroadcastSupervisor {
     } catch {
       for (const id of this.wanted.keys()) {
         const prev = this.statuses.get(id);
-        if (prev) this.statuses.set(id, { ...prev, state: "retrying", detail: "Can't reach the broadcast service" });
+        if (prev) this.statuses.set(id, { ...prev, state: "retrying", detail: "Não foi possível falar com o serviço de transmissão" });
       }
       return;
     }

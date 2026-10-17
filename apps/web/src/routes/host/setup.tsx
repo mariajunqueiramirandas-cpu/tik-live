@@ -1,4 +1,4 @@
-import { broadcastUpdateSchema, tiktokHandleSchema } from "@tik-live/shared";
+import { broadcastUpdateSchema, PLANS, PRODUCT_NAME, tiktokHandleSchema } from "@tik-live/shared";
 import { RefreshCw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -28,13 +28,13 @@ function Source() {
     let tiktokUsername: string | null = null;
     if (handle.trim()) {
       const parsed = tiktokHandleSchema.safeParse(handle);
-      if (!parsed.success) return setError("That doesn't look like a TikTok handle. Use letters, numbers, dots and underscores.");
+      if (!parsed.success) return setError("Isso não parece um usuário do TikTok. Use letras, números, pontos e sublinhados.");
       tiktokUsername = parsed.data;
     }
-    if (source === "tiktok" && !tiktokUsername) return setError("Add the TikTok handle this host should listen to.");
+    if (source === "tiktok" && !tiktokUsername) return setError("Adicione o usuário do TikTok que este apresentador deve escutar.");
     try {
       await update.mutateAsync({ source, tiktokUsername });
-      toast.success("Saved", channel.runtime.status === "stopped" ? undefined : "The host reconnects with the new settings.");
+      toast.success("Salvo", channel.runtime.status === "stopped" ? undefined : "O apresentador reconecta com as novas configurações.");
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -43,30 +43,30 @@ function Source() {
   return (
     <Panel as="section" aria-labelledby="source-heading" className={p.form}>
       <div className={p.sectionHead}>
-        <h2 id="source-heading">Where {channel.name} listens</h2>
-        <p>The chat, gifts and follows your host reacts to.</p>
+        <h2 id="source-heading">Onde {channel.name} escuta</h2>
+        <p>O chat, os presentes e os novos seguidores aos quais o apresentador reage.</p>
       </div>
       <form className={s.form} onSubmit={save} noValidate>
         <Segmented
-          label="Source"
+          label="Origem"
           value={source}
           onChange={setSource}
           options={[
-            { value: "tiktok", label: "My TikTok LIVE" },
-            { value: "simulator", label: "Practice viewers" },
+            { value: "tiktok", label: "Minha TikTok LIVE" },
+            { value: "simulator", label: "Plateia simulada" },
           ]}
         />
         {source === "tiktok" ? (
-          <Field label="TikTok handle" hint="Go live on this account from TikTok LIVE Studio or OBS. The host starts when TikTok reports the stream is live." error={error}>
+          <Field label="Usuário do TikTok" hint="Faça a live nessa conta pelo TikTok LIVE Studio ou pelo OBS. O apresentador começa quando o TikTok avisar que a live começou." error={error}>
             {(props) => <PrefixedInput {...props} prefix="@" value={handle.replace(/^@/, "")} onChange={(e) => setHandle(e.target.value)} spellCheck={false} autoComplete="off" />}
           </Field>
         ) : (
-          <p className={s.note}>Simulated viewers chat, ask questions and send gifts so you can watch the host work. Nothing reaches TikTok.</p>
+          <p className={s.note}>A plateia simulada conversa, faz perguntas e manda presentes para você ver o apresentador em ação. Nada chega ao TikTok.</p>
         )}
         {error && source !== "tiktok" && <p className={s.error}>{error}</p>}
         <div className={p.formActions}>
           <Button type="submit" variant="primary" disabled={!dirty} busy={update.isPending}>
-            Save
+            Salvar
           </Button>
         </div>
       </form>
@@ -82,44 +82,44 @@ function StageLink() {
   return (
     <Panel as="section" aria-labelledby="obs-heading" className={p.form}>
       <div className={p.sectionHead}>
-        <h2 id="obs-heading">Put {channel.name} on your stream</h2>
-        <p>Your host appears in OBS as a browser source. The voice plays through it too.</p>
+        <h2 id="obs-heading">Coloque {channel.name} na sua live</h2>
+        <p>O apresentador aparece no OBS como uma fonte de Navegador. A voz também sai por ela.</p>
       </div>
-      <Field label="Stage link" hint="Anyone with this link can see the stage, so keep it to yourself.">
-        {(props) => <CopyField {...props} value={channel.stageUrl} label="Stage link" />}
+      <Field label="Link do palco" hint="Quem tiver este link vê o palco, então não compartilhe.">
+        {(props) => <CopyField {...props} value={channel.stageUrl} label="Link do palco" />}
       </Field>
       <ol className={s.steps}>
         <li>
-          In OBS, add a <strong>Browser</strong> source to your TikTok scene.
+          No OBS, adicione uma fonte de <strong>Navegador</strong> à sua cena do TikTok.
         </li>
         <li>
-          Paste the stage link as the URL. Set width to <strong>1080</strong> and height to <strong>1920</strong>.
+          Cole o link do palco como URL. Use largura <strong>1080</strong> e altura <strong>1920</strong>.
         </li>
         <li>
-          Tick <strong>Control audio via OBS</strong> so the voice goes into your stream.
+          Marque <strong>Controlar áudio via OBS</strong> para a voz entrar na sua live.
         </li>
-        <li>Start your TikTok LIVE as usual. Press Go live here, and the host takes it from there.</li>
+        <li>Comece sua TikTok LIVE como sempre. Aperte Entrar ao vivo aqui e o apresentador assume dali.</li>
       </ol>
       <div className={s.status} data-ok={program > 0}>
         <span className={s.statusDot} aria-hidden />
-        {program > 0 ? (program === 1 ? "OBS is showing the stage" : `${program} OBS sources are showing the stage`) : "Waiting for OBS to open the stage link"}
+        {program > 0 ? (program === 1 ? "O OBS está mostrando o palco" : `${program} fontes no OBS estão mostrando o palco`) : "Aguardando o OBS abrir o link do palco"}
       </div>
       <div className={p.formActions}>
         <Button variant="quietDanger" size="sm" icon={<RefreshCw aria-hidden />} onClick={() => setConfirm(true)}>
-          Replace the link
+          Trocar o link
         </Button>
-        <span className={s.note}>If the link leaked. The old one stops working at once.</span>
+        <span className={s.note}>Se o link vazou. O antigo para de funcionar na hora.</span>
       </div>
       <Confirm
         open={confirm}
         onOpenChange={setConfirm}
-        title="Replace the stage link?"
-        description="OBS sources using the old link go blank until you paste the new one."
-        confirmLabel="Replace link"
+        title="Trocar o link do palco?"
+        description="As fontes do OBS com o link antigo ficam em branco até você colar o novo."
+        confirmLabel="Trocar link"
         danger
         onConfirm={async () => {
           await rotate.mutateAsync();
-          toast.success("New stage link ready", "Paste it into your OBS browser source.");
+          toast.success("Novo link do palco pronto", "Cole na sua fonte de Navegador do OBS.");
         }}
       />
     </Panel>
@@ -153,11 +153,11 @@ function CloudBroadcast() {
       ...(streamKey.trim() ? { streamKey: streamKey.trim() } : {}),
     };
     const parsed = broadcastUpdateSchema.safeParse(input);
-    if (!parsed.success) return setError(parsed.error.issues[0]?.message ?? "Check the server URL and stream key.");
+    if (!parsed.success) return setError(parsed.error.issues[0]?.message ?? "Confira o URL do servidor e a chave de transmissão.");
     try {
       await update.mutateAsync(parsed.data);
       setStreamKey("");
-      toast.success(patch.enabled === undefined ? "Saved" : patch.enabled ? "Cloud broadcast on" : "Cloud broadcast off");
+      toast.success(patch.enabled === undefined ? "Salvo" : patch.enabled ? "Transmissão pela nuvem ligada" : "Transmissão pela nuvem desligada");
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -166,16 +166,16 @@ function CloudBroadcast() {
   return (
     <Panel as="section" aria-labelledby="cloud-heading" className={p.form}>
       <div className={p.sectionHead}>
-        <h2 id="cloud-heading">Broadcast from the cloud</h2>
-        <p>Lantern streams the stage straight to TikTok, so you don't need OBS or a computer running.</p>
+        <h2 id="cloud-heading">Transmitir pela nuvem</h2>
+        <p>O {PRODUCT_NAME} transmite o palco direto para o TikTok, sem precisar do OBS nem de um computador ligado.</p>
       </div>
       {!allowed ? (
-        <Banner title="Part of the Pro plan" action={<ButtonLink to="/app/billing" size="sm">See plans</ButtonLink>}>
-          Run your host around the clock without a PC.
+        <Banner title={`Faz parte do plano ${PLANS.pro.name}`} action={<ButtonLink to="/app/billing" size="sm">Ver planos</ButtonLink>}>
+          Deixe seu apresentador no ar 24 horas por dia, sem computador.
         </Banner>
       ) : !available ? (
-        <Banner tone="warn" title="Not available on this server yet">
-          Cloud broadcast needs the broadcaster service. Use OBS for now.
+        <Banner tone="warn" title="Ainda não disponível neste servidor">
+          A transmissão pela nuvem precisa do serviço de transmissão. Por enquanto, use o OBS.
         </Banner>
       ) : (
         <form
@@ -186,18 +186,18 @@ function CloudBroadcast() {
           }}
           noValidate
         >
-          <Switch label="Broadcast this host from the cloud" hint="Starts with the host and stops with it." checked={channel.broadcast.enabled} onChange={(enabled) => void save({ enabled })} disabled={update.isPending} />
+          <Switch label="Transmitir este apresentador pela nuvem" hint="Começa e para junto com o apresentador." checked={channel.broadcast.enabled} onChange={(enabled) => void save({ enabled })} disabled={update.isPending} />
           {live && (
             <p className={s.status} data-ok={live.state === "live"}>
               <span className={s.statusDot} aria-hidden />
-              {live.state === "live" ? "Streaming to TikTok now" : live.detail}
+              {live.state === "live" ? "Transmitindo para o TikTok agora" : live.detail}
             </p>
           )}
           <div className={p.formRow}>
-            <Field label="Server URL" hint="From TikTok LIVE Studio or your stream key page. Starts with rtmp:// or rtmps://.">
+            <Field label="URL do servidor" hint="Fica no TikTok LIVE Studio ou na página da sua chave de transmissão. Começa com rtmp:// ou rtmps://.">
               {(props) => <Input {...props} value={rtmpUrl} onChange={(e) => setRtmpUrl(e.target.value)} placeholder="rtmps://…" spellCheck={false} autoComplete="off" />}
             </Field>
-            <Field label="Stream key" hint={channel.broadcast.hasStreamKey ? `Saved, ends in ${channel.broadcast.streamKeyLast4}. Type a new one to replace it.` : "Stored encrypted. It's never shown again."}>
+            <Field label="Chave de transmissão" hint={channel.broadcast.hasStreamKey ? `Salva, termina em ${channel.broadcast.streamKeyLast4}. Digite uma nova para substituir.` : "Guardada com criptografia. Ela não aparece de novo."}>
               {(props) => <Input {...props} type="password" value={streamKey} onChange={(e) => setStreamKey(e.target.value)} placeholder={channel.broadcast.hasStreamKey ? "••••••••" : ""} autoComplete="new-password" />}
             </Field>
           </div>
@@ -210,10 +210,10 @@ function CloudBroadcast() {
           )}
           <div className={p.formActions}>
             <Button type="submit" busy={update.isPending}>
-              Save broadcast settings
+              Salvar transmissão
             </Button>
             <Button variant="ghost" busy={check.isPending} disabled={!rtmpUrl.trim()} onClick={() => check.mutate(rtmpUrl.trim())}>
-              Check connection
+              Testar conexão
             </Button>
           </div>
         </form>

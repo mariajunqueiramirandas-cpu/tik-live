@@ -126,7 +126,7 @@ export class VoiceCatalog {
           name: id.charAt(0).toUpperCase() + id.slice(1),
           previewUrl: `/api/voices/pocket/${encodeURIComponent(id)}/sample`,
           // Kyutai's Portuguese release: rafael is the one native speaker (services/tts/README.md).
-          description: id === "rafael" ? "Native Brazilian Portuguese speaker" : "Speaks Brazilian Portuguese with a foreign accent",
+          description: id === "rafael" ? "Falante nativo de português do Brasil" : "Fala português do Brasil com sotaque estrangeiro",
           tags: id === "rafael" ? ["Portuguese", "native"] : ["Portuguese"],
         }))
         .sort((a, b) => a.name.localeCompare(b.name));

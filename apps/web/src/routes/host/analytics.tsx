@@ -22,35 +22,35 @@ function SessionDetail({ channelId, session }: { channelId: string; session: Ses
     <Panel className={s.detail} aria-labelledby="detail-heading">
       <div className={s.detailHead}>
         <h2 id="detail-heading">{dateTime(session.startedAt)}</h2>
-        <span className={s.dim}>{session.endedAt ? lengthOf(session) : `Live for ${lengthOf(session)}`}</span>
+        <span className={s.dim}>{session.endedAt ? lengthOf(session) : `Ao vivo há ${lengthOf(session)}`}</span>
       </div>
       <dl className={s.stats}>
         <div>
-          <dt>Peak viewers</dt>
+          <dt>Pico de espectadores</dt>
           <dd>{count(session.peakViewers)}</dd>
         </div>
         <div>
-          <dt>Diamonds</dt>
+          <dt>Diamantes</dt>
           <dd className="money">✦ {count(session.diamonds)}</dd>
         </div>
         <div>
-          <dt>Chat messages</dt>
+          <dt>Mensagens no chat</dt>
           <dd>{count(session.messages)}</dd>
         </div>
         <div>
-          <dt>New followers</dt>
+          <dt>Novos seguidores</dt>
           <dd>{count(session.follows)}</dd>
         </div>
         <div>
-          <dt>Lines spoken</dt>
+          <dt>Falas ditas</dt>
           <dd>{count(spoken)}</dd>
         </div>
         <div>
-          <dt>Blocked</dt>
+          <dt>Bloqueadas</dt>
           <dd>{count(session.blockedLines)}</dd>
         </div>
         <div>
-          <dt>AI cost</dt>
+          <dt>Custo de IA</dt>
           <dd>{usd(session.costUsd)}</dd>
         </div>
       </dl>
@@ -59,14 +59,14 @@ function SessionDetail({ channelId, session }: { channelId: string; session: Ses
       ) : (
         <LineChart
           points={points}
-          label={`Viewers over time, peaking at ${session.peakViewers}`}
+          label={`Espectadores ao longo do tempo, com pico de ${session.peakViewers}`}
           formatX={(t) => time(t)}
           formatY={(v) => count(Math.round(v))}
         />
       )}
       {data && data.lines.length > 0 && (
         <details className={s.transcript}>
-          <summary>Everything the host said ({count(data.lines.length)} lines)</summary>
+          <summary>Tudo o que o apresentador falou ({count(data.lines.length)} falas)</summary>
           <ol>
             {data.lines.map((line, i) => (
               <li key={i} className={cx(line.status === "blocked" && s.blockedLine)}>
@@ -86,13 +86,13 @@ function People({ title, people, metric }: { title: string; people: Audience["su
     <div className={s.people}>
       <h3>{title}</h3>
       {people.length === 0 ? (
-        <p className={s.dim}>Nobody yet.</p>
+        <p className={s.dim}>Ninguém ainda.</p>
       ) : (
         <ol>
           {people.map((person) => (
             <li key={person.id}>
               <span className={s.person}>{person.nickname || person.handle}</span>
-              <span className={metric === "diamonds" ? "money" : s.dim}>{metric === "diamonds" ? `✦ ${count(person.diamonds)}` : `${count(person.visits)} visits`}</span>
+              <span className={metric === "diamonds" ? "money" : s.dim}>{metric === "diamonds" ? `✦ ${count(person.diamonds)}` : `${count(person.visits)} visitas`}</span>
             </li>
           ))}
         </ol>
@@ -112,8 +112,8 @@ export default function Analytics() {
   if (sessions.isPending) return <Skeleton height={300} />;
   if (list.length === 0) {
     return (
-      <Empty title="No streams yet">
-        <p>After {channel.name}'s first stream, you'll see viewers over time, gifts, followers and everything it said.</p>
+      <Empty title="Nenhuma live ainda">
+        <p>Depois da primeira live de {channel.name}, você vê aqui os espectadores ao longo do tempo, presentes, seguidores e tudo o que foi dito.</p>
       </Empty>
     );
   }
@@ -124,17 +124,17 @@ export default function Analytics() {
         {selected && <SessionDetail channelId={channel.id} session={selected} />}
 
         <section aria-labelledby="streams-heading" className={p.section}>
-          <h2 id="streams-heading">Streams</h2>
+          <h2 id="streams-heading">Lives</h2>
           <div className={s.tableWrap}>
             <table className={s.table}>
               <thead>
                 <tr>
-                  <th scope="col">Started</th>
-                  <th scope="col">Length</th>
-                  <th scope="col">Peak</th>
-                  <th scope="col">Diamonds</th>
-                  <th scope="col">Messages</th>
-                  <th scope="col">AI cost</th>
+                  <th scope="col">Início</th>
+                  <th scope="col">Duração</th>
+                  <th scope="col">Pico</th>
+                  <th scope="col">Diamantes</th>
+                  <th scope="col">Mensagens</th>
+                  <th scope="col">Custo de IA</th>
                 </tr>
               </thead>
               <tbody>
@@ -145,7 +145,7 @@ export default function Analytics() {
                         {dateTime(session.startedAt)}
                       </button>
                     </th>
-                    <td>{session.endedAt ? lengthOf(session) : "Live now"}</td>
+                    <td>{session.endedAt ? lengthOf(session) : "Ao vivo agora"}</td>
                     <td>{count(session.peakViewers)}</td>
                     <td className="money">✦ {count(session.diamonds)}</td>
                     <td>{count(session.messages)}</td>
@@ -160,15 +160,15 @@ export default function Analytics() {
 
       <Panel as="aside" className={s.audience} aria-labelledby="audience-heading">
         <div className={p.sectionHead}>
-          <h2 id="audience-heading">Audience</h2>
-          {audience.data && <p>{channel.name} remembers {count(audience.data.remembered)} viewers by name.</p>}
+          <h2 id="audience-heading">Público</h2>
+          {audience.data && <p>{channel.name} lembra o nome de {count(audience.data.remembered)} espectadores.</p>}
         </div>
         {audience.isPending ? (
           <Skeleton height={160} />
         ) : audience.data ? (
           <>
-            <People title="Top supporters" people={audience.data.supporters} metric="diamonds" />
-            <People title="Regulars" people={audience.data.regulars} metric="visits" />
+            <People title="Quem mais apoia" people={audience.data.supporters} metric="diamonds" />
+            <People title="Frequentes" people={audience.data.regulars} metric="visits" />
           </>
         ) : null}
       </Panel>

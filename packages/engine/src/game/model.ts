@@ -222,8 +222,33 @@ export function easeOutBack(p: number): number {
   return 1 + c3 * (x - 1) ** 3 + c1 * (x - 1) ** 2;
 }
 
-/** "1.4 s" from milliseconds, one decimal under a minute. */
+/** "1,4 s" from milliseconds (pt-BR decimal comma), one decimal under a minute. */
 export function formatSeconds(ms: number): string {
   const s = ms / 1000;
-  return s < 60 ? `${s.toFixed(1)} s` : `${Math.round(s)} s`;
+  return s < 60 ? `${s.toFixed(1).replace(".", ",")} s` : `${Math.round(s)} s`;
+}
+
+/**
+ * A count the pt-BR way: "1.234" (dot between thousands). By hand rather
+ * than Intl so it's the same in every browser source and test runner.
+ */
+export function formatCount(n: number): string {
+  const digits = String(Math.abs(Math.trunc(n)));
+  let out = "";
+  for (let i = 0; i < digits.length; i++) {
+    if (i > 0 && (digits.length - i) % 3 === 0) out += ".";
+    out += digits[i];
+  }
+  return n < 0 ? `-${out}` : out;
+}
+
+/** "1 resposta", "12 respostas", "1.234 votos". */
+export function countOf(n: number, one: string, many = `${one}s`): string {
+  return `${formatCount(n)} ${n === 1 ? one : many}`;
+}
+
+/** Letters to type, the Portuguese way: "A ou B", "A, B, C ou D". */
+export function letterList(letters: readonly string[]): string {
+  if (letters.length <= 1) return letters.join("");
+  return `${letters.slice(0, -1).join(", ")} ou ${letters[letters.length - 1]}`;
 }

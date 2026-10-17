@@ -9,8 +9,8 @@ describe("demo driver", () => {
     const demo = startDemo(engine, {
       loop: false,
       script: [
-        { kind: "segment", title: "Hello" },
-        { kind: "say", text: "Hi chat", emotion: "happy" },
+        { kind: "segment", title: "Olá" },
+        { kind: "say", text: "Oi, chat", emotion: "happy" },
         { kind: "follow", name: "ana" },
       ],
       onBeat: (beat) => beats.push(beat.kind),
@@ -20,7 +20,7 @@ describe("demo driver", () => {
     expect(engine.applied.map((m) => m.t)).toEqual(["segment", "speak", "alert"]);
     const speak = engine.applied[1] as { audioUrl: string | null; durationMs: number };
     expect(speak.audioUrl).toBeNull();
-    expect(speak.durationMs).toBe(estimateLineMs("Hi chat"));
+    expect(speak.durationMs).toBe(estimateLineMs("Oi, chat"));
     demo.stop();
     expect(engine.applied.at(-1)?.t).toBe("stop");
   });
@@ -38,12 +38,17 @@ describe("demo driver", () => {
     for (const kind of ["say", "gift", "follow", "share", "segment"]) expect(kinds.has(kind as never)).toBe(true);
     for (const beat of DEMO_SCRIPT) if (beat.kind === "say") expect(beat.text.length).toBeLessThan(140);
   });
+
+  it("is honest that the host is an AI", () => {
+    const lines = DEMO_SCRIPT.flatMap((b) => (b.kind === "say" ? [b.text] : []));
+    expect(lines.some((text) => /\b(sou|é) uma IA\b|apresentador de IA/.test(text))).toBe(true);
+  });
 });
 
 describe("demo game and effect beats", () => {
   it("puts game scenes and reactions on stage", async () => {
     const engine = new FakeEngine("demo");
-    const scene = { kind: "scoreboard" as const, title: "Final scores", rows: [{ name: "ana", points: 10 }] };
+    const scene = { kind: "scoreboard" as const, title: "Placar final", rows: [{ name: "ana", points: 10 }] };
     const demo = startDemo(engine, {
       loop: false,
       script: [

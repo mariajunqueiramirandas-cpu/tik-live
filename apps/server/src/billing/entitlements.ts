@@ -40,7 +40,7 @@ export class Entitlements {
       return {
         ok: false,
         code: "plan_channel_limit",
-        message: `Your ${plan.name} plan includes ${plan.limits.channels} hosts. Delete one or upgrade to add more.`,
+        message: `Seu plano ${plan.name} inclui ${plan.limits.channels} apresentadores. Apague um ou mude de plano para criar mais.`,
       };
     }
     return { ok: true };
@@ -53,7 +53,7 @@ export class Entitlements {
       return {
         ok: false,
         code: "plan_running_limit",
-        message: `Your ${plan.name} plan runs ${plan.limits.runningChannels} host${plan.limits.runningChannels === 1 ? "" : "s"} at a time. Stop one first or upgrade.`,
+        message: `Seu plano ${plan.name} deixa ${plan.limits.runningChannels} ${plan.limits.runningChannels === 1 ? "apresentador" : "apresentadores"} no ar por vez. Pare um primeiro ou mude de plano.`,
       };
     }
     if (!isUnlimited(plan.limits.liveHoursPerMonth)) {
@@ -62,7 +62,7 @@ export class Entitlements {
         return {
           ok: false,
           code: "plan_hours_exhausted",
-          message: `You've used all ${plan.limits.liveHoursPerMonth} live hours on the ${plan.name} plan this month. Upgrade to keep going.`,
+          message: `Você usou todas as ${plan.limits.liveHoursPerMonth} horas de live do plano ${plan.name} neste mês. Mude de plano para continuar.`,
         };
       }
     }

@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": ["**/zod-pt-br.ts"],
   "exports": {
     ".": "./src/index.ts"
   },

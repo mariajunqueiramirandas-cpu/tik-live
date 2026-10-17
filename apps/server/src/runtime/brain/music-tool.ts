@@ -31,7 +31,7 @@ Example (a two-bar funk beat): {"title":"Batidão","bpm":130,"bars":2,"repeat":4
   input_schema: {
     type: "object",
     properties: {
-      title: { type: "string", description: "A short, fun title shown on stage (under 40 characters)." },
+      title: { type: "string", description: "A short, fun title shown on stage, in Brazilian Portuguese (under 40 characters)." },
       bpm: { type: "integer", description: "60 to 180." },
       bars: { type: "integer", description: "Length of one pass, 1 to 8 bars." },
       repeat: { type: "integer", description: "How many times the piece plays, 1 to 8." },

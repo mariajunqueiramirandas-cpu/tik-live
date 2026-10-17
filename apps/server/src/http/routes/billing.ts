@@ -9,14 +9,14 @@ import { valid } from "../validate";
 export function billingWebhookRoutes(deps: AppDeps) {
   return new Hono<AppEnv>().post("/", async (c) => {
     const body = await c.req.text();
-    if (body.length > 1_000_000) return problem(c, 413, "too_large", "Payload too large.");
+    if (body.length > 1_000_000) return problem(c, 413, "too_large", "Conteúdo grande demais.");
     const ok = await deps.billing.handleWebhook({
       signature: c.req.header("x-signature") ?? null,
       requestId: c.req.header("x-request-id") ?? null,
       query: new URL(c.req.url).searchParams,
       body,
     });
-    if (!ok) return problem(c, 401, "bad_signature", "Invalid signature.");
+    if (!ok) return problem(c, 401, "bad_signature", "Assinatura inválida.");
     return c.json({ received: true });
   });
 }
@@ -51,13 +51,13 @@ export function voiceRoutes(deps: AppDeps) {
     })
     .get("/pocket/:voice/sample", async (c) => {
       const voice = c.req.param("voice");
-      if (voice.length > 64) return problem(c, 404, "voice_not_found", "No such voice.");
+      if (voice.length > 64) return problem(c, 404, "voice_not_found", "Essa voz não existe.");
       const sample = await deps.voices.pocketSample(voice).catch((err: unknown) => {
         deps.log.warn("voice sample failed", err);
         return undefined;
       });
-      if (sample === null) return problem(c, 404, "voice_not_found", "No such voice.");
-      if (!sample) return problem(c, 503, "voice_unavailable", "The voice server is busy. Try again in a moment.");
+      if (sample === null) return problem(c, 404, "voice_not_found", "Essa voz não existe.");
+      if (!sample) return problem(c, 503, "voice_unavailable", "O servidor de voz está ocupado. Tente de novo em instantes.");
       return c.body(new Uint8Array(sample.data), 200, { "content-type": sample.mime, "cache-control": "private, max-age=3600" });
     });
 }

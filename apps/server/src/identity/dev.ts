@@ -31,7 +31,7 @@ export class DevIdentityProvider implements IdentityProvider {
     return {
       externalId: `dev|${name}`,
       email: `${name}@localhost`,
-      name: name === "local" ? "Developer" : name,
+      name: name === "local" ? "Desenvolvedor" : name,
     };
   }
 }

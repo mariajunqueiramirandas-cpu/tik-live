@@ -103,7 +103,7 @@ export function useUpdateChannel(id: string) {
     },
     onError: (error, _patch, context) => {
       context?.restore();
-      toast.error("Couldn't save", error);
+      toast.error("Não deu para salvar", error);
     },
     onSuccess: (channel) => putChannel(channel),
   });
@@ -162,7 +162,7 @@ export function useRunChannel(id: string) {
     },
     onError: (error, action, context) => {
       context?.restore();
-      toast.error(action === "start" ? "Couldn't go live" : "Couldn't stop", error);
+      toast.error(action === "start" ? "Não deu para entrar ao vivo" : "Não deu para parar", error);
     },
     onSuccess: (channel) => putChannel(channel),
   });
@@ -172,7 +172,7 @@ export function useRotateStageKey(id: string) {
   return useMutation({
     mutationFn: async () => (await call(api.api.channels[":id"]["stage-key"].$post({ param: { id } }))).channel as ChannelDto,
     onSuccess: (channel) => putChannel(channel),
-    onError: (error) => toast.error("Couldn't replace the link", error),
+    onError: (error) => toast.error("Não deu para trocar o link", error),
   });
 }
 

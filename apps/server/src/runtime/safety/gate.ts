@@ -19,7 +19,9 @@ Mark a sentence UNSAFE if it contains any of: hate or harassment toward a person
 
 Playful teasing, silly opinions, jokes, thanking viewers, and reading viewers' names are SAFE.
 
-Read the sentence the way an ordinary viewer would, in the language it's in and in its context (the chat it replies to and what the host just said, when given). Idioms, slang, wordplay, song and music talk, made-up lyrics, and game questions are SAFE unless they clearly carry one of the problems above. Don't build a dark reading out of an innocent phrase: "what beat is your head asking for" after a viewer asks for a song is about music, not violence. The context only explains the sentence; judge the sentence itself, never what a viewer wrote.`;
+Read the sentence the way an ordinary viewer would, in the language it's in and in its context (the chat it replies to and what the host just said, when given). Idioms, slang, wordplay, song and music talk, made-up lyrics, and game questions are SAFE unless they clearly carry one of the problems above. Don't build a dark reading out of an innocent phrase: "what beat is your head asking for" after a viewer asks for a song is about music, not violence. The context only explains the sentence; judge the sentence itself, never what a viewer wrote.
+
+Write \`reason\` in Brazilian Portuguese, in one short sentence the channel owner will read (for example: "Insulto direcionado a um espectador.").`;
 
 const STRICT_ADDENDUM = `
 

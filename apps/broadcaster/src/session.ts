@@ -72,7 +72,7 @@ export function backoffMs(attempt: number): number {
  */
 export class BroadcastSession {
   private state: BroadcastState = "starting";
-  private detail = "Opening the stage";
+  private detail = "Abrindo o palco";
   private since = new Date();
   private restarts = 0;
   private streak = 0;
@@ -138,7 +138,7 @@ export class BroadcastSession {
       const delay = this.backoff(this.streak);
       const safe = redact(reason, [this.config.streamKey]);
       this.log.warn("broadcast interrupted; restarting", { reason: safe, attempt: this.streak, delayMs: delay });
-      this.setState(this.streak >= FAILED_AFTER ? "failed" : "retrying", `${safe}. Retrying in ${Math.round(delay / 1000)} s.`);
+      this.setState(this.streak >= FAILED_AFTER ? "failed" : "retrying", `${safe}. Tentando de novo em ${Math.round(delay / 1000)} s.`);
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, delay);
         this.wake = () => {
@@ -148,12 +148,12 @@ export class BroadcastSession {
       });
       this.wake = null;
     }
-    this.setState("stopped", "Stopped");
+    this.setState("stopped", "Parada");
   }
 
   /** Runs until something breaks; returns why. */
   private async runOnce(): Promise<string> {
-    if (this.state !== "failed" && this.state !== "retrying") this.setState("starting", "Opening the stage");
+    if (this.state !== "failed" && this.state !== "retrying") this.setState("starting", "Abrindo o palco");
     const { video } = this.config;
     // Stage first: the encoder only starts once there's something to encode.
     const stage = await this.factory.openStage(this.config.stageUrl, video);
@@ -196,7 +196,7 @@ export class BroadcastSession {
         encoder.writeVideo(frame);
         if (first) {
           first = false;
-          this.setState("live", "Streaming");
+          this.setState("live", "Transmitindo");
           this.log.info("broadcast live");
         }
       },

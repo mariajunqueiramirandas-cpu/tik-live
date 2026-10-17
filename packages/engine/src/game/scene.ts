@@ -10,9 +10,11 @@ import {
   easeOutBack,
   ellipsize,
   fitText,
+  formatCount,
   formatSeconds,
   isRound,
   leader,
+  letterList,
   PALETTES,
   percentages,
   sceneChange,
@@ -126,6 +128,8 @@ interface TextOptions {
   lineHeight?: number;
   bind?: number;
   arg?: number;
+  /** One-line text wider than this shrinks (to 3/4 size at most), then ellipsizes. Default: the board width. */
+  maxWidth?: number;
 }
 
 /** One line of live text in its own small texture, repainted only when it changes. */
@@ -164,10 +168,7 @@ class Label {
     if (total > maxWidth) {
       size = Math.max(Math.round(size * 0.78), Math.floor((size * maxWidth) / total));
       m = measureWith(`${weight} ${size}px ${FONT_FAMILY}`);
-      if (m(a) > maxWidth) {
-        a = ellipsize(a, maxWidth, m);
-        b = "";
-      } else if (m(a) + m(b) > maxWidth) b = ellipsize(b, maxWidth - m(a), m);
+      if (m(a) + m(b) > maxWidth) [a, b] = cutLonger(a, b, maxWidth, m);
     }
     const wa = m(a);
     this.textWidth = wa + m(b);
@@ -288,7 +289,7 @@ export class GameLayer implements Layer {
       if (second !== this.lastSecond) {
         this.lastSecond = second;
         const warn = second <= 5;
-        (this.labels[L_TIMER] as Label).set(String(second), "s", 46, 800, warn ? WARN : INK, warn ? WARN : HAZE, null, 200, this.scale);
+        (this.labels[L_TIMER] as Label).set(String(second), " s", 46, 800, warn ? WARN : INK, warn ? WARN : HAZE, null, 200, this.scale);
       }
     }
     // Entrances: each group rises (or punches in) after its delay.
@@ -487,14 +488,16 @@ export class GameLayer implements Layer {
     const sc = this.scale;
     const foot = this.labels[L_FOOT] as Label;
     const footer = (strong: string, rest: string) => foot.set(strong, rest, 40, 700, this.accent, HAZE, null, W, sc);
-    if (isRound(scene) && scene.phase === "reveal") (this.labels[L_TIMER] as Label).set("Time's up", "", 34, 700, HAZE, HAZE, null, 300, sc);
+    if (isRound(scene) && scene.phase === "reveal") (this.labels[L_TIMER] as Label).set("Tempo esgotado", "", 34, 700, HAZE, HAZE, null, 300, sc);
     switch (scene.kind) {
       case "trivia":
       case "truefalse": {
-        const letters = scene.kind === "trivia" ? OPTION_LETTERS.slice(0, scene.options.length).join(", ").replace(/, (\w)$/, " or $1") : "T or F";
-        if (scene.phase === "open") footer(`${scene.answers}`, ` ${plural(scene.answers, "answer")} · type ${letters}`);
-        else if (scene.winners.length) footer("Fastest: ", scene.winners.join(", "));
-        else footer("", "Nobody got it right");
+        // The server takes T, V or F for true/false; the board shows the Portuguese V.
+        const letters = scene.kind === "trivia" ? letterList(OPTION_LETTERS.slice(0, scene.options.length)) : "V ou F";
+        if (scene.phase === "open") footer(formatCount(scene.answers), ` ${noun(scene.answers, "resposta")} · digite ${letters}`);
+        else if (scene.winners.length === 1) footer(scene.winners[0] as string, " acertou!");
+        else if (scene.winners.length) footer("Mais rápidos: ", this.winnerList(scene.winners));
+        else footer("", "Ninguém acertou");
         const tally = scene.tally ?? [];
         const share = shares(tally);
         share.forEach((value, i) => ((this.vals[i] as Spring).target = value));
@@ -510,17 +513,17 @@ export class GameLayer implements Layer {
           const big = scene.options.length === 2;
           (this.labels[L_VALUE + i] as Label).set(`${pct[i] ?? 0}%`, "", big ? 84 : 52, 800, INK, INK, i === lead && scene.phase === "reveal" ? "#FFD15C" : null, 260, sc);
         });
-        const letters = OPTION_LETTERS.slice(0, scene.options.length).join(", ").replace(/, (\w)$/, " or $1");
-        if (scene.phase === "reveal" && lead >= 0) footer(`Chat picked ${OPTION_LETTERS[lead]}`, ` · ${total} ${plural(total, "vote")}`);
-        else footer(`${total}`, ` ${plural(total, "vote")} · type ${letters}`);
+        const letters = letterList(OPTION_LETTERS.slice(0, scene.options.length));
+        if (scene.phase === "reveal" && lead >= 0) footer(`O chat escolheu ${OPTION_LETTERS[lead]}`, ` · ${formatCount(total)} ${noun(total, "voto")}`);
+        else footer(formatCount(total), ` ${noun(total, "voto")} · digite ${letters}`);
         break;
       }
       case "scramble":
-        footer(`${scene.guesses}`, ` ${plural(scene.guesses, "guess", "guesses")}${scene.phase === "open" ? " · type the word" : ""}`);
+        footer(formatCount(scene.guesses), ` ${noun(scene.guesses, "palpite")}${scene.phase === "open" ? " · digite a palavra" : ""}`);
         break;
       case "math":
       case "riddle":
-        footer(`${scene.guesses}`, ` ${plural(scene.guesses, "guess", "guesses")}${scene.phase === "open" ? " · type your answer" : ""}`);
+        footer(formatCount(scene.guesses), ` ${noun(scene.guesses, "palpite")}${scene.phase === "open" ? " · digite a resposta" : ""}`);
         break;
       case "number": {
         const reveal = scene.phase === "reveal" && scene.answer !== null;
@@ -534,17 +537,18 @@ export class GameLayer implements Layer {
         else big.set(low === high ? `${low}` : `${low} – ${high}`, "", 132, 800, INK, INK, this.accent, W, sc);
         const sub = this.labels[L_SUB] as Label;
         if (scene.phase === "reveal") {
-          if (scene.winner) sub.set(scene.winner, " got it!", 56, 800, this.accent, INK, null, W, sc);
-          else sub.set("", "Nobody got it this time", 48, 700, HAZE, HAZE, null, W, sc);
+          if (scene.winner) sub.set(scene.winner, " acertou!", 56, 800, this.accent, INK, null, W, sc);
+          else sub.set("", "Ninguém acertou desta vez", 48, 700, HAZE, HAZE, null, W, sc);
         } else if (scene.last) {
-          const arrow = scene.last.hint === "higher" ? "  ↑ higher" : scene.last.hint === "lower" ? "  ↓ lower" : "  exact!";
+          // The hint is about the secret: "maior" means it's higher than this guess.
+          const arrow = scene.last.hint === "higher" ? "  ↑ maior" : scene.last.hint === "lower" ? "  ↓ menor" : "  na mosca!";
           sub.set(`${scene.last.name}: ${scene.last.value}`, arrow, 48, 800, INK, scene.last.hint === "lower" ? "#FF8A6B" : "#7CFFB2", null, W, sc);
         } else sub.set("", "", 48, 700, INK, INK, null, W, sc);
-        footer(`${scene.guesses}`, ` ${plural(scene.guesses, "guess", "guesses")}${scene.phase === "open" ? ` · type a number from ${scene.min} to ${scene.max}` : ""}`);
+        footer(formatCount(scene.guesses), ` ${noun(scene.guesses, "palpite")}${scene.phase === "open" ? " · digite o número" : ""}`);
         break;
       }
       case "fastest":
-        footer("", scene.phase === "open" ? "Type it exactly as shown · first one wins" : "");
+        footer("", scene.phase === "open" ? "Digite igualzinho · quem for primeiro ganha" : "");
         break;
       case "scoreboard":
         footer("", "");
@@ -556,6 +560,17 @@ export class GameLayer implements Layer {
       const n = scene.kind === "trivia" ? scene.options.length : 2;
       for (let i = 0; i < n; i++) (this.dim[G_OPT + i] as Spring).target = i === correct ? 1 : 0.38;
     }
+  }
+
+  /** As many winners as fit on the footer, then "e mais 2". */
+  private winnerList(names: readonly string[]): string {
+    const m = this.measure(34, 700);
+    const room = W - m("Mais rápidos: ");
+    for (let k = names.length; k > 1; k--) {
+      const line = names.slice(0, k).join(", ") + (k < names.length ? ` e mais ${names.length - k}` : "");
+      if (m(line) <= room) return line;
+    }
+    return names.length > 1 ? `${names[0]} e mais ${names.length - 1}` : (names[0] ?? "");
   }
 
   // ---- layout and painting ------------------------------------------------------
@@ -697,7 +712,7 @@ export class GameLayer implements Layer {
     return top + height;
   }
 
-  /** One line, two colors (e.g. "Hint: " + the hint), centered at `cx`. */
+  /** One line, two colors (e.g. "Dica: " + the hint), centered at `cx`. */
   private pair(strong: string, rest: string, size: number, cx: number, top: number, group: number, colorA: string, colorB: string, maxWidth = W): number {
     const ctx = this.ctx2d;
     let m = this.measure(size, 740);
@@ -706,8 +721,8 @@ export class GameLayer implements Layer {
       s = Math.max(Math.round(size * 0.8), Math.floor((size * maxWidth) / (m(strong) + m(rest))));
       m = this.measure(s, 740);
     }
-    const b = m(strong) + m(rest) > maxWidth ? ellipsize(rest, maxWidth - m(strong), m) : rest;
-    const width = m(strong) + m(b);
+    const [a, b] = m(strong) + m(rest) > maxWidth ? cutLonger(strong, rest, maxWidth, m) : [strong, rest];
+    const width = m(a) + m(b);
     if (ctx) {
       ctx.save();
       ctx.font = `740 ${s}px ${FONT_FAMILY}`;
@@ -717,25 +732,70 @@ export class GameLayer implements Layer {
       const x = cx - width / 2;
       const y = top + s * 0.6;
       ctx.fillStyle = colorA;
-      ctx.fillText(strong, x, y);
+      ctx.fillText(a, x, y);
       ctx.fillStyle = colorB;
-      ctx.fillText(b, x + m(strong), y);
+      ctx.fillText(b, x + m(a), y);
       ctx.restore();
       this.add(PIECE, cx - width / 2 - 18, top - 18, width + 36, s * 1.2 + 36, group);
     }
     return top + s * 1.2;
   }
 
+  /** "Dica: ..." in up to two lines, "Dica:" in the accent. */
+  private fitHint(hint: string): FittedText {
+    return this.fit(`Dica: ${hint}`, W, 2, [44, 40, 36], 740);
+  }
+
+  private hint(f: FittedText, top: number, group: number): number {
+    const ctx = this.ctx2d;
+    const size = f.size;
+    const lineHeight = size * 1.2;
+    if (ctx && f.lines.length) {
+      const m = this.measure(size, 740);
+      ctx.save();
+      ctx.font = `740 ${size}px ${FONT_FAMILY}`;
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = "rgba(5,2,18,0.6)";
+      ctx.shadowBlur = 10;
+      f.lines.forEach((line, i) => {
+        const x = CX - (f.widths[i] ?? 0) / 2;
+        const y = top + i * lineHeight + size * 0.6;
+        const label = i === 0 && line.startsWith("Dica:") ? "Dica:" : "";
+        ctx.fillStyle = this.accent;
+        if (label) ctx.fillText(label, x, y);
+        ctx.fillStyle = INK;
+        ctx.fillText(line.slice(label.length), x + (label ? m(label) : 0), y);
+      });
+      ctx.restore();
+      const width = Math.max(...f.widths);
+      this.add(PIECE, CX - width / 2 - 18, top - 18, width + 36, f.lines.length * lineHeight + 36, group);
+    }
+    return top + f.lines.length * lineHeight;
+  }
+
   private single(text: string, size: number, weight: number, x: number, top: number, group: number, options: TextOptions = {}): number {
-    const m = this.measure(size, weight);
-    return this.text({ lines: [text], size, widths: [m(text)] }, x, top, group, { ...options, weight });
+    const maxWidth = options.maxWidth ?? W;
+    let m = this.measure(size, weight);
+    let s = size;
+    let line = text;
+    if (m(line) > maxWidth) {
+      // Shrink around the same center line, then cut what still doesn't fit.
+      s = Math.max(Math.round(size * 0.75), Math.floor((size * maxWidth) / m(line)));
+      m = this.measure(s, weight);
+      line = ellipsize(line, maxWidth, m);
+      top += (size - s) * 0.62;
+    }
+    return this.text({ lines: [line], size: s, widths: [m(line)] }, x, top, group, { ...options, weight });
   }
 
   private header(scene: RoundScene): void {
     const label = GAME_LABELS[scene.kind].toUpperCase();
-    const m = this.measure(34, 800);
-    this.single(label, 34, 800, L, HEAD_Y - 20, G_HEAD, { align: 0, color: this.accent });
-    this.single(`Round ${scene.round}/${scene.rounds}`, 34, 600, L + m(label) + 22, HEAD_Y - 20, G_HEAD, { align: 0, color: HAZE, weight: 600 });
+    const round = `Rodada ${scene.round}/${scene.rounds}`;
+    // The right end is the timer's ("Tempo esgotado" at the reveal, up to 300 px).
+    const room = W - 300 - 24 - 22 - this.measure(34, 600)(round);
+    const labelWidth = Math.min(this.measure(34, 800)(label), room);
+    this.single(label, 34, 800, L, HEAD_Y - 20, G_HEAD, { align: 0, color: this.accent, maxWidth: labelWidth });
+    this.single(round, 34, 600, L + labelWidth + 22, HEAD_Y - 20, G_HEAD, { align: 0, color: HAZE, weight: 600 });
     this.box(L, 662, W, 14, 7, G_HEAD, TRACK).flags = F_TIMER;
     const fill = this.box(L, 662, W, 14, 7, G_HEAD, this.accentRgba, NONE, rgba(this.accent, 0.5), 16);
     fill.bind = B_TIMER;
@@ -748,17 +808,25 @@ export class GameLayer implements Layer {
   private trivia(scene: Extract<GameScene, { kind: "trivia" }>): void {
     const n = scene.options.length;
     const avail = FOOT_Y - 40 - TOP;
+    // Biggest first; smaller type and more lines before anything is cut
+    // (Portuguese questions run long).
     let q = this.fit(scene.question, W - 88, 3, [62, 56, 52]);
-    let optLines = 2;
-    const fits = () => scene.options.map((o) => this.fit(o, 640, optLines, [44, 42, 40], 680));
-    let opts = fits();
-    const rowH = (o: FittedText) => Math.max(100, o.lines.length * o.size * 1.12 + 34);
+    let opts = scene.options.map((o) => this.fit(o, 640, 2, [44, 42, 40], 680));
+    let rowMin = 100;
+    const rowH = (o: FittedText) => Math.max(rowMin, o.lines.length * o.size * 1.12 + 34);
     const total = () => q.lines.length * q.size * 1.16 + 64 + 22 + opts.reduce((sum, o) => sum + rowH(o), 0) + 14 * (n - 1);
-    if (total() > avail) {
-      optLines = 1;
-      opts = fits();
+    const steps: Array<[number, number[], number, number[], number]> = [
+      [3, [48, 44], 2, [40, 38], 92],
+      [4, [44, 42], 2, [38, 36], 84],
+      [3, [62, 56, 52, 48], 1, [44, 42, 40], 100],
+      [4, [44, 42, 40], 1, [38, 36], 84],
+    ];
+    for (const [qLines, qSizes, oLines, oSizes, min] of steps) {
+      if (total() <= avail && !isCut(q, scene.question) && !opts.some((o, i) => isCut(o, scene.options[i] as string))) break;
+      q = this.fit(scene.question, W - 88, qLines, qSizes);
+      opts = scene.options.map((o) => this.fit(o, 640, oLines, oSizes, 680));
+      rowMin = min;
     }
-    if (total() > avail) q = this.fit(scene.question, W - 88, 2, [56, 52]);
     let y = TOP + Math.max(0, (avail - total()) * 0.3);
     const cardH = q.lines.length * q.size * 1.16 + 64;
     this.box(L, y, W, cardH, 40, G_MAIN, PANEL, rgba(this.accent, 0.6), rgba(this.accent, 0.22), 36);
@@ -820,13 +888,28 @@ export class GameLayer implements Layer {
       });
       const vy = trackTop + trackH * 0.42;
       this.box(CX - 60, vy - 60, 120, 120, 60, G_EXTRA, rgba("#140A30", 0.96), this.accentRgba, rgba(this.accent, 0.5), 30);
-      this.single("VS", 46, 800, CX, vy - 27, G_EXTRA, { color: this.accent });
+      this.single("OU", 46, 800, CX, vy - 27, G_EXTRA, { color: this.accent });
       return;
     }
     // Three or four options: racing bars.
-    const opts = scene.options.map((o) => this.fit(o, W - 120 - 190, 2, [44, 42, 40], 700));
-    const rowH = (o: FittedText) => Math.max(100, o.lines.length * o.size * 1.16 + 36);
-    const total = opts.reduce((sum, o) => sum + rowH(o), 0) + 22 * (n - 1);
+    let pad = 36;
+    let gap = 22;
+    const rowH = (o: FittedText) => Math.max(100, o.lines.length * o.size * 1.16 + pad);
+    const rows = (lines: number, sizes: number[]) => scene.options.map((o) => this.fit(o, W - 120 - 190, lines, sizes, 700));
+    const height = (list: FittedText[]) => list.reduce((sum, o) => sum + rowH(o), 0) + gap * (n - 1);
+    let opts = rows(2, [44, 42, 40]);
+    if (y + height(opts) > FOOT_Y - 50) {
+      // Tighter rows before cutting any option to one line.
+      opts = rows(2, [38, 36]);
+      pad = 24;
+      gap = 14;
+    }
+    if (y + height(opts) > FOOT_Y - 50) {
+      opts = rows(1, [44, 42, 40, 38]);
+      pad = 36;
+      gap = 22;
+    }
+    const total = height(opts);
     y += Math.max(0, (FOOT_Y - 50 - y - total) * 0.3);
     opts.forEach((o, i) => {
       const h = rowH(o);
@@ -843,14 +926,14 @@ export class GameLayer implements Layer {
       this.single(OPTION_LETTERS[i] as string, 42, 800, L + 50, y + h / 2 - 24, g, { color: DARK });
       this.text(o, L + 108, y + (h - o.lines.length * o.size * 1.16) / 2, g, { align: 0, weight: 700 });
       this.label(L_VALUE + i, R - 28, y + h / 2, 1, g);
-      y += h + 22;
+      y += h + gap;
     });
   }
 
   private scramble(scene: Extract<GameScene, { kind: "scramble" }>): void {
     const reveal = scene.phase === "reveal";
     const letters = [...(reveal && scene.word ? scene.word.toUpperCase() : scene.letters)];
-    this.single(reveal ? "The word was" : "Unscramble the word", 44, 700, CX, TOP + 30, G_MAIN, { color: HAZE, weight: 700 });
+    this.single(reveal ? "A palavra era" : "Desembaralhe a palavra", 44, 700, CX, TOP + 30, G_MAIN, { color: HAZE, weight: 700 });
     const grid = tileGrid(letters.length, W - 40, 132);
     const top = TOP + 120;
     const tile = reveal ? rgba("#D7FFE4") : rgba("#F7F1E3");
@@ -870,16 +953,16 @@ export class GameLayer implements Layer {
       this.single(letter, size, 800, x + grid.size / 2, y + grid.size / 2 - size * 0.6, G_OPT, { color: DARK, bind: B_TILE, arg: i });
     });
     let y = top + grid.rows * (grid.size + grid.gap) + 34;
-    if (scene.hint) y = this.pair("Hint: ", scene.hint, 44, CX, y, G_EXTRA, this.accent, INK) + 30;
+    if (scene.hint) y = this.hint(this.fitHint(scene.hint), y, G_EXTRA) + 30;
     if (reveal) {
-      if (scene.winner) this.pair(scene.winner, " got it!", 60, CX, y + 10, G_EXTRA2, this.accent, INK);
-      else this.single("Nobody got it this time", 48, 700, CX, y + 10, G_EXTRA2, { color: HAZE, weight: 700 });
+      if (scene.winner) this.pair(scene.winner, " acertou!", 60, CX, y + 10, G_EXTRA2, this.accent, INK);
+      else this.single("Ninguém acertou desta vez", 48, 700, CX, y + 10, G_EXTRA2, { color: HAZE, weight: 700 });
     }
   }
 
   private number(scene: Extract<GameScene, { kind: "number" }>): void {
     const reveal = scene.phase === "reveal";
-    this.single(reveal ? "The number was" : "It's between", 44, 700, CX, TOP + 40, G_MAIN, { color: HAZE, weight: 700 });
+    this.single(reveal ? "O número era" : "Está entre", 44, 700, CX, TOP + 40, G_MAIN, { color: HAZE, weight: 700 });
     this.label(L_BIG, CX, TOP + 210, 0.5, G_MAIN);
     const trackY = TOP + 390;
     const track = this.box(140, trackY, 800, 32, 16, G_OPT, TRACK, rgba(HAZE, 0.35));
@@ -899,7 +982,8 @@ export class GameLayer implements Layer {
 
   private trueFalse(scene: Extract<GameScene, { kind: "truefalse" }>): void {
     const reveal = scene.phase === "reveal";
-    const st = this.fit(scene.statement, W - 96, 4, [60, 56, 52]);
+    let st = this.fit(scene.statement, W - 96, 4, [60, 56, 52]);
+    if (isCut(st, scene.statement)) st = this.fit(scene.statement, W - 96, 5, [48, 44]);
     const cardH = st.lines.length * st.size * 1.16 + 72;
     this.box(L, TOP, W, cardH, 28, G_MAIN, PANEL, rgba(this.accent, 0.55), rgba(this.accent, 0.2), 30);
     this.text(st, CX, TOP + 36, G_MAIN);
@@ -908,7 +992,7 @@ export class GameLayer implements Layer {
     const half = (W - 24) / 2;
     const pct = scene.tally ? percentages(scene.tally) : null;
     const letterSize = Math.round(Math.min(230, h * 0.5));
-    ["TRUE", "FALSE"].forEach((word, i) => {
+    ["VERDADEIRO", "FALSO"].forEach((word, i) => {
       const x = i === 0 ? L : CX + 12;
       const color = TF_COLORS[i] as string;
       const correct = reveal && scene.correct !== null && (scene.correct ? 0 : 1) === i;
@@ -925,7 +1009,7 @@ export class GameLayer implements Layer {
       this.single(word[0] as string, letterSize, 800, x + half / 2, cy - letterSize * 0.62, g, { color, glow: color });
       this.single(word, 52, 800, x + half / 2, cy + letterSize * 0.42, g);
       if (reveal && pct) this.single(`${pct[i] ?? 0}%`, 56, 800, x + half / 2, cy + letterSize * 0.42 + 70, g, { color: correct ? GREEN : INK });
-      else this.single(i === 0 ? "type T or V" : "type F", 36, 700, x + half / 2, cy + letterSize * 0.42 + 76, g, { color: HAZE, weight: 700 });
+      else this.single(i === 0 ? "digite V" : "digite F", 36, 700, x + half / 2, cy + letterSize * 0.42 + 76, g, { color: HAZE, weight: 700 });
     });
   }
 
@@ -942,57 +1026,79 @@ export class GameLayer implements Layer {
     this.single(answer, 124, 700, CX, TOP + 300, G_EXTRA, { color: reveal ? "#FFE58A" : this.accent, glow: reveal ? "#FFD15C" : this.accent, weight: 700 });
     const y = TOP + boardH + 50;
     if (reveal) {
-      if (scene.winner) this.pair(scene.winner, " got it first!", 58, CX, y, G_EXTRA2, this.accent, INK);
-      else this.single("Nobody got it this time", 48, 700, CX, y, G_EXTRA2, { color: HAZE, weight: 700 });
-    } else this.single("Answer in chat, fastest wins", 42, 700, CX, y, G_EXTRA2, { color: HAZE, weight: 700 });
+      if (scene.winner) this.pair(scene.winner, " acertou primeiro!", 58, CX, y, G_EXTRA2, this.accent, INK);
+      else this.single("Ninguém acertou desta vez", 48, 700, CX, y, G_EXTRA2, { color: HAZE, weight: 700 });
+    } else this.single("Responda no chat: o mais rápido ganha", 42, 700, CX, y, G_EXTRA2, { color: HAZE, weight: 700 });
   }
 
   private riddle(scene: Extract<GameScene, { kind: "riddle" }>): void {
     const reveal = scene.phase === "reveal";
-    const text = this.fit(scene.riddle, W - 150, 5, [58, 54, 52], 700);
+    let hint = scene.hint ? this.fitHint(scene.hint) : null;
+    const layout = () => {
+      // Room under the card: the hint, and at the reveal the answer and who got it.
+      const below = 34 + (hint ? hint.lines.length * hint.size * 1.2 + 30 : 0) + (reveal && scene.answer ? 140 + 62 : 0);
+      const maxCard = FOOT_Y - 44 - TOP - below;
+      let fitted = this.fit(scene.riddle, W - 150, 5, [58, 54, 52], 700);
+      for (const size of [48, 44, 40]) {
+        if (fitted.lines.length * fitted.size * 1.2 + 170 <= maxCard && !isCut(fitted, scene.riddle)) break;
+        fitted = this.fit(scene.riddle, W - 150, Math.max(2, Math.min(6, Math.floor((maxCard - 170) / (size * 1.2)))), [size], 700);
+      }
+      return fitted;
+    };
+    let text = layout();
+    // With the answer on screen the hint is spent: drop it before cutting the riddle.
+    if (reveal && scene.answer && hint && isCut(text, scene.riddle)) {
+      hint = null;
+      text = layout();
+    }
     const cardH = text.lines.length * text.size * 1.2 + 170;
     this.box(L, TOP, W, cardH, 48, G_MAIN, rgba("#1A0B3A", 0.88), rgba(this.accent, 0.6), rgba(this.accent, 0.3), 36);
     this.single("“", 190, 800, L + 44, TOP - 4, G_MAIN, { align: 0, color: withAlpha(this.accent, 0.75) });
     this.text(text, CX, TOP + 110, G_MAIN, { weight: 700, lineHeight: 1.2 });
     let y = TOP + cardH + 34;
-    if (scene.hint) y = this.pair("Hint: ", scene.hint, 44, CX, y, G_EXTRA, this.accent, INK) + 30;
+    if (hint) y = this.hint(hint, y, G_EXTRA) + 30;
     if (reveal && scene.answer) {
-      const m = this.measure(60, 800);
-      const word = ellipsize(scene.answer.toUpperCase(), W - 120, m);
+      const answer = scene.answer.toUpperCase();
+      let size = 60;
+      while (size > 36 && this.measure(size, 800)(answer) > W - 120) size -= 4;
+      const m = this.measure(size, 800);
+      const word = ellipsize(answer, W - 120, m);
       const w = Math.min(W, m(word) + 100);
       const pill = this.box(CX - w / 2, y, w, 112, 56, G_EXTRA2, rgba(GREEN, 0.18), GREEN_RGBA, rgba(GREEN, 0.5), 28);
       pill.flags = F_PULSE;
-      this.single(word, 60, 800, CX, y + 21, G_EXTRA2);
+      this.single(word, size, 800, CX, y + 56 - size * 0.58, G_EXTRA2);
       y += 140;
-      if (scene.winner) this.pair(scene.winner, " solved it!", 52, CX, y, G_EXTRA2, this.accent, INK);
-      else this.single("Nobody solved it", 44, 700, CX, y, G_EXTRA2, { color: HAZE, weight: 700 });
+      if (scene.winner) this.pair(scene.winner, " acertou!", 52, CX, y, G_EXTRA2, this.accent, INK);
+      else this.single("Ninguém acertou", 44, 700, CX, y, G_EXTRA2, { color: HAZE, weight: 700 });
     }
   }
 
   private fastest(scene: Extract<GameScene, { kind: "fastest" }>): void {
     const reveal = scene.phase === "reveal";
-    this.single(reveal ? "And the fastest finger is" : "Type this word first!", 44, 700, CX, TOP + 6, G_MAIN, { color: HAZE, weight: 700 });
+    this.single(reveal ? "E o dedo mais rápido é" : "Digite esta palavra primeiro!", 44, 700, CX, TOP + 6, G_MAIN, { color: HAZE, weight: 700 });
     const slabTop = TOP + 90;
     const slab = this.box(L, slabTop, W, 300, 44, G_OPT, this.accentRgba, rgba("#FFFFFF", 0.9), rgba(this.accent, 0.55), 40);
     slab.flags = F_SHINE;
     slab.border = 5;
     this.punch[G_OPT] = 1;
     this.delay[G_OPT] = 0.12;
-    const word = this.fit(scene.word, W - 90, 1, [190, 170, 150, 132, 116, 100, 88, 76], 800);
+    const word = this.fit(scene.word, W - 90, 1, [190, 170, 150, 132, 116, 100, 88, 76, 66, 58, 52], 800);
     this.text(word, CX, slabTop + 150 - word.size * 0.58, G_OPT, { weight: 800, color: DARK });
     const y = slabTop + 340;
     if (!reveal) return;
     if (scene.winner) {
       this.single(scene.winner, 84, 800, CX, y, G_EXTRA, { glow: this.accent });
       if (scene.winnerMs !== null) this.single(formatSeconds(scene.winnerMs), 70, 800, CX, y + 112, G_EXTRA2, { color: this.accent });
-    } else this.single("Nobody typed it in time", 50, 700, CX, y + 20, G_EXTRA, { color: HAZE, weight: 700 });
+    } else this.single("Ninguém digitou a tempo", 50, 700, CX, y + 20, G_EXTRA, { color: HAZE, weight: 700 });
   }
 
   private scoreboard(scene: Extract<GameScene, { kind: "scoreboard" }>): void {
-    const title = this.fit(scene.title, W, 2, [68, 60, 54], 800);
+    // Two lines only at a size that stays clear of the first-place name.
+    let title = this.fit(scene.title, W, 1, [68, 60, 54], 800);
+    if (isCut(title, scene.title)) title = this.fit(scene.title, W, 2, [54, 50, 46], 800);
     this.text(title, CX, 600, G_MAIN, { weight: 800, color: "#FFD15C", glow: "#FFD15C" });
     if (scene.rows.length === 0) {
-      this.single("No points this time", 48, 700, CX, 900, G_OPT, { color: HAZE, weight: 700 });
+      this.single("Ninguém pontuou desta vez", 48, 700, CX, 900, G_OPT, { color: HAZE, weight: 700 });
       return;
     }
     const base = 1180;
@@ -1012,9 +1118,8 @@ export class GameLayer implements Layer {
       if (place === 0) block.flags = F_PULSE | F_SHINE;
       const ref = this.index;
       this.single(String(place + 1), 130, 800, x + width / 2, base - h + 14, g, { color: DARK, bind: B_FOLLOW, arg: ref });
-      const name = ellipsize(row.name, width + 30, this.measure(44, 800));
-      this.single(name, 44, 800, x + width / 2, base - h - 134, g, { bind: B_FOLLOW, arg: ref });
-      this.single(`${row.points} pts`, 38, 700, x + width / 2, base - h - 74, g, { color, weight: 700, bind: B_FOLLOW, arg: ref });
+      this.single(row.name, 44, 800, x + width / 2, base - h - 134, g, { bind: B_FOLLOW, arg: ref, maxWidth: width + 30 });
+      this.single(`${formatCount(row.points)} pts`, 38, 700, x + width / 2, base - h - 74, g, { color, weight: 700, bind: B_FOLLOW, arg: ref });
     }
     scene.rows.slice(3, 5).forEach((row, k) => {
       const y = base + 34 + k * 108;
@@ -1022,12 +1127,29 @@ export class GameLayer implements Layer {
       this.delay[g] = 1 + k * 0.1;
       this.box(L + 50, y, W - 100, 90, 30, g, PANEL, rgba(HAZE, 0.35));
       this.single(String(k + 4), 42, 800, L + 96, y + 20, g, { color: HAZE });
-      this.single(ellipsize(row.name, 470, this.measure(42, 740)), 42, 740, L + 150, y + 20, g, { align: 0, weight: 740 });
-      this.single(`${row.points} pts`, 40, 800, R - 84, y + 21, g, { align: 1, color: this.accent });
+      this.single(row.name, 42, 740, L + 150, y + 20, g, { align: 0, weight: 740, maxWidth: 470 });
+      this.single(`${formatCount(row.points)} pts`, 40, 800, R - 84, y + 21, g, { align: 1, color: this.accent });
     });
   }
 }
 
-function plural(n: number, one: string, many = `${one}s`): string {
+/**
+ * Cuts a two-part line to `maxWidth`: a short end ("acertou!", "↓ menor")
+ * stays whole and the long part (a name) gives way; otherwise the end is cut.
+ */
+/** Whether fitting `text` had to cut it. */
+function isCut(fitted: FittedText, text: string): boolean {
+  const last = fitted.lines[fitted.lines.length - 1] ?? "";
+  return last.endsWith("…") && !text.trimEnd().endsWith("…");
+}
+
+function cutLonger(a: string, b: string, maxWidth: number, m: Measure): [string, string] {
+  if (m(b) <= m(a) && m(b) <= maxWidth / 2) return [ellipsize(a, maxWidth - m(b), m), b];
+  if (m(a) > maxWidth) return [ellipsize(a, maxWidth, m), ""];
+  return [a, ellipsize(b, maxWidth - m(a), m)];
+}
+
+/** "resposta" or "respostas" (the count itself goes in the label's strong part). */
+function noun(n: number, one: string, many = `${one}s`): string {
   return n === 1 ? one : many;
 }

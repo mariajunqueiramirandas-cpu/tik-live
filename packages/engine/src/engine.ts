@@ -280,7 +280,8 @@ export class Engine implements StageEngine {
   /** Music and sound effects (ADR-0024); ducks itself under the voice. Loads with the extras. */
   private music: MusicPlayer | null = null;
 
-  private name = "Host";
+  // Until the server says who's hosting: "O apresentador é uma IA".
+  private name = "O apresentador";
   private look: Look = DEFAULT_LOOK;
   private readonly colors = new SpringVector(
     [...hexToRgb(DEFAULT_LOOK.primary), ...hexToRgb(DEFAULT_LOOK.secondary), ...hexToRgb(DEFAULT_LOOK.background)],
@@ -797,13 +798,14 @@ export class Engine implements StageEngine {
   }
 }
 
-function alertDetail(message: Extract<StageServerPayload, { t: "alert" }>): string {
+/** The highlighted end of an alert: "<name> enviou Rose ×5", "<name> começou a seguir". */
+export function alertDetail(message: Extract<StageServerPayload, { t: "alert" }>): string {
   if (message.kind === "gift") {
-    // TikTok's own convention: the gift's name, then the combo count.
+    // TikTok's own convention: the gift's name (as TikTok sends it), then the combo count.
     const count = message.count ?? 1;
-    return `${message.giftName ?? "a gift"}${count > 1 ? ` ×${count}` : ""}`;
+    return `${message.giftName || "um presente"}${count > 1 ? ` ×${count}` : ""}`;
   }
-  return message.kind === "follow" ? "followed" : "shared the stream";
+  return message.kind === "follow" ? "começou a seguir" : "compartilhou a live";
 }
 
 /**
@@ -816,7 +818,7 @@ class FallbackEngine implements StageEngine {
   private readonly events = new Emitter();
   private readonly speaker: Speaker;
   private readonly ctx: CanvasRenderingContext2D | null;
-  private name = "Host";
+  private name = "O apresentador";
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -889,10 +891,11 @@ class FallbackEngine implements StageEngine {
     ctx.textAlign = "center";
     ctx.fillStyle = "#F4F0FF";
     ctx.font = `700 26px ${FONT_FAMILY}`;
-    ctx.fillText(`${this.name} can't draw here yet`, w / 2, h / 2 - 20);
+    // OBS's own pt-BR menu names, so the creator can follow them as written.
+    ctx.fillText(`${this.name} ainda não aparece aqui`, w / 2, h / 2 - 20, w - 48);
     ctx.fillStyle = "#A397D6";
     ctx.font = `500 17px ${FONT_FAMILY}`;
-    ctx.fillText("Turn on hardware acceleration in OBS:", w / 2, h / 2 + 18);
-    ctx.fillText("Settings > Advanced > Sources", w / 2, h / 2 + 42);
+    ctx.fillText("Ative a aceleração de hardware no OBS:", w / 2, h / 2 + 18, w - 48);
+    ctx.fillText("Configurações > Avançado > Fontes", w / 2, h / 2 + 42, w - 48);
   }
 }

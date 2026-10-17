@@ -18,26 +18,26 @@ function OffAir() {
   const obs = (snapshot?.health.stages.program ?? 0) + (snapshot?.health.stages.broadcast ?? 0) > 0;
   const tiktok = channel.source === "tiktok";
   return (
-    <aside className={s.controls} aria-label="Go live">
+    <aside className={s.controls} aria-label="Entrar ao vivo">
       <div className={s.offAir}>
-        <h2>{channel.name} is off air</h2>
+        <h2>{channel.name} está fora do ar</h2>
         <p className={s.dim}>
           {tiktok
-            ? `When you go live, ${channel.name} waits for @${channel.tiktokUsername} to start a TikTok LIVE, then starts hosting.`
-            : `In practice mode, ${channel.name} hosts a room of simulated viewers. Nothing goes to TikTok.`}
+            ? `Quando você entrar ao vivo, ${channel.name} espera @${channel.tiktokUsername} começar uma TikTok LIVE e aí assume a apresentação.`
+            : `No modo de treino, ${channel.name} apresenta para uma plateia simulada. Nada vai para o TikTok.`}
         </p>
         <ul role="list" className={s.checklist}>
-          <li data-done={tiktok ? Boolean(channel.tiktokUsername) : true}>{tiktok ? `Listening to @${channel.tiktokUsername}` : "Practice mode, no TikTok needed"}</li>
+          <li data-done={tiktok ? Boolean(channel.tiktokUsername) : true}>{tiktok ? `Escutando @${channel.tiktokUsername}` : "Modo de treino, sem precisar do TikTok"}</li>
           <li data-done={obs}>
-            {obs ? "Stage is open in OBS" : (
+            {obs ? "O palco está aberto no OBS" : (
               <>
-                Stage not in OBS yet. <Link to={`/app/hosts/${channel.id}/setup`}>Set up OBS</Link>
+                Palco ainda fora do OBS. <Link to={`/app/hosts/${channel.id}/setup`}>Configurar</Link>
               </>
             )}
           </li>
         </ul>
         <Button variant="primary" size="lg" icon={<Play aria-hidden />} busy={run.isPending} onClick={() => run.mutate("start")}>
-          Go live
+          Entrar ao vivo
         </Button>
       </div>
     </aside>
@@ -56,13 +56,13 @@ export default function Studio() {
       {(connection === "reconnecting" || notices.length > 0 || status === "failed") && (
         <div className={s.banners}>
           {connection === "reconnecting" && (
-            <Banner tone="warn" title="Reconnecting to your host">
-              The show keeps running. Controls come back as soon as the connection does.
+            <Banner tone="warn" title="Reconectando ao apresentador">
+              A live continua. Os controles voltam assim que a conexão voltar.
             </Banner>
           )}
           {status === "failed" && (
-            <Banner tone="error" title={`${channel.name} stopped unexpectedly`}>
-              {snapshot?.detail ?? channel.runtime.detail} It restarts on its own in a moment, or press Go live to try now.
+            <Banner tone="error" title={`${channel.name} parou de repente`}>
+              {snapshot?.detail ?? channel.runtime.detail} Reinicia sozinho em instantes, ou aperte Entrar ao vivo para tentar agora.
             </Banner>
           )}
           {notices.map((notice) => (
@@ -72,7 +72,7 @@ export default function Studio() {
               title={notice.message}
               action={
                 <Button size="sm" variant="ghost" onClick={() => store.dismissNotice(notice.id)}>
-                  Dismiss
+                  Fechar
                 </Button>
               }
             />

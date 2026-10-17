@@ -9,6 +9,11 @@ quiet moments. Nobody needs to be at the keyboard.
 
 "Lantern" is a working name ([decisions needed](docs/decisions-needed.md)).
 
+The product is in Brazilian Portuguese: the dashboard, the stage, the host's
+voice and every message a creator sees
+([ADR-0026](docs/adr/0026-brazilian-portuguese-product.md), terms in
+[docs/glossario.md](docs/glossario.md)). Code and developer docs are in English.
+
 ```
 TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
    spam, links, prompt injection, blocklist, priority, expiry

@@ -24,22 +24,22 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
 
   const commands = useMemo<Command[]>(() => {
     const list: Command[] = [
-      { id: "home", label: "Your hosts", icon: <Home aria-hidden />, to: "/app" },
-      { id: "new", label: "Create a new host", icon: <Plus aria-hidden />, to: "/app/new" },
+      { id: "home", label: "Seus apresentadores", icon: <Home aria-hidden />, to: "/app" },
+      { id: "new", label: "Criar um novo apresentador", icon: <Plus aria-hidden />, to: "/app/new" },
     ];
     for (const c of channels ?? []) {
       list.push(
-        { id: `${c.id}-studio`, label: `${c.name}: studio`, hint: "Run the show", icon: <Radio aria-hidden />, to: `/app/hosts/${c.id}` },
-        { id: `${c.id}-character`, label: `${c.name}: character`, hint: "Personality, voice and look", icon: <Sparkles aria-hidden />, to: `/app/hosts/${c.id}/character` },
-        { id: `${c.id}-safety`, label: `${c.name}: safety`, icon: <ShieldCheck aria-hidden />, to: `/app/hosts/${c.id}/safety` },
-        { id: `${c.id}-setup`, label: `${c.name}: setup`, hint: "TikTok, OBS and the stage link", icon: <Settings2 aria-hidden />, to: `/app/hosts/${c.id}/setup` },
-        { id: `${c.id}-analytics`, label: `${c.name}: analytics`, icon: <BarChart3 aria-hidden />, to: `/app/hosts/${c.id}/analytics` },
+        { id: `${c.id}-studio`, label: `${c.name}: estúdio`, hint: "Comandar a live", icon: <Radio aria-hidden />, to: `/app/hosts/${c.id}` },
+        { id: `${c.id}-character`, label: `${c.name}: personagem`, hint: "Personalidade, voz e visual", icon: <Sparkles aria-hidden />, to: `/app/hosts/${c.id}/character` },
+        { id: `${c.id}-safety`, label: `${c.name}: segurança`, icon: <ShieldCheck aria-hidden />, to: `/app/hosts/${c.id}/safety` },
+        { id: `${c.id}-setup`, label: `${c.name}: configuração`, hint: "TikTok, OBS e link do palco", icon: <Settings2 aria-hidden />, to: `/app/hosts/${c.id}/setup` },
+        { id: `${c.id}-analytics`, label: `${c.name}: desempenho`, icon: <BarChart3 aria-hidden />, to: `/app/hosts/${c.id}/analytics` },
       );
     }
     list.push(
-      { id: "billing", label: "Plan and billing", icon: <CreditCard aria-hidden />, to: "/app/billing" },
-      { id: "account", label: "Account", icon: <UserRound aria-hidden />, to: "/app/account" },
-      { id: "voice", label: "Choose a voice", hint: "In the character editor", icon: <Mic2 aria-hidden />, to: channels?.[0] ? `/app/hosts/${channels[0].id}/character?tab=voice` : "/app/new" },
+      { id: "billing", label: "Plano e assinatura", icon: <CreditCard aria-hidden />, to: "/app/billing" },
+      { id: "account", label: "Conta", icon: <UserRound aria-hidden />, to: "/app/account" },
+      { id: "voice", label: "Escolher uma voz", hint: "No editor do personagem", icon: <Mic2 aria-hidden />, to: channels?.[0] ? `/app/hosts/${channels[0].id}/character?tab=voice` : "/app/new" },
     );
     return list;
   }, [channels]);
@@ -71,11 +71,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={s.overlay} />
         <RadixDialog.Content className={s.palette} aria-describedby={undefined}>
-          <RadixDialog.Title className="visually-hidden">Go to</RadixDialog.Title>
+          <RadixDialog.Title className="visually-hidden">Ir para</RadixDialog.Title>
           <input
             className={s.input}
             autoFocus
-            placeholder="Type a host or a page"
+            placeholder="Digite um apresentador ou uma página"
             value={query}
             role="combobox"
             aria-expanded
@@ -99,7 +99,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             }}
           />
           <ul id="palette-results" role="listbox" className={s.results}>
-            {results.length === 0 && <li className={s.empty}>Nothing matches “{query}”.</li>}
+            {results.length === 0 && <li className={s.empty}>Nada encontrado para “{query}”.</li>}
             {results.map((command, i) => (
               <li
                 key={command.id}

@@ -35,7 +35,7 @@ export function CharacterPreview({ name, look, line, style, className }: { name:
       mode="preview"
       className={className}
       style={style}
-      label={`Preview of ${name}`}
+      label={`Prévia de ${name}`}
       onReady={(created) => {
         engine.current = created;
         created.setLook(latest.current.name, latest.current.look);

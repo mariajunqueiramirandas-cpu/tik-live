@@ -251,8 +251,8 @@ export class Alerts {
 
   push(kind: AlertKind, name: string, detail: string, now: number, scale: number): void {
     const sprite = this.pool.pop() ?? new TextSprite(this.gl);
-    const verb = kind === "gift" ? " sent " : " ";
-    const parts: [string, string, string] = [truncate(name, 22), verb, detail];
+    const verb = kind === "gift" ? " enviou " : " ";
+    const parts: [string, string, string] = [truncate(name, 24), verb, detail];
     this.paint(sprite, kind, parts, scale);
     sprite.opacity.snap(0);
     sprite.opacity.target = 1;
@@ -370,7 +370,9 @@ export class Chrome {
   }
 
   private paintTitle(scale: number): void {
-    const font = `760 44px ${FONT_FAMILY}`;
+    // Long titles shrink a little first, then squeeze into 640 px.
+    const natural = measureWith(`760 44px ${FONT_FAMILY}`)(this.titleText);
+    const font = `760 ${natural > 640 ? Math.max(36, Math.floor((44 * 640) / natural)) : 44}px ${FONT_FAMILY}`;
     // Room for the glow, so it never clips into a visible box.
     const pad = 48;
     const width = Math.min(640, measureWith(font)(this.titleText)) + pad * 2;

@@ -35,7 +35,7 @@ export function mountStatic(app: Hono<AppEnv>, deps: AppDeps): void {
   const dist = deps.config.WEB_DIST ? path.resolve(deps.config.WEB_DIST) : null;
   if (!dist || !existsSync(dist)) {
     app.get("/s/:stageKey", (c) =>
-      c.text("The stage page is served by Vite in development. Open it through the dashboard dev server instead.", 404),
+      c.text("Em desenvolvimento, o palco é servido pelo Vite. Abra pelo servidor de desenvolvimento do painel.", 404),
     );
     return;
   }
@@ -76,9 +76,9 @@ export function mountStatic(app: Hono<AppEnv>, deps: AppDeps): void {
 
   app.get("/s/:stageKey", async (c) => {
     const channel = await channelForStageKey(deps, c.req.param("stageKey"));
-    if (!channel) return c.text("This stage link doesn't exist or was replaced. Copy the current link from the dashboard.", 404);
+    if (!channel) return c.text("Este link do palco não existe ou foi trocado. Copie o link atual no painel.", 404);
     const res = await sendFile(c, "/stage.html", "no-cache");
-    return res ?? c.text("Stage page missing from this build.", 500);
+    return res ?? c.text("A página do palco não está nesta versão.", 500);
   });
 
   app.get("/assets/*", async (c) => (await sendFile(c, c.req.path, "public, max-age=31536000, immutable")) ?? c.body(null, 404));
@@ -127,6 +127,6 @@ export function mountStatic(app: Hono<AppEnv>, deps: AppDeps): void {
     // Everything else is the dashboard, with its public config inlined so the
     // first render knows the sign-in mode without another round trip.
     const html = await dashboardHtml();
-    return html ? sendHtml(c, html) : c.text("Dashboard missing from this build.", 500);
+    return html ? sendHtml(c, html) : c.text("O painel não está nesta versão.", 500);
   });
 }

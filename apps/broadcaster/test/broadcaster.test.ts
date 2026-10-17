@@ -217,7 +217,7 @@ describe("connection check", () => {
       reached.push(`${host}:${port}`);
       if (host === "down.example.com") throw new Error("refused");
     };
-    expect(await checkRtmpServer("rtmps://push.example.com/live", { resolve: publicDns, connect })).toEqual({ ok: true, detail: "Reached push.example.com:443." });
+    expect(await checkRtmpServer("rtmps://push.example.com/live", { resolve: publicDns, connect })).toEqual({ ok: true, detail: "Conectou em push.example.com:443." });
     expect((await checkRtmpServer("rtmp://down.example.com/live", { resolve: publicDns, connect })).ok).toBe(false);
     expect(reached).toEqual(["push.example.com:443", "down.example.com:1935"]);
     expect((await checkRtmpServer("rtmp://10.0.0.1/live", { connect })).detail).toContain("isn't allowed");

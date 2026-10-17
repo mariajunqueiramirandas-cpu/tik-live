@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt-br";
 
 /**
  * Chat minigames (ADR-0023). The host runs a game, viewers answer in chat,
@@ -17,14 +18,14 @@ export const GAME_KINDS = ["trivia", "poll", "scramble", "number", "truefalse", 
 export type GameKind = (typeof GAME_KINDS)[number];
 
 export const GAME_LABELS: Record<GameKind, string> = {
-  trivia: "Trivia",
-  poll: "This or that",
-  scramble: "Word scramble",
-  number: "Guess the number",
-  truefalse: "True or false",
-  math: "Quick math",
-  riddle: "Riddles",
-  fastest: "Fastest finger",
+  trivia: "Quiz",
+  poll: "Isso ou aquilo",
+  scramble: "Palavra embaralhada",
+  number: "Adivinhe o número",
+  truefalse: "Verdadeiro ou falso",
+  math: "Conta rápida",
+  riddle: "Charadas",
+  fastest: "Dedo mais rápido",
 };
 
 /** How a game is set up: by the creator in a segment, or from the studio. */

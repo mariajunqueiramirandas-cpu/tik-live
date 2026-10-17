@@ -36,7 +36,7 @@ describe("running a channel end to end", () => {
     const channel = await newChannel();
     const stage = await programStage(channel);
     const hello = await stage.next((m) => m.t === "hello");
-    expect(hello).toMatchObject({ v: 1, name: "Blip", disclosure: "Blip is an AI host" });
+    expect(hello).toMatchObject({ v: 1, name: "Blip", disclosure: "Blip é uma IA" });
 
     const studio = await server.socket(`/ws/studio/${channel.id}`, "streamer");
     const snapshot = await studio.next<{ state: RuntimeSnapshot }>((m) => m.t === "snapshot");
@@ -146,7 +146,7 @@ describe("running a channel end to end", () => {
     const studio = await server.socket(`/ws/studio/${channel.id}`, "streamer");
     await studio.next((m) => m.t === "snapshot");
     studio.send({ v: 1, t: "command", id: "x", command: { kind: "pause" } });
-    expect(await studio.next((m) => m.t === "ack")).toMatchObject({ ok: false, error: "Start the host first." });
+    expect(await studio.next((m) => m.t === "ack")).toMatchObject({ ok: false, error: "Coloque o apresentador no ar primeiro." });
     expect((await server.api("/ws/stage/AAAAAAAAAAAAAAAAAAAAAA")).status).toBe(404);
     studio.close();
   });
