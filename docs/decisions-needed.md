@@ -178,7 +178,9 @@ covers the steps ([ADR-0019](adr/0019-dokploy.md)). Owner-only parts:
 - **Off-site backups:** any S3-compatible bucket (`BACKUP_S3_*`). Without it,
   backups stay on the VPS disk, which doesn't survive losing the VPS.
 - **Euler Stream key** (`EULER_API_KEY`, optional): higher rate limits for
-  the TikTok connector's sign server. Worth it once many channels run.
+  the TikTok connector's sign server. Worth it once many channels run. Some
+  of the connector's features need a paid Euler plan (the room gift list
+  needs Business), so the connector leaves them off.
 
 ## 6. Verify the TikTok connection on a real LIVE
 

@@ -104,7 +104,10 @@ export class TikTokSource implements EventSource {
   private createConnection(): TikTokLiveConnection {
     const connection = new TikTokLiveConnection(this.options.username, {
       processInitialData: false,
-      enableExtendedGiftInfo: true,
+      // No extended gift info: fetching the room's gift list on connect needs a
+      // request signed by Euler Stream's Business plan, and its failure aborts
+      // the whole connect. Gift events already carry their diamond count.
+      enableExtendedGiftInfo: false,
       ...(this.options.signApiKey ? { signApiKey: this.options.signApiKey } : {}),
     });
 
