@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { RUNTIME_STATUSES } from "./channel";
 import { injectEventSchema } from "./events";
-import { emotionSchema, lookSchema } from "./persona";
+import { gameConfigSchema, gameSceneSchema, type GameStatus } from "./game";
+import { MUSIC_LIBRARY, musicTrackSchema, SOUNDS } from "./music";
+import { effectSchema, emotionSchema, lookSchema } from "./persona";
 
 /**
  * Realtime protocol (ADR-0008). Every message carries `v` (protocol version)
@@ -37,6 +39,8 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
     emotion: emotionSchema,
     audioUrl: z.string().nullable(),
     durationMs: z.number(),
+    /** Reactions to play when the line starts. */
+    fx: z.array(effectSchema).max(3).optional(),
   }),
   /** Audio for an upcoming line: fetch and decode it now so playback starts instantly. */
   z.object({ v, t: z.literal("prefetch"), audioUrl: z.string() }),
@@ -53,6 +57,14 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({ v, t: z.literal("segment"), title: z.string() }),
   z.object({ v, t: z.literal("stats"), viewers: z.number(), likes: z.number() }),
   z.object({ v, t: z.literal("look"), name: z.string(), look: lookSchema }),
+  /** A reaction on its own (a game win, a like milestone). `intensity` 1 is normal; up to 3 for big moments. */
+  z.object({ v, t: z.literal("fx"), fx: effectSchema, intensity: z.number().min(0.25).max(3).optional() }),
+  /** Music the stage synthesizes from its score, or null to stop (ADR-0024). Ducks under speech. */
+  z.object({ v, t: z.literal("music"), track: musicTrackSchema.nullable() }),
+  /** A short synthesized sound for a show moment. */
+  z.object({ v, t: z.literal("sfx"), sound: z.enum(SOUNDS) }),
+  /** A minigame's scene, or null to go back to the show's normal stage (ADR-0023). */
+  z.object({ v, t: z.literal("game"), scene: gameSceneSchema.nullable() }),
   /** The server is restarting: keep the last frame and reconnect quietly. */
   z.object({ v, t: z.literal("hold") }),
 ]);
@@ -110,6 +122,10 @@ export interface RuntimeSnapshot {
   reactOnly: boolean;
   segment: { id: string; title: string; endsInSec: number };
   segments: Array<{ id: string; title: string }>;
+  /** The minigame running now, if any. */
+  game: GameStatus | null;
+  /** The piece of music playing on stage, if any. */
+  music: { title: string; endsInSec: number; byHost: boolean } | null;
   stats: { viewers: number; likes: number; diamonds: number; messages: number; follows: number; uptimeSec: number };
   nowSaying: { text: string; emotion: string } | null;
   queue: QueueItemSummary[];
@@ -183,6 +199,15 @@ export const studioCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("say"), text: z.string().trim().min(1).max(300) }),
   z.object({ kind: z.literal("segment"), id: z.string().max(40) }),
   z.object({ kind: z.literal("inject"), event: injectEventSchema }),
+  z.object({ kind: z.literal("game_start"), game: gameConfigSchema }),
+  z.object({ kind: z.literal("game_stop") }),
+  /** Plays a piece from the library, or asks the host to compose one from a prompt. */
+  z.object({
+    kind: z.literal("music_play"),
+    library: z.string().refine((id) => id in MUSIC_LIBRARY, "Unknown piece").optional(),
+    prompt: z.string().trim().min(1).max(120).optional(),
+  }),
+  z.object({ kind: z.literal("music_stop") }),
 ]);
 
 export type StudioCommand = z.infer<typeof studioCommandSchema>;

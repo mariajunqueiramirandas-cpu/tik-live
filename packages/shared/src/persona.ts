@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { gameConfigSchema } from "./game";
 
 export const EMOTIONS = [
   "neutral",
@@ -10,10 +11,38 @@ export const EMOTIONS = [
   "sad",
   "love",
   "mischief",
+  "confused",
+  "shy",
+  "sleepy",
+  "proud",
+  "pout",
 ] as const;
 
 export type Emotion = (typeof EMOTIONS)[number];
 export const emotionSchema = z.enum(EMOTIONS);
+
+/**
+ * Visual reactions the stage can play (ADR-0023): particle bursts around the
+ * character and moves the character makes. The host can cue them in its
+ * lines with a tag like [confetti]; gifts, follows, likes and game wins
+ * trigger them on their own.
+ */
+export const EFFECTS = [
+  "confetti",
+  "hearts",
+  "sparkles",
+  "fireworks",
+  "stars",
+  "notes",
+  "bubbles",
+  "spin",
+  "jump",
+  "shake",
+  "spotlight",
+  "rain",
+] as const;
+export type Effect = (typeof EFFECTS)[number];
+export const effectSchema = z.enum(EFFECTS);
 
 /** "orb" draws the character; "voice-line" is a voice-only show with a glowing waveform. */
 export const CHARACTER_KINDS = ["orb", "voice-line"] as const;
@@ -40,6 +69,22 @@ export const lookSchema = z.object({
 
 export type Look = z.infer<typeof lookSchema>;
 
+/** An IANA time zone the runtime can format dates in, e.g. "America/Sao_Paulo". */
+export const timeZoneSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .refine((zone) => isTimeZone(zone), "That isn't a time zone this server knows");
+
+export function isTimeZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const segmentSchema = z.object({
   id: z
     .string()
@@ -51,6 +96,8 @@ export const segmentSchema = z.object({
   minutes: z.number().min(1).max(120),
   /** What the host should do to fill time during this segment when chat is quiet. */
   prompt: z.string().trim().min(1).max(600),
+  /** A chat minigame the host runs during this segment (ADR-0023). */
+  game: gameConfigSchema.optional(),
 });
 
 export type Segment = z.infer<typeof segmentSchema>;
@@ -69,6 +116,17 @@ export const personaSchema = z.object({
   maxSentences: z.number().int().min(1).max(6).default(3),
   segments: z.array(segmentSchema).min(1).max(12),
   look: lookSchema.default({ ...DEFAULT_LOOK }),
+  /** What the stage may play besides the voice. Both are on when unset. */
+  sound: z
+    .object({
+      /** The host may compose and play short pieces of music (ADR-0024). */
+      music: z.boolean(),
+      /** Short sounds for gifts, follows and games. */
+      effects: z.boolean(),
+    })
+    .optional(),
+  /** Where the host "lives" (IANA time zone), so it knows the local time. */
+  timezone: timeZoneSchema.optional(),
 });
 
 export type Persona = z.infer<typeof personaSchema>;
