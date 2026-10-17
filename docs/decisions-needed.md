@@ -13,7 +13,7 @@ charging other people.
 
 | # | Decision | Default today | Blocks |
 |---|---|---|---|
-| 1 | [Prices, hours and AI models per plan](#1-prices-hours-and-ai-models-per-plan) | R$ 49,90 / R$ 149,90, every plan on Opus 5.5 | Paid launch |
+| 1 | [Prices, hours and AI models per plan](#1-prices-hours-and-ai-models-per-plan) | R$ 49,90 / R$ 149,90, every plan on Haiku 5.5 | Paid launch |
 | 2 | [Sign-in provider: Clerk or WorkOS](#2-sign-in-provider-clerk-or-workos) | No sign-in; one shared password (`DEV_GATE_PASSWORD`) | Any second user |
 | 3 | [Terms of service, privacy policy, invoices](#3-terms-privacy-and-invoices) | None | Paid launch |
 | 4 | [Cloud broadcast capacity and price](#4-cloud-broadcast-capacity-and-price) | Pro only, 1 stream next to the app on 4 vCPU, about 2 vCPU a stream on a dedicated host; uses Google Chrome | Turning cloud broadcast on |
@@ -30,13 +30,17 @@ charging other people.
 
 **Today:** Free / Creator / Pro with the limits in
 [ADR-0013](adr/0013-billing-and-plans.md); prices R$ 49,90 and R$ 149,90 a
-month; every plan's host and moderator use Claude Opus 5.5.
+month; every plan's host and moderator use Claude Haiku 5.5, with the show
+kept as one prompt-cached conversation
+([ADR-0026](adr/0026-turn-engine-and-context-cache.md)). A busy live hour
+costs about **US$ 0.20** in AI on Haiku 5.5. Hourly token budgets are 1.5M /
+2.5M / 4M tokens (Free / Creator / Pro); daily spend caps are unchanged.
 
-**The problem with the defaults:** at Opus 5.5 for both host and moderator, a
+**If you move a plan up a model:** at Opus 5.5 for both host and moderator, a
 busy live hour costs about **US$ 7.55** in AI alone
-([ADR-0012 cost model](adr/0012-ai-and-voice-pipeline.md#cost-model-estimates-to-be-replaced-by-metered-data)).
-The worst case per month, if a customer uses every included hour on a busy
-stream:
+([ADR-0012 cost model](adr/0012-ai-and-voice-pipeline.md#cost-model-estimates-to-be-replaced-by-metered-data);
+somewhat less with the cached conversation). The worst case per month, if a
+customer uses every included hour on a busy stream:
 
 | Plan (hours / month) | Opus 5.5 + Opus 5.5 | Sonnet 5.5 + Haiku 5.5 | Haiku 5.5 + Haiku 5.5 |
 |---|---|---|---|
@@ -47,8 +51,8 @@ stream:
 ElevenLabs adds about 30–40k characters per active hour on top. Quiet hours
 cost far less (filler slows down with fewer viewers and stops with none), and
 the daily spend cap per channel (US$ 8 / 60 / 200) bounds the damage, but the
-placeholder prices don't cover an active Creator customer on any model except
-Haiku.
+placeholder prices only cover an active Creator customer on Haiku, which is
+why every plan ships on it.
 
 **Where to change it:**
 
@@ -63,10 +67,11 @@ Haiku.
 
 **Recommendation:** run your own channels for a week on a staging server
 (billing off, every channel on the self-hosted plan), then read real cost
-per live hour from the billing page and the session list. Then pick models
-per plan. A reasonable starting point: Free on Haiku 5.5 for both; Creator
-on Sonnet 5.5 with a Haiku 5.5 moderator; Pro on Opus 5.5 with a Haiku 5.5
-moderator. Set prices from the measured cost with margin for ElevenLabs,
+per live hour from the billing page and the session list, and the share of
+input served from the cache from the studio's health panel ("Show memory").
+Stay on Haiku 5.5 unless the transcripts show it falling short; if Pro
+customers want a richer host, Sonnet 5.5 with a Haiku 5.5 moderator is the
+next step. Set prices from the measured cost with margin for ElevenLabs,
 Mercado Pago fees and taxes. Fewer included hours on Creator (for example
 60) is the other lever.
 

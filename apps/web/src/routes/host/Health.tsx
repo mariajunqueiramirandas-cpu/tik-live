@@ -48,6 +48,9 @@ export function Health({ snapshot, onAir }: { snapshot: RuntimeSnapshot | null; 
       />
       {engine && <Item tone={engine.error ? "bad" : engine.fps >= 24 ? "ok" : "warn"} label="Stage" value={engine.error ? "Drawing problem" : `${Math.round(engine.fps)} fps`} />}
       {health.latency && <Item tone={health.latency.p50 < 4000 ? "ok" : "warn"} label="Reply time" value={`${(health.latency.p50 / 1000).toFixed(1)} s`} />}
+      {health.brain.context && onAir && (
+        <Item tone={health.brain.context.cachedPct >= 50 ? "ok" : "warn"} label="Show memory" value={`${health.brain.context.cachedPct}% reused`} />
+      )}
       {health.budget.limitTokensPerHour !== null && (
         <Item tone={health.budget.usedPct < 80 ? "ok" : health.budget.usedPct < 100 ? "warn" : "bad"} label="AI budget this hour" value={`${Math.round(health.budget.usedPct)}%`} />
       )}

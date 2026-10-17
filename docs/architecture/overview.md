@@ -161,7 +161,7 @@ sequenceDiagram
   participant S as Stage (OBS)
   T->>R: chat "what are you?"
   R->>R: triage (filter, score), memory.observe
-  R->>C: turn request (cached system prompt + live events), stream
+  R->>C: turn (cached system prompt + cached conversation + new room + director's brief), stream
   C-->>R: "[happy] I'm Blip, a tiny orb..." (first sentence)
   par per sentence, in parallel
     R->>M: is this safe?
@@ -250,6 +250,7 @@ Decided in [ADR-0004](../adr/0004-monorepo-layout.md).
 | [0012](../adr/0012-ai-and-voice-pipeline.md) | Claude models, moderation, cost guardrails, TTS |
 | [0021](../adr/0021-self-hosted-tts.md) | Self-hosted Brazilian Portuguese voice (services/tts) |
 | [0022](../adr/0022-host-turn-taking.md) | Host turn-taking: sentence-boundary barge-in, pacing by every on-air stage |
+| [0026](../adr/0026-turn-engine-and-context-cache.md) | Turn engine over one append-only, prompt-cached conversation; Claude Haiku 5.5 by default |
 | [0013](../adr/0013-billing-and-plans.md) | Plans in code, Mercado Pago billing, self-hosted mode |
 | [0014](../adr/0014-cloud-broadcast.md) | Cloud broadcast via headless Chromium and ffmpeg, as an isolated service |
 | [0020](../adr/0020-broadcast-pipeline-avx2.md) | Broadcast pipeline for AVX2 CPUs: Mesa llvmpipe, in-page H.264, copy into FLV |

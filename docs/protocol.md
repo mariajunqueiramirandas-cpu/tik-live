@@ -274,8 +274,10 @@ for the TikTok account to go live), react-only mode (budget reached or
 nobody watching), the current segment and the list to jump to, audience
 stats, what the host is saying, the queue of things it may react to, counts
 of filtered events by reason, and health (event source, connected stages by
-role, engine telemetry, models in use, reply latency p50/p95, budget use,
-cloud broadcast state), plus the current stream session.
+role, engine telemetry, models in use, how much of the host's recent input
+came from the prompt cache (`health.brain.context`, null until the first
+turn), reply latency p50/p95, budget use, cloud broadcast state), plus the
+current stream session.
 
 #### `patch`
 

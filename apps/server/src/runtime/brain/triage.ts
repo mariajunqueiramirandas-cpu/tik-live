@@ -4,8 +4,12 @@ import type { ViewerMemory } from "./memory";
 
 export interface QueueItem {
   event: LiveEvent;
+  /** The events folded into this item, oldest first (several when gifts from one viewer were merged). */
+  events: LiveEvent[];
   priority: number;
   expiresAt: number;
+  /** Arrival order, to cover events in the order they happened. */
+  seq: number;
 }
 
 export type TriageResult = { queued: true; item: QueueItem } | { queued: false; reason: string };
@@ -39,6 +43,7 @@ const DUPLICATE_WINDOW_MS = 60_000;
  */
 export class Triage {
   private queue: QueueItem[] = [];
+  private seq = 0;
   private readonly history = new Map<string, Array<{ text: string; at: number }>>();
   private readonly now: () => number;
   readonly dropped = new Map<string, number>();
@@ -69,7 +74,7 @@ export class Triage {
       if (merged) return { queued: true, item: merged };
     }
 
-    const item: QueueItem = { event, priority, expiresAt: this.now() + ttl };
+    const item: QueueItem = { event, events: [event], priority, expiresAt: this.now() + ttl, seq: ++this.seq };
     this.queue.push(item);
     this.queue.sort((a, b) => b.priority - a.priority);
     const max = this.options.maxQueue ?? 50;
@@ -95,6 +100,18 @@ export class Triage {
       return true;
     });
     return taken;
+  }
+
+  /** Removes and returns the pending items that match (chat the host has moved past, for example). */
+  discard(match: (item: QueueItem) => boolean): QueueItem[] {
+    this.prune();
+    const removed: QueueItem[] = [];
+    this.queue = this.queue.filter((item) => {
+      if (!match(item)) return true;
+      removed.push(item);
+      return false;
+    });
+    return removed;
   }
 
   pending(): number {
@@ -180,7 +197,13 @@ export class Triage {
     const item = this.queue[index];
     if (!item || item.event.kind !== "gift") return undefined;
     const combined: LiveEvent = { ...item.event, count: item.event.count + event.count, diamonds: item.event.diamonds + event.diamonds };
-    const merged: QueueItem = { event: combined, priority: this.score(combined) as number, expiresAt: this.now() + ttl };
+    const merged: QueueItem = {
+      event: combined,
+      events: [...item.events, event],
+      priority: this.score(combined) as number,
+      expiresAt: this.now() + ttl,
+      seq: item.seq,
+    };
     this.queue[index] = merged;
     this.queue.sort((a, b) => b.priority - a.priority);
     return merged;

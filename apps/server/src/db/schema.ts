@@ -109,6 +109,8 @@ export const streamSession = pgTable(
     outputTokens: integer("output_tokens").notNull().default(0),
     ttsCharacters: integer("tts_characters").notNull().default(0),
     costUsd: doublePrecision("cost_usd").notNull().default(0),
+    /** What happened on the show, from the host's chronicler (ADR-0026); the next stream's opening reads it. */
+    summary: text("summary"),
   },
   (t) => [index("stream_session_channel_idx").on(t.channelId, t.startedAt.desc())],
 );

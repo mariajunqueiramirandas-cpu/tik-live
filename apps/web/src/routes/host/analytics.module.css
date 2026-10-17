@@ -28,6 +28,10 @@
   .dim {
     color: var(--haze);
   }
+  .summary {
+    max-width: 70ch;
+    line-height: 1.5;
+  }
   .stats {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));

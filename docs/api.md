@@ -149,7 +149,7 @@ TikTok account to go live; no AI calls), `live`, `stopping`, `failed`.
 | Endpoint | Response |
 |---|---|
 | `GET /api/channels/:id/sessions` | `{ sessions }`: the last 60 streams with `startedAt`, `endedAt`, `endReason`, `source`, `peakViewers`, `likes`, `diamonds`, `gifts`, `messages`, `follows`, `spokenLines`, `blockedLines`, `costUsd`. |
-| `GET /api/channels/:id/sessions/:sid` | `{ session, samples, lines }`: per-minute `samples` (`viewers`, `likes`, `messages`, `diamonds`) and up to 1,000 transcript `lines` (`at`, `text`, `emotion`, `status` `spoken`/`blocked`, `reason`, `turnKind`). |
+| `GET /api/channels/:id/sessions/:sid` | `{ session, samples, lines }`: the session (including `summary`, the host's own account of the show, or `null`), per-minute `samples` (`viewers`, `likes`, `messages`, `diamonds`) and up to 1,000 transcript `lines` (`at`, `text`, `emotion`, `status` `spoken`/`blocked`, `reason`, `turnKind`). |
 | `GET /api/channels/:id/audience` | `{ remembered, supporters, regulars }`: how many viewers the host remembers, and the top 10 by diamonds and by visits. |
 
 Live state (what the host is saying, the queue, health) isn't polled: it

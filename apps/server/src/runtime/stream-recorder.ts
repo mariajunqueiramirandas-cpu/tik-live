@@ -6,6 +6,7 @@ import {
   createSession,
   endSession,
   insertUtterances,
+  setSessionSummary,
   updateSessionTotals,
   upsertSamples,
   type NewUtterance,
@@ -113,6 +114,14 @@ export class StreamRecorder {
       reason: entry.reason ?? null,
       turnKind: entry.turnKind ?? null,
     });
+  }
+
+  /** Keeps the host's show summary with the session, for the next stream's opening. */
+  summary(text: string): void {
+    const id = this.sessionId;
+    if (!id) return;
+    // serialize() logs a failed write; nothing else to do with it here.
+    this.serialize(() => setSessionSummary(this.db, id, text.slice(0, 2_000))).catch(() => undefined);
   }
 
   /** Writes buffered samples, lines and running totals. */
