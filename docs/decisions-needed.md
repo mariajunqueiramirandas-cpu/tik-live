@@ -18,7 +18,7 @@ charging other people.
 | 3 | [Terms of service, privacy policy, invoices](#3-terms-privacy-and-invoices) | None | Paid launch |
 | 4 | [Cloud broadcast capacity and price](#4-cloud-broadcast-capacity-and-price) | Pro only, 1 stream next to the app on 4 vCPU, about 2 vCPU a stream on a dedicated host; uses Google Chrome | Turning cloud broadcast on |
 | 5 | [Domain, VPS and outside accounts](#5-domain-vps-and-outside-accounts) | Dokploy setup ready ([runbook](../deploy/DOKPLOY.md)); no domain or accounts yet | Public deployment |
-| 6 | [Verify the TikTok connection on a real LIVE](#6-verify-the-tiktok-connection-on-a-real-live) | Built against the connector's documented events; not yet tried on a real stream | Going live with real chat |
+| 6 | [Verify the TikTok connection on a real LIVE](#6-verify-the-tiktok-connection-on-a-real-live) | Built against the connector's documented events and our own signer ([ADR-0023](adr/0023-own-tiktok-signer.md)); the join isn't verified from a network TikTok lets watch anonymously | Going live with real chat |
 | 7 | [Sign-ups at launch](#7-sign-ups-at-launch) | Whoever the identity provider lets in | Public launch |
 | 8 | [Product name](#8-product-name) | "Lantern" | Domain, branding |
 | 9 | [Language of the dashboard](#9-language-of-the-dashboard) | English | Nothing |
@@ -177,10 +177,15 @@ covers the steps ([ADR-0019](adr/0019-dokploy.md)). Owner-only parts:
   production token.
 - **Off-site backups:** any S3-compatible bucket (`BACKUP_S3_*`). Without it,
   backups stay on the VPS disk, which doesn't survive losing the VPS.
-- **Euler Stream key** (`EULER_API_KEY`, optional): higher rate limits for
-  the TikTok connector's sign server. Worth it once many channels run. Some
-  of the connector's features need a paid Euler plan (the room gift list
-  needs Business), so the connector leaves them off.
+- **TikTok request signing:** either our own signer (`apps/signer`,
+  [ADR-0023](adr/0023-own-tiktok-signer.md): `SIGNER_URL` and `SIGNER_TOKEN`,
+  with `SIGNER_PROXY_URL` if TikTok refuses the server's addresses; a
+  residential proxy is billed by traffic, and the signer keeps one page open
+  and blocks images, video and fonts to keep that small) or the hosted Euler
+  Stream key (`EULER_API_KEY`, optional: higher rate limits). Some of the
+  connector's features need a paid Euler plan (the room gift list needs
+  Business), so the connector leaves them off. The signer wins when both are
+  set.
 
 ## 6. Verify the TikTok connection on a real LIVE
 
@@ -199,6 +204,22 @@ account that's live, which only the owner can do:
 
 If events don't arrive under Bun, the plan's fallback is a small Node
 sidecar for the connector (the `EventSource` interface already isolates it).
+
+**With our own signer** (`SIGNER_URL` set), check the connection first, from
+the network the signer will run on and with an account that's live (yours, or
+one whose owner agreed):
+
+```sh
+bun scripts/verify-signer.ts <handle> --url http://127.0.0.1:8091 --token <SIGNER_TOKEN>
+```
+
+It looks the room up through the signer, joins it, and counts the events that
+arrive by kind (nothing from the stream is printed). If TikTok answers 403 or
+an empty body, it won't let that network join anonymously: set
+`SIGNER_PROXY_URL` to a residential proxy, or try
+`SIGNER_WEBCAST_ORIGIN=https://webcast.us.tiktok.com`. From the development
+network used to build the signer, the room lookup worked and the join was
+refused; whether a residential address fixes that is what this step settles.
 
 ## 7. Sign-ups at launch
 

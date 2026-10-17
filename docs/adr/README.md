@@ -28,6 +28,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0020](0020-broadcast-pipeline-avx2.md) | Broadcast pipeline for CPU-only AVX2 hosts | Proposed |
 | [0021](0021-self-hosted-tts.md) | A self-hosted Brazilian Portuguese voice | Proposed |
 | [0022](0022-host-turn-taking.md) | Host turn-taking and speech pacing | Proposed |
+| [0023](0023-own-tiktok-signer.md) | Our own TikTok signer in place of Euler Stream | Proposed |
 
 ## Evidence used
 

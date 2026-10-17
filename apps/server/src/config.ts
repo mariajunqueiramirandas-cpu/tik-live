@@ -56,7 +56,11 @@ const envSchema = z.object({
   /** Concurrent requests to the sidecar from this process; keep under its TTS_MAX_ACTIVE (16). */
   POCKET_TTS_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(8),
 
+  /** Hosted Euler Stream sign server (higher rate limits). Ignored when the self-hosted signer below is on. */
   EULER_API_KEY: z.string().optional(),
+  /** Self-hosted TikTok signer (apps/signer, ADR-0023). On when both are set; replaces Euler Stream. */
+  SIGNER_URL: z.string().url().optional(),
+  SIGNER_TOKEN: z.string().min(24).optional(),
 
   MP_ACCESS_TOKEN: z.string().optional(),
   /** Alias for MP_ACCESS_TOKEN (the name used in this project's environment settings). */
@@ -85,6 +89,7 @@ export interface AppConfig extends Env {
   aiEnabled: boolean;
   ttsEnabled: boolean;
   pocketEnabled: boolean;
+  signerEnabled: boolean;
 }
 
 export class ConfigError extends Error {}
@@ -129,6 +134,9 @@ export function loadConfig(source: Record<string, string | undefined> = process.
   if (env.BROADCAST_ENABLED && !(env.BROADCASTER_URL && env.BROADCASTER_TOKEN)) {
     throw new ConfigError("BROADCAST_ENABLED requires BROADCASTER_URL and BROADCASTER_TOKEN");
   }
+  if (Boolean(env.SIGNER_URL) !== Boolean(env.SIGNER_TOKEN)) {
+    throw new ConfigError("Set both SIGNER_URL and SIGNER_TOKEN to use the self-hosted signer, or neither");
+  }
 
   const pocketEnabled = Boolean(env.POCKET_TTS_URL && env.POCKET_TTS_SECRET);
   return {
@@ -139,6 +147,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     aiEnabled: Boolean(env.ANTHROPIC_API_KEY),
     ttsEnabled: Boolean(env.ELEVENLABS_API_KEY) || pocketEnabled,
     pocketEnabled,
+    signerEnabled: Boolean(env.SIGNER_URL && env.SIGNER_TOKEN),
   };
 }
 

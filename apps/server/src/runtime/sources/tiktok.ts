@@ -14,12 +14,19 @@ import {
   normalizeSimple,
   normalizeViewerCount,
 } from "./normalize";
+import type { SignerClient } from "./signer-client";
+import { useSigner } from "./signer-routes";
 import type { EventListener, EventSource, SourceStatus } from "./types";
 
 export interface TikTokSourceOptions {
   username: string;
   /** Optional Euler Stream key for the sign server (higher rate limits). */
   signApiKey?: string;
+  /**
+   * Our own signer (ADR-0023). When set it replaces Euler Stream: it says
+   * whether the account is live, and signs the request that joins its room.
+   */
+  signer?: SignerClient;
   /** How long to wait between checks while the account is offline. */
   offlineRetryMs?: number;
   log: Logger;
@@ -77,7 +84,7 @@ export class TikTokSource implements EventSource {
     this.connection = connection;
     this.detail = `connecting to @${this.options.username}`;
     try {
-      const state = await connection.connect();
+      const state = await connection.connect(await this.resolveRoom());
       this.connected = true;
       this.live = true;
       this.failures = 0;
@@ -101,15 +108,34 @@ export class TikTokSource implements EventSource {
     }
   }
 
+  /**
+   * With our signer, asks it for the room first: the connector's own lookup
+   * is another of the calls that needs Euler Stream. Without one the
+   * connector finds the room itself, as before.
+   */
+  private async resolveRoom(): Promise<string | undefined> {
+    const { signer, username } = this.options;
+    if (!signer) return undefined;
+    const room = await signer.lookupRoom(username);
+    if (!room.found) throw new Error(`TikTok has no account called @${username}`);
+    if (!room.isLive || !room.roomId) throw new UserOfflineError(`@${username} isn't live`);
+    return room.roomId;
+  }
+
   private createConnection(): TikTokLiveConnection {
+    const { signer } = this.options;
     const connection = new TikTokLiveConnection(this.options.username, {
       processInitialData: false,
+      // Our signer has just said the room is live; no need for the connector's own room-info call.
+      ...(signer ? { fetchRoomInfoOnConnect: false } : {}),
       // No extended gift info: fetching the room's gift list on connect needs a
       // request signed by Euler Stream's Business plan, and its failure aborts
       // the whole connect. Gift events already carry their diamond count.
       enableExtendedGiftInfo: false,
       ...(this.options.signApiKey ? { signApiKey: this.options.signApiKey } : {}),
     });
+
+    if (signer) useSigner(connection, signer);
 
     // The connector's typed-emitter typings don't resolve under NodeNext, so
     // listen through the plain EventEmitter interface it implements at runtime.

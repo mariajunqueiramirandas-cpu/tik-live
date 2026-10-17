@@ -13,6 +13,7 @@ import { createLogger, type Logger } from "./log";
 import { listChannels } from "./repos/channels";
 import { AudioStore } from "./runtime/audio-store";
 import type { ChannelRuntimeOptions } from "./runtime/channel-runtime";
+import { HttpSignerClient, type SignerClient } from "./runtime/sources/signer-client";
 import { RuntimeManager } from "./runtime/manager";
 import { VoiceCatalog } from "./voices/catalog";
 
@@ -41,6 +42,8 @@ export interface DepsOverrides {
   runtimeOverrides?: Pick<ChannelRuntimeOptions, "makeSource" | "makeHost" | "makeTts">;
   /** Tests: a fake broadcaster (turns cloud broadcast on). */
   broadcaster?: BroadcasterClient;
+  /** Tests: a fake TikTok signer (replaces Euler Stream). */
+  signer?: SignerClient;
   now?: () => number;
 }
 
@@ -75,8 +78,9 @@ export async function createDeps(config: AppConfig, database: Database, override
   const broadcasts = broadcasterClient
     ? new BroadcastSupervisor({ client: broadcasterClient, secrets, stageOrigin: config.BROADCAST_STAGE_ORIGIN ?? config.PUBLIC_URL, log: createLogger("broadcast"), now })
     : undefined;
+  const signer = overrides.signer ?? (config.signerEnabled ? new HttpSignerClient(config.SIGNER_URL!, config.SIGNER_TOKEN!, overrides.fetch) : undefined);
   const manager = new RuntimeManager({
-    ctx: { db, config, anthropic, log: createLogger("runtime"), now },
+    ctx: { db, config, anthropic, log: createLogger("runtime"), now, ...(signer ? { signer } : {}) },
     secrets,
     entitlements,
     audio,

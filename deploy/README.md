@@ -15,6 +15,7 @@ optional cloud broadcaster.
 | `backup` | Nightly `pg_dump`, 7 daily and 4 weekly copies, optional S3 upload | No |
 | `broadcaster` | Cloud broadcast: renders the stage and streams to TikTok (profile `broadcast`) | No |
 | `tts` | Self-hosted Brazilian Portuguese voice, Pocket TTS (profile `tts`, [ADR-0021](../docs/adr/0021-self-hosted-tts.md)) | No |
+| `signer` | Our own TikTok signer, a browser that signs the TikTok connector's requests (profile `signer`, [ADR-0023](../docs/adr/0023-own-tiktok-signer.md)) | No |
 
 ## 1. Prepare the server
 
@@ -57,6 +58,7 @@ Fill in `.env`. The essentials:
 | `ANTHROPIC_API_KEY` | Without it, hosts run an offline scripted brain |
 | `ELEVENLABS_API_KEY` | Without it (and without the self-hosted voice), hosts speak in captions only |
 | `POCKET_TTS_SECRET` | The self-hosted voice: `openssl rand -hex 24`, then `docker compose --profile tts up -d --build` |
+| `SIGNER_URL`, `SIGNER_TOKEN` | The self-hosted TikTok signer: `http://lantern-signer:8091` and `openssl rand -hex 24`, then `docker compose --profile signer up -d --build` (see [TikTok signer](#tiktok-signer)). Both or neither |
 | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago; leave both empty to run without billing |
 
 The app checks its configuration at boot and refuses to start with a clear
@@ -137,6 +139,41 @@ docker compose start app
 
 Keep a copy of `.env` (especially `APP_SECRET`) somewhere safe and separate
 from the backups.
+
+## TikTok signer
+
+The TikTok connector needs TikTok's request signing. By default it asks the
+hosted Euler Stream sign server (`EULER_API_KEY` raises its limits). The
+`signer` service replaces that with a headless browser on TikTok's own page
+([ADR-0023](../docs/adr/0023-own-tiktok-signer.md)):
+
+```sh
+# In .env
+SIGNER_URL=http://lantern-signer:8091
+SIGNER_TOKEN=$(openssl rand -hex 24)
+
+docker compose --profile signer up -d --build
+docker compose logs signer        # "signer session ready" once the browser is up
+```
+
+It uses about 500 MB of RAM and a CPU core while it signs; `SIGNER_CPUS` caps
+it. **TikTok decides per network whether anonymous viewers may join a room,
+and often refuses data-center addresses.** Check from the server, with an
+account that's live:
+
+```sh
+# On the server, from a checkout of this repository (the signer listens on 127.0.0.1:8091 there):
+bun scripts/verify-signer.ts <handle> --url http://127.0.0.1:8091 --token <SIGNER_TOKEN>
+```
+
+If the signer reports 403 or an empty answer, set `SIGNER_PROXY_URL` in `.env`
+to a residential or mobile proxy (`http://user:pass@host:port`; use a sticky
+session if the provider offers one) and run `docker compose up -d signer`.
+The signer holds one page open and downloads no images, video or fonts, so a
+proxy billed by traffic sees a few megabytes at start and little after.
+`SIGNER_WEBCAST_ORIGIN=https://webcast.us.tiktok.com` is the other host worth
+trying. The signer's port is published on the server's loopback only, and every
+request needs the token.
 
 ## 6. Cloud broadcast
 

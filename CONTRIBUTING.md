@@ -33,6 +33,7 @@ documented in `apps/server/src/config.ts`; production settings are in
 apps/server        Hono API, WebSockets, channel runtimes, billing (Bun)
 apps/web           React dashboard, landing page, stage page (Vite)
 apps/broadcaster   Headless Chromium + ffmpeg to RTMP (cloud broadcast)
+apps/signer        Headless Chromium that signs TikTok requests for the connector (ADR-0023)
 packages/shared    Types, zod schemas, plans, protocol: shared by everything
 packages/engine    The WebGL2 stage engine (no React, no DOM framework)
 deploy/            Dockerfiles, Compose with Caddy, backups, runbooks
@@ -58,6 +59,7 @@ and the apps never import each other.
 | `bun run typecheck` | `tsc` in every workspace, plus the e2e and script files |
 | `bun run build` | Builds the web app (prerender and bundle budgets included), the server and the broadcaster |
 | `bun run e2e` | Playwright against a built app; run `bun run --filter @tik-live/web build` first |
+| `bun scripts/verify-signer.ts <handle> --url <signer> --token <token>` | Checks the TikTok signer against a real LIVE (yours, or one whose owner agreed): room lookup, join, and event counts by kind. Run it from the network the signer will run on. |
 | `bun scripts/load-test.ts --channels 50 --seconds 120` | Simulated hosts against a running server; reports event-loop lag, memory and CPU. Offline host by default; `--allow-ai` makes real, paid Claude calls. |
 | `bun run --filter @tik-live/server db:generate` | Generates a migration after a schema change in `apps/server/src/db/schema.ts` |
 
@@ -80,6 +82,13 @@ CI (`.github/workflows/ci.yml`) runs `typecheck`, `boundaries`, `test` and
 - **Broadcaster:** the session state machine and the RTMP guard are unit
   tested with a fake pipeline; the real Chromium + ffmpeg path was verified
   by hand (see ADR-0014).
+- **Signer:** the API and limiter are unit tested with a fake backend. The
+  browser backend runs in Chromium against a local stand-in for TikTok's page
+  (`e2e/signer.e2e.ts`: a signing hook that arrives late, a login wall, a
+  crashed browser, stale sessions). The real TikTok is only reached by
+  `scripts/verify-signer.ts`. The app side runs the real connector against a
+  stand-in signer and room websocket
+  (`apps/server/test/runtime/signer-source.test.ts`).
 - **Web:** Playwright drives the built app end to end and runs axe on every
   main page; contrast or labeling failures fail the build.
 - **Contracts:** `packages/shared/test` checks the schemas and that

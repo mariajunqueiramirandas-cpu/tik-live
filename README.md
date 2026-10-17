@@ -44,6 +44,8 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   graceful restarts that don't drop OBS.
 - **Cloud broadcast** (Pro): renders the stage in headless Chromium and
   streams it to TikTok's RTMP ingest, so no PC has to stay on.
+- **TikTok signer:** our own replacement for the hosted sign server the
+  TikTok connector depends on (optional; see Platform notes).
 - **Billing** with Mercado Pago subscriptions; with billing off, every
   feature is unlocked (self-hosted mode).
 - **Deployment**: Docker Compose with Caddy (automatic HTTPS), Postgres,
@@ -136,4 +138,10 @@ both are built in). Until then a production server refuses to start without
   an **unofficial**, reverse-engineered library. It can break when TikTok
   changes things; the normalizer reads every known field spelling, so a
   change drops events instead of crashing the show.
+- The connector needs TikTok's request signing. Use our own signer
+  (`apps/signer`, [ADR-0023](docs/adr/0023-own-tiktok-signer.md): a headless
+  browser on TikTok's own page; set `SIGNER_URL` and `SIGNER_TOKEN`) or the
+  hosted Euler Stream sign server (`EULER_API_KEY`). TikTok may refuse
+  anonymous joins from some networks; the signer can route through a proxy.
+  `scripts/verify-signer.ts` checks the whole chain against a real LIVE.
 - Check TikTok's current LIVE guidelines before running a host unattended.

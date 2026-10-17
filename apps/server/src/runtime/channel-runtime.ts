@@ -25,6 +25,7 @@ import { Triage, type TriageResult } from "./brain/triage";
 import { LatencyTracker } from "./latency";
 import { ClaudeModerator, SafetyGate } from "./safety/gate";
 import { SimulatorSource } from "./sources/simulator";
+import type { SignerClient } from "./sources/signer-client";
 import { TikTokSource } from "./sources/tiktok";
 import type { EventSource } from "./sources/types";
 import type { StageHub } from "./stage-hub";
@@ -40,6 +41,8 @@ export interface RuntimeContext {
   anthropic: Anthropic | null;
   log: Logger;
   now?: () => number;
+  /** Our own TikTok signer; replaces Euler Stream when present (ADR-0023). */
+  signer?: SignerClient;
 }
 
 export interface ChannelRuntimeOptions {
@@ -523,6 +526,7 @@ export class ChannelRuntime {
       return new TikTokSource({
         username: channel.tiktokUsername,
         log: this.log,
+        ...(this.options.ctx.signer ? { signer: this.options.ctx.signer } : {}),
         ...(this.options.ctx.config.EULER_API_KEY ? { signApiKey: this.options.ctx.config.EULER_API_KEY } : {}),
       });
     }

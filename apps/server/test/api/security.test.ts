@@ -26,6 +26,15 @@ describe("configuration guards", () => {
     expect(config.aiEnabled).toBe(false);
     expect(config.billingEnabled).toBe(false);
   });
+
+  it("turns the TikTok signer on only when its URL and token are both set", () => {
+    const token = "t".repeat(24);
+    expect(loadConfig(base).signerEnabled).toBe(false);
+    expect(() => loadConfig({ ...base, SIGNER_URL: "http://lantern-signer:8091" })).toThrow(/SIGNER_TOKEN/);
+    expect(() => loadConfig({ ...base, SIGNER_TOKEN: token })).toThrow(/SIGNER_URL/);
+    expect(() => loadConfig({ ...base, SIGNER_URL: "http://lantern-signer:8091", SIGNER_TOKEN: "short" })).toThrow(/SIGNER_TOKEN/);
+    expect(loadConfig({ ...base, SIGNER_URL: "http://lantern-signer:8091", SIGNER_TOKEN: token }).signerEnabled).toBe(true);
+  });
 });
 
 describe("secrets at rest", () => {
