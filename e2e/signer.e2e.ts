@@ -192,8 +192,8 @@ function backend(overrides: Partial<BrowserBackendOptions> = {}): BrowserBackend
     callTimeoutMs: 8_000,
     recycleMs: 60 * 60_000,
     readyTimeoutMs: 15_000,
-    // Chromium can't use its sandbox as root, which is how some dev containers run.
-    sandbox: process.getuid?.() !== 0,
+    // Chromium's sandbox needs user namespaces, which CI runners and containers often don't allow.
+    sandbox: false,
     ...overrides,
   });
   backends.push(instance);

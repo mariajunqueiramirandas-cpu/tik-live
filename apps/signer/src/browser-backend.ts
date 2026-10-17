@@ -70,6 +70,18 @@ const WEBSOCKET_COOKIES = ["ttwid"];
 const START_BACKOFF_MS = 5_000;
 const BLOCKED_RESOURCES = new Set(["image", "media", "font"]);
 
+/**
+ * The environment the browser runs in: ours without anything that looks like a secret. Chromium runs
+ * without its own sandbox (see SIGNER_SANDBOX), so a compromised page could otherwise read the
+ * signer's token and proxy password from its parent's environment.
+ */
+const SECRET_NAME = /^(OXYLABS_|SIGNER_)|TOKEN|SECRET|PASSWORD|API_?KEY|CREDENTIAL/i;
+export function browserEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  const clean: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) if (value !== undefined && !SECRET_NAME.test(name)) clean[name] = value;
+  return clean;
+}
+
 /** TikTok's script adds `X-Bogus` (and friends) to the request it sends; its absence means nothing signed it. */
 export function isSigned(url: string): boolean {
   return /[?&]X-Bogus=/.test(url);
@@ -329,7 +341,9 @@ export class BrowserBackend implements SignerBackend {
           const error = err instanceof SignerError ? err : new SignerError(503, "unavailable", `The browser couldn't start: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}.`);
           this.lastStartFailure = this.now();
           this.lastStartError = error.message;
-          this.options.log.warn("signer session failed to start", { error: error.message });
+          // The API message stays short; Playwright's own text carries the browser's output, which says why.
+          const detail = err instanceof Error ? err.message.replaceAll(/\s*\n\s*/g, " | ").slice(0, 600) : String(err);
+          this.options.log.warn("signer session failed to start", { error: error.message, detail });
           throw error;
         })
         .finally(() => {
@@ -353,6 +367,7 @@ export class BrowserBackend implements SignerBackend {
     const browser = await chromium.launch({
       headless: true,
       chromiumSandbox: options.sandbox,
+      env: browserEnv(process.env),
       args: ["--disable-dev-shm-usage"],
       ...(options.chromiumPath ? { executablePath: options.chromiumPath } : {}),
       ...(proxy ? { proxy } : {}),

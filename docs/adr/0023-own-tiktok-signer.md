@@ -83,6 +83,16 @@ on a TikTok page and lets TikTok's own script sign the requests we need.
   TikTok refuses the websocket from the server's address. It is off by
   default because residential proxies bill by traffic and a websocket streams
   for hours.
+- **Browser isolation:** Chromium runs **without its own sandbox** by default,
+  as Playwright's default and the broadcaster do. Its sandbox needs user
+  namespaces, which Docker's default seccomp profile and GitHub's runners
+  don't allow; the browser then exits at launch ("Chromium sandboxing
+  failed!"), which is how CI found this. `SIGNER_SANDBOX=true` turns it on
+  where the host allows it. In its place the container is the boundary, and
+  the browser's environment is scrubbed of anything that looks like a secret
+  (the signer's token, the proxy password), so a compromised page can't read
+  them from its parent process. The signer still shares the compose
+  `internal` network with the app and the database; see action item 10.
 
 ## Options Considered
 
@@ -150,3 +160,4 @@ direct unless TikTok refuses it. None of that is measured yet.
 7. [x] Oxylabs support: sticky sessions, retry on a new address, optional websocket through the proxy; tested with stand-in proxies (the signer in Chromium, the websocket under Bun).
 8. [ ] Try it against the real Oxylabs and a live account (`scripts/verify-signer.ts`), then read Oxylabs' usage page to see what the signer's traffic costs.
 9. [ ] Decide whether to drop `EULER_API_KEY` once item 6 passes.
+10. [ ] Give the signer a compose network of its own, shared only with the app, so a compromised browser (which has no Chromium sandbox by default) can't reach the database.

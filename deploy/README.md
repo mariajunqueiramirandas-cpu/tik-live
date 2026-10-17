@@ -157,7 +157,10 @@ docker compose logs signer        # "signer session ready" once the browser is u
 ```
 
 It uses about 500 MB of RAM and a CPU core while it signs; `SIGNER_CPUS` caps
-it. **TikTok decides per network whether anonymous viewers may join a room,
+it. Chromium runs without its own sandbox, as in the broadcaster (Docker's
+default profile doesn't allow the user namespaces it needs), with the signer's
+token and proxy password removed from the browser's environment;
+`SIGNER_SANDBOX=true` turns the sandbox on where the host allows it. **TikTok decides per network whether anonymous viewers may join a room,
 and often refuses data-center addresses.** Check from the server, with an
 account that's live:
 

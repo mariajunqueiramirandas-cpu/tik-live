@@ -30,7 +30,7 @@ const backend = new BrowserBackend({
   callTimeoutMs: config.SIGNER_CALL_TIMEOUT_MS,
   recycleMs: config.SIGNER_RECYCLE_MINUTES * 60_000,
   readyTimeoutMs: 45_000,
-  sandbox: !config.SIGNER_NO_SANDBOX,
+  sandbox: config.SIGNER_SANDBOX,
   ...(config.CHROMIUM_PATH ? { chromiumPath: config.CHROMIUM_PATH } : {}),
   refusalRetries: config.SIGNER_REFUSAL_RETRIES,
   ...(proxy ? { proxy } : {}),

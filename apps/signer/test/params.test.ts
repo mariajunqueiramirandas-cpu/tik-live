@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { SignerError } from "../src/backend";
 import { baselineFromIdentity, baselineFromOwnRequest, parseRoomLookup, roomLookupUrl, webcastFetchUrl } from "../src/params";
-import { isSigned } from "../src/browser-backend";
+import { browserEnv, isSigned } from "../src/browser-backend";
 
 const identity = {
   userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -92,6 +92,24 @@ describe("room lookup parsing", () => {
 });
 
 describe("browser backend helpers", () => {
+  test("the browser's environment keeps what it needs and loses what looks like a secret", () => {
+    const env = browserEnv({
+      PATH: "/usr/bin",
+      HOME: "/home/pwuser",
+      LANG: "en_US.UTF-8",
+      HTTPS_PROXY: "http://127.0.0.1:3128",
+      SIGNER_TOKEN: "t".repeat(24),
+      SIGNER_PROXY_URL: "http://user:pass@proxy:8080",
+      OXYLABS_USERNAME: "u",
+      OXYLABS_PASSWORD: "p",
+      ANTHROPIC_API_KEY: "k",
+      GITHUB_TOKEN: "g",
+      APP_SECRET: "s",
+      DATABASE_PASSWORD: "d",
+    });
+    expect(Object.keys(env).sort()).toEqual(["HOME", "HTTPS_PROXY", "LANG", "PATH"]);
+  });
+
   test("a request is signed when TikTok's script added X-Bogus", () => {
     expect(isSigned("https://x.test/webcast/im/fetch/?a=1&X-Bogus=abc")).toBe(true);
     expect(isSigned("https://x.test/webcast/im/fetch/?X-Bogus=abc&a=1")).toBe(true);

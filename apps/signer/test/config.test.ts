@@ -9,9 +9,9 @@ describe("signer config", () => {
     expect(() => loadConfig({ SIGNER_TOKEN: "short" })).toThrow(/at least 24/);
   });
 
-  test("defaults are safe: loopback, sandbox on, no proxy", () => {
+  test("defaults: loopback only, no proxy, the container as the boundary (Chromium's sandbox opt-in)", () => {
     const config = loadConfig({ SIGNER_TOKEN: TOKEN });
-    expect(config).toMatchObject({ HOST: "127.0.0.1", PORT: 8091, SIGNER_NO_SANDBOX: false, SIGNER_MAX_CONCURRENT: 4, isProduction: false });
+    expect(config).toMatchObject({ HOST: "127.0.0.1", PORT: 8091, SIGNER_SANDBOX: false, SIGNER_MAX_CONCURRENT: 4, isProduction: false });
     expect(config.SIGNER_PROXY_URL).toBeUndefined();
   });
 

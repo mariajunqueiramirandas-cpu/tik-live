@@ -51,8 +51,13 @@ const schema = z.object({
   SIGNER_CALL_TIMEOUT_MS: z.coerce.number().int().min(2_000).max(120_000).default(20_000),
   /** Idle sessions older than this are reloaded, so TikTok's script and tokens stay fresh. */
   SIGNER_RECYCLE_MINUTES: z.coerce.number().int().min(1).max(1_440).default(30),
-  /** Containers that run Chromium as root can't use its sandbox. Off by default. */
-  SIGNER_NO_SANDBOX: bool,
+  /**
+   * Chromium's own sandbox. Off by default, as in Playwright and the broadcaster: it needs user
+   * namespaces, which Docker's default seccomp profile and many CI hosts don't allow, and without them
+   * the browser exits at launch ("Chromium sandboxing failed!"). The container is the boundary instead,
+   * and the browser's environment is scrubbed of secrets. Turn it on where the host allows it.
+   */
+  SIGNER_SANDBOX: bool,
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
