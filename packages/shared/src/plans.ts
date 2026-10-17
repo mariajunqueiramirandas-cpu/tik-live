@@ -18,7 +18,7 @@ export interface PlanLimits {
   /** "default" = the platform's default voice only; "curated" = pick any voice. */
   voices: "default" | "curated";
   transcriptRetentionDays: number;
-  /** Claude tokens (input + output) per live hour before the host goes react-only. */
+  /** Claude tokens per live hour (fresh input, cache writes and output; cache reads don't count) before the host goes react-only. */
   tokenBudgetPerHour: number;
   /** Estimated AI spend (USD) per channel per UTC day before the host goes react-only. */
   dailySpendCapUsd: number;
@@ -54,11 +54,11 @@ export const PLANS: Record<PlanId, Plan> = {
       cloudBroadcast: false,
       voices: "default",
       transcriptRetentionDays: 7,
-      tokenBudgetPerHour: 400_000,
+      tokenBudgetPerHour: 1_500_000,
       dailySpendCapUsd: 8,
     },
-    // Defaults stay on Opus 5.5 until the owner picks per-plan models (ADR-0012).
-    models: { host: "claude-opus-5-5", moderator: "claude-opus-5-5" },
+    // Haiku 5.5 hosts and moderates on every plan (ADR-0026); the owner can move a plan up.
+    models: { host: "claude-haiku-5-5", moderator: "claude-haiku-5-5" },
     highlights: ["1 apresentador ao vivo por vez", "5 horas de live por mês", "Voz padrão"],
     purchasable: false,
   },
@@ -73,11 +73,11 @@ export const PLANS: Record<PlanId, Plan> = {
       cloudBroadcast: false,
       voices: "curated",
       transcriptRetentionDays: 90,
-      tokenBudgetPerHour: 600_000,
+      tokenBudgetPerHour: 2_500_000,
       dailySpendCapUsd: 60,
     },
-    // Defaults stay on Opus 5.5 until the owner picks per-plan models (ADR-0012).
-    models: { host: "claude-opus-5-5", moderator: "claude-opus-5-5" },
+    // Haiku 5.5 hosts and moderates on every plan (ADR-0026); the owner can move a plan up.
+    models: { host: "claude-haiku-5-5", moderator: "claude-haiku-5-5" },
     highlights: ["2 apresentadores ao vivo por vez", "150 horas de live por mês", "Escolha qualquer voz", "Transcrições por 90 dias"],
     purchasable: true,
   },
@@ -92,11 +92,11 @@ export const PLANS: Record<PlanId, Plan> = {
       cloudBroadcast: true,
       voices: "curated",
       transcriptRetentionDays: 365,
-      tokenBudgetPerHour: 800_000,
+      tokenBudgetPerHour: 4_000_000,
       dailySpendCapUsd: 200,
     },
-    // Defaults stay on Opus 5.5 until the owner picks per-plan models (ADR-0012).
-    models: { host: "claude-opus-5-5", moderator: "claude-opus-5-5" },
+    // Haiku 5.5 hosts and moderates on every plan (ADR-0026); the owner can move a plan up.
+    models: { host: "claude-haiku-5-5", moderator: "claude-haiku-5-5" },
     highlights: ["5 apresentadores ao vivo por vez", "600 horas de live por mês", "Transmissão pela nuvem (sem PC)", "Transcrições por um ano"],
     purchasable: true,
   },
@@ -114,8 +114,8 @@ export const PLANS: Record<PlanId, Plan> = {
       tokenBudgetPerHour: Number.POSITIVE_INFINITY,
       dailySpendCapUsd: Number.POSITIVE_INFINITY,
     },
-    // Defaults stay on Opus 5.5 until the owner picks per-plan models (ADR-0012).
-    models: { host: "claude-opus-5-5", moderator: "claude-opus-5-5" },
+    // Haiku 5.5 hosts and moderates on every plan (ADR-0026); the owner can move a plan up.
+    models: { host: "claude-haiku-5-5", moderator: "claude-haiku-5-5" },
     highlights: ["Tudo liberado"],
     purchasable: false,
   },

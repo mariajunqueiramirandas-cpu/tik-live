@@ -11,7 +11,7 @@ quiet moments. Nobody needs to be at the keyboard.
 
 The product is in Brazilian Portuguese: the dashboard, the stage, the host's
 voice and every message a creator sees
-([ADR-0026](docs/adr/0026-brazilian-portuguese-product.md), terms in
+([ADR-0027](docs/adr/0027-brazilian-portuguese-product.md), terms in
 [docs/glossario.md](docs/glossario.md)). Code and developer docs are in English.
 
 ```
@@ -22,7 +22,7 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
    Director ── run of show: opening, reactions, milestones, segments, filler
         │
         ▼
-   Host (Claude, streamed sentence by sentence)
+   Host (Claude Haiku 5.5: one cached conversation, streamed sentence by sentence)
         │
         ▼
    Safety gate (rules + Claude moderator) ∥ Voice (ElevenLabs or self-hosted)
@@ -47,9 +47,12 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   keeps animating through disconnects and reconnects on its own.
 - **Runtime**: one supervised runtime per live host, with audience-aware
   pacing, per-plan AI budgets and daily spend caps, viewer memory, and
-  graceful restarts that don't drop OBS. Each turn the host sees the recent
-  conversation, its local time and a running summary of the show
-  ([ADR-0025](docs/adr/0025-host-context-and-memory.md)).
+  graceful restarts that don't drop OBS. The show is one append-only
+  conversation with Claude Haiku 5.5, read from the prompt cache each turn:
+  the host sees everything in the order it happened, its own lines (and
+  which ones never aired), a director's brief with its local time and what
+  to answer in which order, a running summary of the show, and how the last
+  stream went ([ADR-0026](docs/adr/0026-turn-engine-and-context-cache.md)).
 - **Minigames**: trivia, this-or-that, word scramble, guess the number,
   true or false, quick math, riddles and fastest finger. Viewers answer in
   chat, the game keeps score, and each game has its own scene on stage
@@ -84,7 +87,8 @@ anything. Development has no sign-in: you're the local user.
 
 To give the host its real brain and voice, copy `.env.example` to `.env`:
 
-- `ANTHROPIC_API_KEY`: the host and the safety moderator run on Claude.
+- `ANTHROPIC_API_KEY`: the host and the safety moderator run on Claude
+  (Haiku 5.5 by default; `HOST_MODEL` and `MODERATION_MODEL` override it).
 - `ELEVENLABS_API_KEY`: the host speaks out loud.
 - Or, free and in Brazilian Portuguese only: run the self-hosted voice
   (`services/tts`, [ADR-0021](docs/adr/0021-self-hosted-tts.md)) and set

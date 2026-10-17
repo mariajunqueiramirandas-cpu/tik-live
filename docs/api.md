@@ -15,7 +15,7 @@ The internal broadcaster API is at the [end of this page](#broadcaster-internal)
   `packages/shared` (named below); unknown fields are dropped.
 - **Errors** always have one shape, with a stable `code` for programs and a
   `message` written for people, in Brazilian Portuguese
-  ([ADR-0026](adr/0026-brazilian-portuguese-product.md)):
+  ([ADR-0027](adr/0027-brazilian-portuguese-product.md)):
 
   ```json
   { "error": { "code": "plan_running_limit", "message": "Seu plano Grátis deixa 1 apresentador no ar por vez. Pare um primeiro ou mude de plano.", "details": null } }
@@ -150,7 +150,7 @@ TikTok account to go live; no AI calls), `live`, `stopping`, `failed`.
 | Endpoint | Response |
 |---|---|
 | `GET /api/channels/:id/sessions` | `{ sessions }`: the last 60 streams with `startedAt`, `endedAt`, `endReason`, `source`, `peakViewers`, `likes`, `diamonds`, `gifts`, `messages`, `follows`, `spokenLines`, `blockedLines`, `costUsd`. |
-| `GET /api/channels/:id/sessions/:sid` | `{ session, samples, lines }`: per-minute `samples` (`viewers`, `likes`, `messages`, `diamonds`) and up to 1,000 transcript `lines` (`at`, `text`, `emotion`, `status` `spoken`/`blocked`, `reason`, `turnKind`). |
+| `GET /api/channels/:id/sessions/:sid` | `{ session, samples, lines }`: the session (including `summary`, the host's own account of the show, or `null`), per-minute `samples` (`viewers`, `likes`, `messages`, `diamonds`) and up to 1,000 transcript `lines` (`at`, `text`, `emotion`, `status` `spoken`/`blocked`, `reason`, `turnKind`). |
 | `GET /api/channels/:id/audience` | `{ remembered, supporters, regulars }`: how many viewers the host remembers, and the top 10 by diamonds and by visits. |
 
 Live state (what the host is saying, the queue, health) isn't polled: it

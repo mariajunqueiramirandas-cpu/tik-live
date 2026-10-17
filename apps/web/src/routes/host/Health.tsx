@@ -51,6 +51,9 @@ export function Health({ snapshot, onAir }: { snapshot: RuntimeSnapshot | null; 
       />
       {engine && <Item tone={engine.error ? "bad" : engine.fps >= 24 ? "ok" : "warn"} label="Palco" value={engine.error ? "Erro ao desenhar" : `${Math.round(engine.fps)} fps`} />}
       {health.latency && <Item tone={health.latency.p50 < 4000 ? "ok" : "warn"} label="Tempo de resposta" value={`${oneDecimal(health.latency.p50 / 1000)} s`} />}
+      {health.brain.context && onAir && (
+        <Item tone={health.brain.context.cachedPct >= 50 ? "ok" : "warn"} label="Memória da live" value={`${health.brain.context.cachedPct}% reaproveitado`} />
+      )}
       {health.budget.limitTokensPerHour !== null && (
         <Item tone={health.budget.usedPct < 80 ? "ok" : health.budget.usedPct < 100 ? "warn" : "bad"} label="Orçamento de IA nesta hora" value={`${Math.round(health.budget.usedPct)}%`} />
       )}

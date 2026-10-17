@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { sessionSample, streamSession, utterance } from "../db/schema";
 
@@ -7,7 +7,7 @@ export type SampleRow = typeof sessionSample.$inferSelect;
 export type UtteranceRow = typeof utterance.$inferSelect;
 export type NewUtterance = typeof utterance.$inferInsert;
 
-export type SessionTotals = Omit<StreamSessionRow, "id" | "channelId" | "startedAt" | "endedAt" | "endReason" | "source">;
+export type SessionTotals = Omit<StreamSessionRow, "id" | "channelId" | "startedAt" | "endedAt" | "endReason" | "source" | "summary">;
 
 export async function createSession(db: Db, values: { id: string; channelId: string; startedAt: Date; source: StreamSessionRow["source"] }): Promise<void> {
   await db.insert(streamSession).values(values);
@@ -22,6 +22,21 @@ export async function endSession(db: Db, id: string, endedAt: Date, reason: stri
     .update(streamSession)
     .set({ ...totals, endedAt, endReason: reason })
     .where(eq(streamSession.id, id));
+}
+
+export async function setSessionSummary(db: Db, id: string, summary: string): Promise<void> {
+  await db.update(streamSession).set({ summary }).where(eq(streamSession.id, id));
+}
+
+/** The show summary of the channel's most recent stream that has one. */
+export async function latestSummary(db: Db, channelId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ summary: streamSession.summary })
+    .from(streamSession)
+    .where(and(eq(streamSession.channelId, channelId), isNotNull(streamSession.summary)))
+    .orderBy(desc(streamSession.startedAt))
+    .limit(1);
+  return row?.summary ?? null;
 }
 
 /** Sessions left open by a crash or hard restart are closed when the channel's runtime next starts. */

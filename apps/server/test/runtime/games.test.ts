@@ -124,8 +124,10 @@ describe("GameMaster", () => {
     clock.advance(8_000);
     games.tick(true); // round 2 opens once the host finished talking
     expect(games.status()?.round).toBe(2);
+    expect(games.takeCue()?.note).toContain("Round 2 of 2");
     clock.advance(26_000);
     games.tick(true);
+    expect(games.takeCue()?.note).toContain("Reveal for round 2 of 2");
     clock.advance(8_000);
     games.tick(true);
     const board = scenes.at(-1);
@@ -139,6 +141,36 @@ describe("GameMaster", () => {
     games.tick(true);
     expect(games.isActive()).toBe(false);
     expect(scenes.at(-1)).toBeNull();
+  });
+
+  it("keeps game moments in order and waits for the host to announce the answer before the next round", async () => {
+    const { clock, games, flush } = setup();
+    games.start({ kind: "fastest", rounds: 2 }, "studio");
+    await flush();
+    const word = games.status()!.answer!;
+    // Someone wins before the host got to read the round out: the question is skipped, the answer isn't.
+    games.handleChat(say("ana", word.toLowerCase()));
+    const reveal = games.takeCue();
+    expect(reveal?.note).toContain("The round ended before you could read it out");
+    expect(reveal?.note).toContain("ana got it first");
+    expect(games.takeCue()).toBeNull();
+
+    games.handleChat(say("x", "warming up"));
+    clock.advance(30_000);
+    games.tick(true);
+    expect(games.status()?.round).toBe(2);
+    clock.advance(25_000);
+    games.tick(false); // nobody got round 2; the host is busy
+    expect(games.status()?.phase).toBe("reveal");
+    clock.advance(8_000);
+    games.tick(true);
+    // The host hasn't announced round 2's answer yet, so the results wait...
+    expect(games.status()?.phase).toBe("reveal");
+    expect(games.takeCue()?.note).toContain("Reveal for round 2 of 2");
+    games.tick(true);
+    // ...and then come in order.
+    expect(games.status()?.phase).toBe("results");
+    expect(games.takeCue()?.note).toContain("Game over!");
   });
 
   it("narrows the number range and ends the round on an exact guess", () => {
@@ -196,8 +228,10 @@ describe("GameMaster", () => {
     for (let round = 1; round <= 3; round++) {
       expect(games.status()?.round).toBe(round);
       seen.push(games.status()!.prompt);
+      games.takeCue(); // the host reads the round out
       clock.advance(26_000);
       games.tick(true);
+      games.takeCue(); // ...and its answer
       clock.advance(8_000);
       games.tick(true);
     }

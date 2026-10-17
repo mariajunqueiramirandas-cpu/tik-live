@@ -19,6 +19,7 @@ import type { AppConfig } from "../config";
 import type { Db } from "../db/client";
 import type { Logger } from "../log";
 import type { ChannelRow } from "../repos/channels";
+import { latestSummary } from "../repos/streams";
 import { addUsage, channelCostOn, dayKey } from "../repos/usage";
 import { loadViewers, saveViewers, type ViewerRow } from "../repos/viewers";
 import { ClaudeChronicler } from "./brain/chronicle";
@@ -138,6 +139,8 @@ export class ChannelRuntime {
     // Today's earlier spend counts toward the daily cap, even across restarts.
     const today = dayKey(new Date(this.now()));
     this.meter.seedToday(today, await channelCostOn(ctx.db, channel.id, today).catch(() => 0));
+    // How the last stream went, so the host can open with a callback to it.
+    const lastStream = await latestSummary(ctx.db, channel.id).catch(() => null);
     this.memory = new ViewerMemory({ persistence: this.persistence(), now: this.now, log: this.log });
     this.triage = new Triage({ blocklist: channel.safety.blocklist, hostName: channel.persona.name, memory: this.memory, now: this.now });
 
@@ -162,6 +165,7 @@ export class ChannelRuntime {
       {
         onSpoken: (cue) => this.onSpoken(cue),
         onDropped: (text, reason, emotion, meta) => {
+          this.director.noteBlocked(text, meta);
           this.recorder.line({ text, emotion, status: "blocked", reason, ...(meta ? { turnKind: meta.turnKind } : {}) });
           this.options.studio.publish({
             t: "transcript",
@@ -217,11 +221,13 @@ export class ChannelRuntime {
         : {}),
       actions: { playMusic: (track) => void this.playMusic(track, true) },
       blocklist: () => this.channel.safety.blocklist,
+      ...(lastStream ? { lastStream } : {}),
       log: this.log,
       now: this.now,
       hooks: {
         onEvent: (event, result) => this.onEvent(event, result),
         onTurn: () => this.recorder.countTurn(),
+        onSummary: (summary) => this.recorder.summary(summary),
         onTurnFailed: (err) =>
           this.notice("warn", "turn_failed", `O apresentador não conseguiu pensar numa resposta (${err instanceof Error ? err.message : "erro desconhecido"}). Tentando de novo em instantes.`),
         onStandbyChange: (standby) => void this.onStandbyChange(standby),
@@ -388,6 +394,7 @@ export class ChannelRuntime {
     const endsAt = this.now() + passSeconds(track.bpm, track.bars) * track.repeat * 1000;
     this.music = { title: track.title, endsAt, byHost };
     this.options.stage.music(track, endsAt);
+    this.director.noteMusic({ title: track.title, endsAt, byHost });
     this.log.info(`playing "${track.title}" (${byHost ? "composed by the host" : "from the library"})`);
   }
 
@@ -395,6 +402,7 @@ export class ChannelRuntime {
     if (!this.music) return;
     this.music = null;
     this.options.stage.music(null);
+    this.director?.noteMusic(null);
   }
 
   /** Called once a minute by the manager: accrues live time and enforces the AI budgets. */
@@ -478,7 +486,12 @@ export class ChannelRuntime {
         engine: telemetry
           ? { fps: telemetry.fps, frameP95: telemetry.frameP95, quality: telemetry.quality, renderer: telemetry.renderer, error: telemetry.error }
           : null,
-        brain: { host: this.host?.name ?? "", moderator: this.gate?.moderatorModel ?? null, tts: this.speech?.ttsName ?? "none" },
+        brain: {
+          host: this.host?.name ?? "",
+          moderator: this.gate?.moderatorModel ?? null,
+          tts: this.speech?.ttsName ?? "none",
+          context: this.host?.contextStats?.() ?? null,
+        },
         latency: this.latency.summary(),
         budget: {
           usedPct: isUnlimited(limit) ? 0 : Math.min(100, Math.round((this.meter.tokensLastHour() / limit) * 100)),
@@ -508,7 +521,7 @@ export class ChannelRuntime {
   }
 
   private onSpoken(cue: SpeechCue): void {
-    this.director.noteSpoken(cue.text);
+    this.director.noteSpoken(cue.text, cue.meta, cue.operator === true);
     this.recorder.line({ text: cue.text, emotion: cue.emotion, status: "spoken", ...(cue.meta ? { turnKind: cue.meta.turnKind } : {}) });
     this.options.studio.publish({
       t: "transcript",
@@ -607,7 +620,6 @@ export class ChannelRuntime {
       persona: channel.persona,
       safety: channel.safety,
       ...(speechLanguage ? { speechLanguage } : {}),
-      memory: this.memory,
       model: ctx.config.HOST_MODEL ?? this.plan.models.host,
       effort: ctx.config.HOST_EFFORT,
       onUsage: (u) => this.usage(u),

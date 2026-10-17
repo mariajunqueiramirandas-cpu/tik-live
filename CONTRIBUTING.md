@@ -101,7 +101,7 @@ deterministic (inject the clock, the random source, `fetch`).
   objects created per frame; reuse buffers. The engine's bundle budget is
   60 KB gzipped, the dashboard's 200 KB, the landing page's 120 KB; the
   build fails past them.
-- **UI copy** is Brazilian Portuguese ([ADR-0026](docs/adr/0026-brazilian-portuguese-product.md)):
+- **UI copy** is Brazilian Portuguese ([ADR-0027](docs/adr/0027-brazilian-portuguese-product.md)):
   plain, sentence case, following the terms and tone in
   [docs/glossario.md](docs/glossario.md). Code, comments, logs and developer
   docs stay in English.

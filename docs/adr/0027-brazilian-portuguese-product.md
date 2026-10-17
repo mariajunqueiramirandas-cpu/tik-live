@@ -1,4 +1,4 @@
-# ADR-0026: The product is in Brazilian Portuguese
+# ADR-0027: The product is in Brazilian Portuguese
 
 **Status:** Accepted
 **Date:** 2026-10-17

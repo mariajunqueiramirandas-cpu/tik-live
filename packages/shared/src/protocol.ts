@@ -134,7 +134,13 @@ export interface RuntimeSnapshot {
     source: { name: string; connected: boolean; detail: string };
     stages: { program: number; preview: number; broadcast: number };
     engine: { fps: number; frameP95: number; quality: number; renderer: string | null; error: string | null } | null;
-    brain: { host: string; moderator: string | null; tts: string };
+    brain: {
+      host: string;
+      moderator: string | null;
+      tts: string;
+      /** The host's conversation: its size in tokens, and how much of recent turns' input came from the prompt cache. */
+      context: { tokens: number; cachedPct: number } | null;
+    };
     latency: { p50: number; p95: number; samples: number } | null;
     budget: { usedPct: number; limitTokensPerHour: number | null };
     /** Cloud broadcast, when it's turned on for this channel. */

@@ -382,7 +382,7 @@ export function stoppedSnapshot(
       source: { name: channel.source, connected: false, detail: "" },
       stages,
       engine: null,
-      brain: { host: "", moderator: null, tts: channel.voice.provider },
+      brain: { host: "", moderator: null, tts: channel.voice.provider, context: null },
       latency: null,
       budget: { usedPct: 0, limitTokensPerHour: null },
     },

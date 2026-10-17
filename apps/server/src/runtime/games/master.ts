@@ -63,6 +63,13 @@ export interface GameMasterOptions {
 
 type Phase = GameStatus["phase"];
 
+/** A cue waiting for the host, with what it's about so stale ones can be dropped. */
+interface PendingCue extends GameCue {
+  round: number;
+  phase: Phase;
+  at: number;
+}
+
 interface Answer {
   value: number | boolean;
   at: number;
@@ -139,6 +146,8 @@ const PUBLISH_EVERY_MS = 250;
 const GUESS_COOLDOWN_MS = 2_500;
 /** Hints show up after this share of the round. */
 const HINT_AT = 0.5;
+/** A reveal or results cue the host hasn't got to in this long is old news. */
+const CUE_TTL_MS = 40_000;
 
 /**
  * Runs chat minigames (ADR-0023): prepares the rounds, turns chat messages
@@ -150,7 +159,8 @@ const HINT_AT = 0.5;
  */
 export class GameMaster {
   private game: ActiveGame | null = null;
-  private cue: GameCue | null = null;
+  /** What the host should announce, in order: a round, its reveal, the next round, the results. */
+  private cues: PendingCue[] = [];
   private dirty = false;
   private publishedAt = 0;
   private endedAt = -Infinity;
@@ -192,7 +202,7 @@ export class GameMaster {
       prep: null,
     };
     this.game = game;
-    this.cue = null;
+    this.cues = [];
     if (config.kind === "number" || config.kind === "math") {
       this.openRound(game);
     } else {
@@ -210,11 +220,17 @@ export class GameMaster {
     this.finish();
   }
 
-  /** The cue for the host's next game turn, if one is waiting. Taking it clears it. */
+  /** The next cue for the host's game turns, oldest first. Taking it removes it. */
   takeCue(): GameCue | null {
-    const cue = this.cue;
-    this.cue = null;
-    return cue;
+    this.dropStaleCues();
+    const cue = this.cues.shift();
+    return cue ? { note: cue.note, line: cue.line, history: cue.history } : null;
+  }
+
+  /** True while a game moment is waiting to be announced. */
+  hasCue(): boolean {
+    this.dropStaleCues();
+    return this.cues.length > 0;
   }
 
   /**
@@ -308,8 +324,9 @@ export class GameMaster {
         if (round && now - round.openedAt >= round.durationMs) this.reveal(game, now);
         break;
       case "reveal": {
+        // The next round waits until the host has announced this one's answer.
         const shown = now - game.phaseAt;
-        if ((shown >= REVEAL_MIN_MS && speechIdle) || shown >= REVEAL_MAX_MS) {
+        if ((shown >= REVEAL_MIN_MS && speechIdle && !this.hasCue()) || shown >= REVEAL_MAX_MS) {
           if (game.index + 1 < game.config.rounds && this.hasNextRound(game)) {
             game.index += 1;
             this.openRound(game);
@@ -321,7 +338,7 @@ export class GameMaster {
       }
       case "results": {
         const shown = now - game.phaseAt;
-        if ((shown >= RESULTS_MIN_MS && speechIdle) || shown >= RESULTS_MAX_MS) this.finish();
+        if ((shown >= RESULTS_MIN_MS && speechIdle && !this.hasCue()) || shown >= RESULTS_MAX_MS) this.finish();
         break;
       }
       case "preparing":
@@ -478,11 +495,14 @@ export class GameMaster {
     const intro = first
       ? `This is the start of a ${label} game with ${game.config.rounds} rounds${game.config.topic ? ` about ${game.config.topic}` : ""}: say in one short line how it works (viewers ${HOW_TO_ANSWER[kind]}). `
       : "";
-    this.cue = {
+    this.cues.push({
       note: `${intro}Round ${game.index + 1} of ${game.config.rounds} is on screen now: ${promptOf(round)} ${openInstruction(content)} They have ${Math.round(round.durationMs / 1000)} seconds.`,
       line: first ? `${label}! Rodada ${game.index + 1}. ${spokenPrompt(round)}` : `Rodada ${game.index + 1}! ${spokenPrompt(round)}`,
       history: `${label} round ${game.index + 1} of ${game.config.rounds} opened: ${promptOf(round)}`,
-    };
+      round: game.index,
+      phase: "open",
+      at: now,
+    });
     this.options.onChange?.();
   }
 
@@ -552,11 +572,18 @@ export class GameMaster {
     } else {
       this.sound("reveal");
     }
-    this.cue = {
-      note: `Reveal for round ${game.index + 1} of ${game.config.rounds}. ${summary} Announce it with energy${won && content.kind !== "poll" ? " and congratulate the winner by name" : ""}${content.kind === "poll" ? " and give a playful take on the result" : ""}.`,
+    // A round won before the host read it out: skip the question, go straight to the answer.
+    const unread = this.cues.findIndex((cue) => cue.phase === "open" && cue.round === game.index);
+    if (unread !== -1) this.cues.splice(unread, 1);
+    const early = unread !== -1 ? "The round ended before you could read it out, so don't read the question now. " : "";
+    this.cues.push({
+      note: `${early}Reveal for round ${game.index + 1} of ${game.config.rounds}. ${summary} Announce it with energy${won && content.kind !== "poll" ? " and congratulate the winner by name" : ""}${content.kind === "poll" ? " and give a playful take on the result" : ""}.`,
       line,
       history: `${label} round ${game.index + 1}: ${summary}`,
-    };
+      round: game.index,
+      phase: "reveal",
+      at: now,
+    });
     this.options.onChange?.();
   }
 
@@ -570,7 +597,7 @@ export class GameMaster {
     this.sound(scored ? "fanfare" : "chime");
     if (scored) this.options.stage.fx("fireworks", 2);
     const top = board.slice(0, 3).map((row, i) => `${i + 1}. ${row.name} (${row.points} points)`).join(", ");
-    this.cue = scored
+    const cue = scored
       ? {
           note: `Game over! Final scores: ${top}. Crown the winner, celebrate the top players, and thank everyone who played.`,
           line: `Fim de jogo! Quem venceu foi ${board[0]?.name}! Valeu por jogarem, galera.`,
@@ -581,16 +608,26 @@ export class GameMaster {
           line: "Fim de jogo! Valeu por jogarem.",
           history: `${label} game over.`,
         };
+    this.cues.push({ ...cue, round: game.index, phase: "results", at: now });
     this.options.onChange?.();
   }
 
   private finish(): void {
     this.game = null;
-    this.cue = null;
+    this.cues = [];
     this.endedAt = this.now();
     this.dirty = false;
     this.options.stage.game(null);
     this.options.onChange?.();
+  }
+
+  /** An open round's cue goes stale once the round closes; the others after a while. */
+  private dropStaleCues(): void {
+    const game = this.game;
+    const now = this.now();
+    this.cues = this.cues.filter((cue) =>
+      cue.phase === "open" ? game?.phase === "open" && game.index === cue.round : now - cue.at < CUE_TTL_MS,
+    );
   }
 
   // ---- scoring and scenes -------------------------------------------------
