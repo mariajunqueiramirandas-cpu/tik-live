@@ -1,0 +1,1 @@
+ALTER TABLE "stream_session" ADD COLUMN "summary" text;

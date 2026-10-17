@@ -54,6 +54,12 @@ function SessionDetail({ channelId, session }: { channelId: string; session: Ses
           <dd>{usd(session.costUsd)}</dd>
         </div>
       </dl>
+      {data?.session.summary && (
+        <p className={s.summary}>
+          <span className={s.dim}>What the host remembers: </span>
+          {data.session.summary}
+        </p>
+      )}
       {isPending ? (
         <Skeleton height={220} />
       ) : (
