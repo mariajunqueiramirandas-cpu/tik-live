@@ -14,7 +14,7 @@ export class FakeEngine implements StageEngine {
 
   apply(message: StageServerPayload): void {
     this.applied.push(message);
-    if (message.t === "speak" && this.autoSpeak) queueMicrotask(() => this.emit("spoken", message.id));
+    if ((message.t === "speak" || message.t === "cue") && this.autoSpeak) queueMicrotask(() => this.emit("spoken", message.id));
   }
   setLook(_name: string, _look: Look): void {}
   setEmotion(_emotion: Emotion): void {}

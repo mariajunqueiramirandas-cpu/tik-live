@@ -85,17 +85,45 @@ export function layoutCaption(
   return { words: laidOut, lines: chosen.lines.length, lineWidths, fontSize: chosen.fontSize };
 }
 
+/** Extra weight (in characters) for the pause speech makes after a word's punctuation. */
+function pauseAfter(word: string): number {
+  const last = word.charCodeAt(word.length - 1);
+  // . ! ? … end a sentence; , ; : are a short breath.
+  if (last === 46 || last === 33 || last === 63 || last === 8230) return 5;
+  if (last === 44 || last === 59 || last === 58) return 3;
+  return 0;
+}
+
 /**
- * Which word is being spoken at `progress` (0..1), weighting words by
- * length so long words take longer, like speech does.
+ * Which word is being spoken at `progress` (0..1) when the voice gave no
+ * timings: words weigh by length, like speech, and punctuation adds the
+ * pause a speaker takes there. Runs every frame, so it doesn't allocate.
  */
 export function wordAtProgress(words: readonly { text: string }[], progress: number): number {
   if (words.length === 0) return -1;
-  const total = words.reduce((sum, w) => sum + w.text.length + 1, 0);
+  let total = 0;
+  for (let i = 0; i < words.length; i++) {
+    const text = (words[i] as { text: string }).text;
+    total += text.length + 1 + pauseAfter(text);
+  }
   let acc = 0;
   for (let i = 0; i < words.length; i++) {
-    acc += (words[i] as { text: string }).text.length + 1;
+    const text = (words[i] as { text: string }).text;
+    acc += text.length + 1 + pauseAfter(text);
     if (progress * total < acc) return i;
   }
   return words.length;
+}
+
+/** Which word is being spoken `ms` into the line, from the voice's word start times. */
+export function wordAtTime(starts: readonly number[], ms: number): number {
+  if (starts.length === 0 || ms < (starts[0] as number)) return starts.length === 0 ? -1 : 0;
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if ((starts[mid] as number) <= ms) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }

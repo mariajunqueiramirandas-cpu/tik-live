@@ -10,6 +10,9 @@
  */
 import { parseArgs } from "node:util";
 
+/** packages/shared/src/protocol.ts (root scripts can't import workspace packages). */
+const PROTOCOL_VERSION = 2;
+
 const { values } = parseArgs({
   options: {
     url: { type: "string", default: "http://localhost:8080" },
@@ -55,12 +58,33 @@ const wsBase = base.replace(/^http/, "ws");
 for (const ch of created) {
   const key = ch.stageUrl.split("/s/")[1]!;
   const stage = new WebSocket(`${wsBase}/ws/stage/${key}?role=program`, { headers: auth } as never);
+  // Plays queued lines in order, like OBS would, a little faster than real time.
+  const queue: Array<{ id: string; durationMs: number }> = [];
+  let playing = false;
+  const playNext = () => {
+    const head = queue[0];
+    playing = head !== undefined;
+    if (!head) return;
+    setTimeout(() => {
+      if (queue[0] !== head) return playNext();
+      queue.shift();
+      if (stage.readyState === 1) stage.send(JSON.stringify({ v: PROTOCOL_VERSION, t: "spoken", id: head.id }));
+      playNext();
+    }, Math.min(4000, head.durationMs / 2));
+  };
   stage.onmessage = (event) => {
-    const message = JSON.parse(String(event.data)) as { t: string; id?: string; durationMs?: number };
-    if (message.t === "speak") {
+    const message = JSON.parse(String(event.data)) as { t: string; id?: string; ids?: string[]; durationMs?: number };
+    if (message.t === "cue" && message.id) {
       stats.speaks++;
-      // Report the line as spoken, like OBS would, a little faster than real time.
-      setTimeout(() => stage.readyState === 1 && stage.send(JSON.stringify({ v: 1, t: "spoken", id: message.id })), Math.min(4000, (message.durationMs ?? 2000) / 2));
+      queue.push({ id: message.id, durationMs: message.durationMs ?? 2000 });
+      if (!playing) playNext();
+    } else if (message.t === "drop") {
+      for (const id of message.ids ?? []) {
+        const i = queue.findIndex((line, index) => index > 0 && line.id === id);
+        if (i > 0) queue.splice(i, 1);
+      }
+    } else if (message.t === "stop") {
+      queue.length = 0;
     }
   };
   stage.onerror = () => stats.socketErrors++;

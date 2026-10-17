@@ -52,7 +52,9 @@ export type CueListener = (cue: SpeechCue, at: number) => void;
  */
 export class StageHub implements SpeechOutput, StageNotifier {
   private readonly peers = new Map<string, StagePeer>();
-  private readonly waiters = new Map<string, () => void>();
+  /** Cues sent to the stages, in playing order: a mirror of their queues. The first is playing. */
+  private outstanding: Array<{ cue: SpeechCue; resolve: () => void }> = [];
+  private headTimer: ReturnType<typeof setTimeout> | undefined;
   private lastSegment: Segment | undefined;
   private lastStats: { viewers: number; likes: number } | undefined;
   private telemetry: EngineTelemetry | null = null;
@@ -95,7 +97,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
         break;
       case "spoken":
         // Only stages that are really on air pace the host; previews don't.
-        if (entry.role !== "preview") this.waiters.get(message.id)?.();
+        if (entry.role !== "preview") this.finish(message.id);
         break;
       case "telemetry":
         if (entry.role !== "preview") {
@@ -159,38 +161,68 @@ export class StageHub implements SpeechOutput, StageNotifier {
 
   // ---- SpeechOutput -------------------------------------------------------
 
-  prefetch(cue: SpeechCue): void {
+  /**
+   * Queues a cue on every stage (ADR-0022). Stages play cues back to back in
+   * the order sent, so a cue sent while another plays waits its turn instead
+   * of cutting it off. Resolves when an on-air stage reports it spoken, or,
+   * as a fallback, once its duration (plus grace, if a stage should have
+   * answered) has passed since it reached the front of the queue.
+   */
+  play(cue: SpeechCue): Promise<void> {
     const audioUrl = this.audioUrlFor(cue);
-    if (audioUrl) this.broadcast({ t: "prefetch", audioUrl });
+    this.broadcast({
+      t: "cue",
+      id: cue.id,
+      text: cue.text,
+      emotion: cue.emotion,
+      audioUrl,
+      durationMs: cue.durationMs,
+      ...(cue.audio?.words ? { words: cue.audio.words } : {}),
+    });
+    return new Promise((resolve) => {
+      this.outstanding.push({ cue, resolve });
+      if (this.outstanding.length === 1) this.startHead();
+    });
   }
 
-  play(cue: SpeechCue, signal: AbortSignal): Promise<void> {
-    const audioUrl = this.audioUrlFor(cue);
-    this.broadcast({ t: "speak", id: cue.id, text: cue.text, emotion: cue.emotion, audioUrl, durationMs: cue.durationMs });
-    this.cueListener?.(cue, this.now());
-
-    // With no on-air stage connected (e.g. OBS not open yet), pace speech by
-    // its estimated duration so the show's rhythm stays realistic.
-    const { program, broadcast } = this.counts();
-    const onAir = program + broadcast > 0;
-    const timeoutMs = onAir ? cue.durationMs + PLAYBACK_GRACE_MS : cue.durationMs;
-
-    return new Promise((resolve) => {
-      const done = () => {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", done);
-        this.waiters.delete(cue.id);
-        resolve();
-      };
-      const timer = setTimeout(done, timeoutMs);
-      signal.addEventListener("abort", done, { once: true });
-      this.waiters.set(cue.id, done);
-    });
+  drop(ids: readonly string[]): void {
+    if (ids.length === 0) return;
+    const head = this.outstanding[0];
+    const dropped = this.outstanding.filter((entry) => entry !== head && ids.includes(entry.cue.id));
+    if (dropped.length === 0) return;
+    this.outstanding = this.outstanding.filter((entry) => !dropped.includes(entry));
+    this.broadcast({ t: "drop", ids: dropped.map((entry) => entry.cue.id) });
+    for (const entry of dropped) entry.resolve();
   }
 
   interrupt(): void {
     this.broadcast({ t: "stop" });
-    for (const done of [...this.waiters.values()]) done();
+    clearTimeout(this.headTimer);
+    const all = this.outstanding;
+    this.outstanding = [];
+    for (const entry of all) entry.resolve();
+  }
+
+  /** The cue at the front of the queue starts playing now (as far as the server can tell). */
+  private startHead(): void {
+    clearTimeout(this.headTimer);
+    const head = this.outstanding[0];
+    if (!head) return;
+    this.cueListener?.(head.cue, this.now());
+    // With no on-air stage connected (e.g. OBS not open yet), pace speech by
+    // its estimated duration so the show's rhythm stays realistic.
+    const { program, broadcast } = this.counts();
+    const timeoutMs = program + broadcast > 0 ? head.cue.durationMs + PLAYBACK_GRACE_MS : head.cue.durationMs;
+    this.headTimer = setTimeout(() => this.finish(head.cue.id), timeoutMs);
+  }
+
+  /** A cue finished. Stages play in order, so every cue before it is over too. */
+  private finish(id: string): void {
+    const index = this.outstanding.findIndex((entry) => entry.cue.id === id);
+    if (index === -1) return;
+    const done = this.outstanding.splice(0, index + 1);
+    for (const entry of done) entry.resolve();
+    this.startHead();
   }
 
   private audioUrlFor(cue: SpeechCue): string | null {

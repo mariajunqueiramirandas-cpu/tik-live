@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import type { LiveEvent } from "@tik-live/shared";
 import { ViewerMemory } from "../../src/runtime/brain/memory";
 import { Triage } from "../../src/runtime/brain/triage";
 import { chat, fakeClock, gift, viewer } from "./helpers";
@@ -76,5 +77,24 @@ describe("Triage", () => {
     clock.advance(4 * 60 * 60 * 1000); // next stream
     expect(ingest({ kind: "join", at: 0, viewer: viewer("old") }).queued).toBe(true);
     expect(triage.pending()).toBe(1);
+  });
+});
+
+describe("gift bursts", () => {
+  it("merges repeat gifts from one viewer into a single queued thank-you", () => {
+    const memory = new ViewerMemory({});
+    const triage = new Triage({ blocklist: [], hostName: "Blip", memory });
+    triage.ingest(gift("maria", "Rose", 1));
+    triage.ingest(gift("maria", "Rose", 1));
+    triage.ingest(gift("maria", "Galaxy", 1_000));
+    triage.ingest(gift("theo", "Rose", 1));
+    const result = triage.ingest({ ...(gift("maria", "Rose", 3) as Extract<LiveEvent, { kind: "gift" }>), count: 3 });
+    expect(result.queued).toBe(true);
+    const gifts = triage.peek().map((item) => item.event as Extract<LiveEvent, { kind: "gift" }>);
+    expect(gifts.map((g) => `${g.viewer.handle} ${g.count}x ${g.giftName} (${g.diamonds})`)).toEqual([
+      "maria 1x Galaxy (1000)",
+      "maria 5x Rose (5)",
+      "theo 1x Rose (1)",
+    ]);
   });
 });

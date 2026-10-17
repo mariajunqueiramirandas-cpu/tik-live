@@ -47,12 +47,34 @@ export interface DirectorOptions {
   deadAirMs: number;
   /** Wait for the first real event before talking (avoids talking to an empty room). */
   startInStandby?: boolean;
+  /** Watchdog limits for one turn (tests shorten them). */
+  firstLineTimeoutMs?: number;
+  turnTimeoutMs?: number;
   log?: Logger;
   now?: () => number;
 }
 
 const LIKE_MILESTONES = [100, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000];
 const MIN_TURN_GAP_MS = 1_500;
+/**
+ * Whose speech wins the stage (ADR-0022). Viewers' events take it from
+ * filler at the next sentence boundary; everything else finishes its thought.
+ */
+export const TURN_PRIORITY: Record<TurnKind, number> = {
+  filler: 10,
+  react: 40,
+  segment_change: 45,
+  milestone: 45,
+  opening: 50,
+};
+/** A turn that hasn't produced its first sentence by then is abandoned (and retried after a cooldown). */
+const FIRST_LINE_TIMEOUT_MS = 12_000;
+/** A turn still generating after this long is cut off where it is. */
+const TURN_TIMEOUT_MS = 30_000;
+/** Expected time from starting a turn to its first audio, before any are measured. */
+const INITIAL_LEAD_MS = 2_500;
+/** Voice and safety time for a first sentence, on top of the brain's measured time to write it. */
+const PREPARE_ALLOWANCE_MS = 900;
 const RECENT_LINES = 8;
 /** With nobody watching and nothing happening for this long, stop filling silence (ADR-0012). */
 const EMPTY_ROOM_REACT_ONLY_MS = 10 * 60 * 1000;
@@ -113,6 +135,8 @@ export class Director {
   private budgetReactOnly = false;
   private timer: ReturnType<typeof setInterval> | undefined;
   private turnCounter = 0;
+  /** Smoothed time from starting a turn to its first sentence being ready to voice. */
+  private leadMs = INITIAL_LEAD_MS;
   private readonly now: () => number;
 
   constructor(private readonly options: DirectorOptions) {
@@ -233,6 +257,15 @@ export class Director {
     }
     const result = this.options.triage.ingest(event);
     this.options.hooks?.onEvent?.(event, result);
+    // Someone is talking to the host: stop filling silence at the next sentence boundary.
+    if (result.queued && event.kind !== "join") this.makeWayFor(TURN_PRIORITY.react);
+  }
+
+  /** Drops lower-priority speech that hasn't started, and stops generating it. */
+  private makeWayFor(priority: number): void {
+    if (this.paused || this.standby) return;
+    if (this.turnInFlight && TURN_PRIORITY[this.turnInFlight] < priority) this.turnAbort?.abort();
+    this.options.speech.preempt(priority);
   }
 
   /** Called when a sentence was actually performed on stage. */
@@ -308,9 +341,10 @@ export class Director {
     if (this.paused || this.standby || this.turnInFlight) return;
     const now = this.now();
     if (now < this.cooldownUntil || now - this.lastTurnAt < MIN_TURN_GAP_MS) return;
-    // Start the next turn while the last sentence is still playing, but never
-    // stack up more than one turn of queued speech.
-    if (this.options.speech.pending() > 0) return;
+    // Just in time: start the next turn when what's already queued will run
+    // out about when its first sentence can be ready. Earlier would react to
+    // older news and pile up speech; later leaves dead air.
+    if (this.options.speech.remainingMs() > this.leadMs) return;
 
     const turn = this.chooseTurn(now);
     if (turn) await this.runTurn(turn);
@@ -328,6 +362,7 @@ export class Director {
       segment: this.segment(),
       stats: { viewers: this.viewers, likes: this.counters.likes, uptimeMinutes: this.stats().uptimeMinutes },
       recentLines: this.recentLines,
+      upcomingLines: speech.upcoming(),
       originAt: now,
     };
 
@@ -375,21 +410,49 @@ export class Director {
 
   private async runTurn(turn: TurnRequest & { originAt: number }): Promise<void> {
     this.turnInFlight = turn.kind;
-    this.lastTurnAt = this.now();
+    const startedAt = (this.lastTurnAt = this.now());
     const abort = new AbortController();
     this.turnAbort = abort;
     const turnId = `t${++this.turnCounter}`;
+    const priority = TURN_PRIORITY[turn.kind];
     this.options.hooks?.onTurn?.({ id: turnId, kind: turn.kind, items: turn.items.length });
+
+    // Watchdog: a brain that hangs must not hold the show. The race below
+    // also frees the director from a generator that ignores the abort signal.
+    let timedOut = false;
+    const giveUp = () => {
+      timedOut = true;
+      abort.abort();
+    };
+    const turnTimeoutMs = this.options.turnTimeoutMs ?? TURN_TIMEOUT_MS;
+    let watchdog = setTimeout(giveUp, this.options.firstLineTimeoutMs ?? FIRST_LINE_TIMEOUT_MS);
+    const aborted = new Promise<"aborted">((resolve) => abort.signal.addEventListener("abort", () => resolve("aborted"), { once: true }));
+    const lines = this.options.host.generate(turn, abort.signal)[Symbol.asyncIterator]();
     let first = true;
     try {
-      for await (const utterance of this.options.host.generate(turn, abort.signal)) {
-        if (abort.signal.aborted || this.paused) break;
-        this.options.speech.enqueue(utterance, { meta: { turnId, turnKind: turn.kind, originAt: turn.originAt, first } });
+      while (!abort.signal.aborted && !this.paused) {
+        const pending = lines.next();
+        pending.catch(() => undefined); // if the race below is lost, a late failure is moot
+        const next = await Promise.race([pending, aborted]);
+        if (next === "aborted" || next.done || abort.signal.aborted || this.paused) break;
+        if (first) {
+          clearTimeout(watchdog);
+          watchdog = setTimeout(giveUp, Math.max(0, turnTimeoutMs - (this.now() - startedAt)));
+          this.leadMs = clampLead(0.7 * this.leadMs + 0.3 * (this.now() - startedAt + PREPARE_ALLOWANCE_MS));
+        }
+        const accepted = this.options.speech.enqueue(next.value, {
+          priority,
+          meta: { turnId, turnKind: turn.kind, originAt: turn.originAt, first },
+        });
         first = false;
+        // The turn was cut (a blocked sentence, or a viewer took the stage): stop writing it.
+        if (!accepted) break;
       }
+      if (timedOut && first) throw new Error("the host took too long to start talking");
+      if (timedOut) this.options.log?.warn(`turn cut off: the host was still writing after ${Math.round(turnTimeoutMs / 1000)} s`);
       this.failures = 0;
     } catch (err) {
-      if (!abort.signal.aborted) {
+      if (!abort.signal.aborted || timedOut) {
         this.failures += 1;
         const backoff = Math.min(30_000, 1_000 * 2 ** this.failures);
         this.cooldownUntil = this.now() + backoff;
@@ -397,8 +460,15 @@ export class Director {
         this.options.hooks?.onTurnFailed?.(err);
       }
     } finally {
+      clearTimeout(watchdog);
+      if (!abort.signal.aborted) abort.abort();
+      void lines.return?.(undefined)?.catch(() => undefined);
       this.turnInFlight = null;
       this.turnAbort = undefined;
     }
   }
+}
+
+function clampLead(ms: number): number {
+  return Math.min(6_000, Math.max(1_200, ms));
 }

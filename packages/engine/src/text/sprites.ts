@@ -1,6 +1,6 @@
 import { Spring, SPRINGS } from "../anim/spring";
 import type { Gl, Texture } from "../gl/gl";
-import { layoutCaption, wordAtProgress, type CaptionLayout } from "./layout";
+import { layoutCaption, wordAtProgress, wordAtTime, type CaptionLayout } from "./layout";
 
 /**
  * Text drawn once with Canvas2D into a texture, then moved and faded on the
@@ -102,8 +102,9 @@ export class Caption {
   readonly sprite: TextSprite;
   private layout: CaptionLayout | null = null;
   private text = "";
-  private startedAt = -1;
+  private speaking = false;
   private durationS = 1;
+  private timings: readonly number[] | null = null;
   private shownWord = -2;
   private glow = "#7CF5FF";
   private fadeAt = -1;
@@ -126,7 +127,8 @@ export class Caption {
       fontSizes: CAPTION.sizes,
       measure: (size) => measureWith(`720 ${size}px ${FONT_FAMILY}`),
     });
-    this.startedAt = -1;
+    this.speaking = false;
+    this.timings = null;
     this.shownWord = -2;
     this.fadeAt = -1;
     this.sprite.opacity.target = 1;
@@ -134,14 +136,20 @@ export class Caption {
     this.sprite.offsetY.target = 0;
   }
 
-  start(now: number, durationS: number): void {
-    this.startedAt = now;
+  /**
+   * The line's sound is starting. From here the reveal follows the playback
+   * position passed to `update`; `timings` are word start times in ms when
+   * the voice reported them (they must match the layout's words).
+   */
+  start(durationS: number, timings?: readonly number[]): void {
+    this.speaking = true;
     this.durationS = Math.max(0.4, durationS);
+    this.timings = timings && this.layout && timings.length === this.layout.words.length ? timings : null;
   }
 
   /** Called when speech ends: hold the full line briefly, then fade. */
   finish(now: number): void {
-    this.startedAt = -1;
+    this.speaking = false;
     this.shownWord = (this.layout?.words.length ?? 0) - 1;
     this.fadeAt = now + 1.6;
   }
@@ -156,12 +164,15 @@ export class Caption {
     if (this.text) this.show(this.text);
   }
 
-  update(dt: number, now: number, scale: number): void {
+  /** `elapsedS`: seconds into the line on the audio clock (negative before it sounds). */
+  update(dt: number, now: number, scale: number, elapsedS: number): void {
     if (this.fadeAt >= 0 && now > this.fadeAt) this.hide();
     if (this.layout) {
       let word = this.shownWord;
-      if (this.startedAt >= 0) {
-        word = wordAtProgress(this.layout.words, (now - this.startedAt) / this.durationS);
+      if (this.speaking) {
+        if (elapsedS < 0) word = -1;
+        else if (this.timings) word = wordAtTime(this.timings, elapsedS * 1000);
+        else word = wordAtProgress(this.layout.words, elapsedS / this.durationS);
       } else if (this.shownWord === -2) {
         word = -1;
       }

@@ -12,25 +12,32 @@ import {
   stageServerMessageSchema,
   studioClientMessageSchema,
   tiktokHandleSchema,
+  speechWords,
 } from "../src";
 
-describe("protocol v1 contracts", () => {
+describe("protocol v2 contracts", () => {
   it("round-trips every server-to-stage message", () => {
     const look = { character: "orb", primary: "#7CF5FF", secondary: "#FF5FD2", background: "#0B0420" };
     const messages = [
-      { v: 1, t: "hello", serverTime: 1, name: "Blip", look, disclosure: "Blip is an AI host" },
-      { v: 1, t: "speak", id: "c1", text: "Hi!", emotion: "happy", audioUrl: null, durationMs: 1200 },
-      { v: 1, t: "stop" },
-      { v: 1, t: "alert", kind: "gift", name: "Maria", giftName: "Rose", count: 3, diamonds: 3 },
-      { v: 1, t: "segment", title: "Hangout" },
-      { v: 1, t: "stats", viewers: 5, likes: 10 },
-      { v: 1, t: "look", name: "Blip", look },
-      { v: 1, t: "hold" },
+      { v: 2, t: "hello", serverTime: 1, name: "Blip", look, disclosure: "Blip is an AI host" },
+      { v: 2, t: "speak", id: "c1", text: "Hi!", emotion: "happy", audioUrl: null, durationMs: 1200 },
+      { v: 2, t: "cue", id: "c2", text: "Hi there!", emotion: "happy", audioUrl: "/a/c2", durationMs: 1200, words: [0, 310] },
+      { v: 2, t: "drop", ids: ["c2"] },
+      { v: 2, t: "stop" },
+      { v: 2, t: "alert", kind: "gift", name: "Maria", giftName: "Rose", count: 3, diamonds: 3 },
+      { v: 2, t: "segment", title: "Hangout" },
+      { v: 2, t: "stats", viewers: 5, likes: 10 },
+      { v: 2, t: "look", name: "Blip", look },
+      { v: 2, t: "hold" },
     ];
     for (const message of messages) {
       expect(parseMessage(stageServerMessageSchema, JSON.stringify(message))).toEqual(message as never);
     }
-    expect(PROTOCOL_VERSION).toBe(1);
+    expect(PROTOCOL_VERSION).toBe(2);
+  });
+
+  it("splits a line into the words captions and word timings use", () => {
+    expect(speechWords("  Five roses   from Theo!\n")).toEqual(["Five", "roses", "from", "Theo!"]);
   });
 
   it("validates untrusted client messages without throwing", () => {

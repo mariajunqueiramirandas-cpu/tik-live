@@ -12,8 +12,16 @@ export interface PlaybackHandle {
   done: Promise<void>;
   /** Seconds the line will take, known once audio decodes. */
   duration: number;
+  /**
+   * Seconds since the line started, on the clock the sound plays on (the
+   * audio clock, not the frame clock): negative until it starts. Captions
+   * follow this, so a slow frame can't put them behind the voice.
+   */
+  elapsed(): number;
   stop(): void;
 }
+
+const NOT_PLAYED: PlaybackHandle = { done: Promise.resolve(), duration: 0, elapsed: () => -1, stop: () => {} };
 
 export interface AudioEngineOptions {
   muted?: boolean;
@@ -36,6 +44,8 @@ export class AudioEngine {
   private source: AudioBufferSourceNode | null = null;
   private envelope: { fn: Envelope; start: number } | null = null;
   private resolveCurrent: (() => void) | null = null;
+  /** Bumped by every play and stop: a load that finishes after it was superseded never plays. */
+  private token = 0;
   private readonly cache = new Map<string, Promise<AudioBuffer | null>>();
   private readonly now: () => number;
   private readonly fetcher: (url: string) => Promise<Response>;
@@ -96,20 +106,26 @@ export class AudioEngine {
   /**
    * Plays a line. With `audioUrl`, fetches (or takes the prefetched clip),
    * decodes and schedules it; without one (or if anything fails), plays a
-   * silent envelope of `fallbackMs`.
+   * silent envelope of `fallbackMs`. `leadS` delays the start (the pause
+   * between two queued lines). If another play or a stop comes first, the
+   * returned handle is already done and nothing plays.
    */
-  async play(text: string, audioUrl: string | null, fallbackMs: number): Promise<PlaybackHandle> {
+  async play(text: string, audioUrl: string | null, fallbackMs: number, leadS = 0.02): Promise<PlaybackHandle> {
     this.stop();
+    const token = this.token;
     const ctx = audioUrl ? this.ensure() : null;
     if (ctx && audioUrl) {
       const buffer = await this.load(audioUrl);
       this.cache.delete(audioUrl);
-      if (buffer && ctx.state === "running") return this.playBuffer(ctx, buffer, text);
+      if (token !== this.token) return NOT_PLAYED;
+      if (buffer && ctx.state === "running") return this.playBuffer(ctx, buffer, leadS);
     }
-    return this.playEnvelope(text, fallbackMs);
+    if (token !== this.token) return NOT_PLAYED;
+    return this.playEnvelope(text, fallbackMs, leadS);
   }
 
   stop(): void {
+    this.token += 1;
     if (this.source) {
       try {
         this.source.onended = null;
@@ -230,7 +246,7 @@ export class AudioEngine {
     return ctx;
   }
 
-  private playBuffer(ctx: AudioContext, buffer: AudioBuffer, _text: string): PlaybackHandle {
+  private playBuffer(ctx: AudioContext, buffer: AudioBuffer, leadS: number): PlaybackHandle {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.analyser!);
@@ -246,14 +262,22 @@ export class AudioEngine {
         resolve();
       };
     });
-    // A hair of lead time keeps the start sample-accurate and glitch-free.
-    source.start(ctx.currentTime + 0.02);
-    return { done, duration: buffer.duration, stop: () => this.stop() };
+    // At least a hair of lead time keeps the start sample-accurate and glitch-free.
+    const startAt = ctx.currentTime + Math.max(0.02, leadS);
+    source.start(startAt);
+    return {
+      done,
+      duration: buffer.duration,
+      elapsed: () => ctx.currentTime - startAt,
+      stop: () => {
+        if (this.source === source) this.stop();
+      },
+    };
   }
 
-  private playEnvelope(text: string, durationMs: number): PlaybackHandle {
+  private playEnvelope(text: string, durationMs: number, leadS: number): PlaybackHandle {
     const fn = syllableEnvelope(text, durationMs);
-    const envelope = { fn, start: this.now() };
+    const envelope = { fn, start: this.now() + Math.max(0, leadS) * 1000 };
     this.envelope = envelope;
     const done = new Promise<void>((resolve) => {
       const finish = () => {
@@ -265,9 +289,16 @@ export class AudioEngine {
         resolve();
       };
       this.resolveCurrent = finish;
-      const timer = setTimeout(finish, durationMs);
+      const timer = setTimeout(finish, durationMs + Math.max(0, leadS) * 1000);
     });
-    return { done, duration: durationMs / 1000, stop: () => this.stop() };
+    return {
+      done,
+      duration: durationMs / 1000,
+      elapsed: () => (this.now() - envelope.start) / 1000,
+      stop: () => {
+        if (this.envelope === envelope) this.stop();
+      },
+    };
   }
 }
 

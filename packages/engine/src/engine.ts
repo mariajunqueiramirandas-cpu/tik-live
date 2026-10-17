@@ -2,7 +2,8 @@ import { disclosureText, type Emotion, type Look, type StageServerPayload } from
 import { QualityGovernor } from "./anim/governor";
 import { createRandom } from "./anim/random";
 import { Spring, SpringVector, SPRINGS } from "./anim/spring";
-import { AudioEngine, type PlaybackHandle } from "./audio/audio";
+import { AudioEngine } from "./audio/audio";
+import { Speaker, type Line } from "./audio/speaker";
 import { FrameCapture, type CaptureOptions, type CaptureStats } from "./capture";
 import type { MouthShape } from "./audio/envelope";
 import { FaceController } from "./character/face";
@@ -102,12 +103,6 @@ const GOLD: Rgb = hexToRgb("#FFD15C");
 const INK_DARK: Rgb = hexToRgb("#0B0420");
 const DEFAULT_LOOK: Look = { character: "orb", primary: "#7CF5FF", secondary: "#FF5FD2", background: "#0B0420" };
 
-interface Cue {
-  id: string;
-  handle: PlaybackHandle | null;
-  cancelled: boolean;
-}
-
 class Emitter {
   private readonly listeners: { [K in keyof EngineEvents]: Set<EngineEvents[K]> } = { spoken: new Set(), telemetry: new Set() };
 
@@ -146,55 +141,6 @@ export function createEngine(canvas: HTMLCanvasElement, options: EngineOptions):
   } catch (err) {
     if (err instanceof WebGLUnavailableError) return new FallbackEngine(canvas, options);
     throw err;
-  }
-}
-
-/** Plays one line at a time and reports when it finished. */
-class Speaker {
-  private cue: Cue | null = null;
-
-  constructor(
-    private readonly audio: AudioEngine,
-    private readonly mode: EngineMode,
-    private readonly events: Emitter,
-  ) {}
-
-  get current(): Cue | null {
-    return this.cue;
-  }
-
-  async speak(
-    id: string,
-    text: string,
-    audioUrl: string | null,
-    durationMs: number,
-    hooks: { started?: (durationS: number) => void; finished?: () => void } = {},
-  ): Promise<void> {
-    this.stop();
-    const cue: Cue = { id, handle: null, cancelled: false };
-    this.cue = cue;
-    const handle = await this.audio.play(text, audioUrl, durationMs);
-    if (cue.cancelled) {
-      handle.stop();
-      return;
-    }
-    cue.handle = handle;
-    hooks.started?.(handle.duration);
-    await handle.done;
-    if (cue.cancelled || this.cue !== cue) return;
-    this.cue = null;
-    hooks.finished?.();
-    // Previews never pace the host; only on-air stages (and the demo) report.
-    if (this.mode !== "preview") this.events.emit("spoken", id);
-  }
-
-  stop(): void {
-    if (this.cue) {
-      this.cue.cancelled = true;
-      this.cue.handle?.stop();
-      this.cue = null;
-    }
-    this.audio.stop();
   }
 }
 
@@ -299,8 +245,23 @@ export class Engine implements StageEngine {
       muted: options.muted ?? options.mode === "preview",
       ...(options.mode === "broadcast" ? { sampleRate: BROADCAST_SAMPLE_RATE } : {}),
       ...(options.fetch ? { fetch: options.fetch } : {}),
+      // A manual clock drives captions-only speech too, so test frames are deterministic.
+      ...(options.manualClock ? { now: () => this.time * 1000 } : {}),
     });
-    this.speaker = new Speaker(this.audio, this.mode, this.events);
+    this.speaker = new Speaker(this.audio, {
+      // Previews never pace the host; only on-air stages (and the demo) report.
+      ...(this.mode !== "preview" ? { spoken: (id: string) => this.events.emit("spoken", id) } : {}),
+      started: (line, handle) => {
+        this.face.setEmotion(line.emotion);
+        this.emotionUntil = Infinity;
+        this.caption.show(line.text);
+        this.caption.start(handle.duration, line.words);
+      },
+      finished: () => {
+        this.caption.finish(this.time);
+        this.emotionUntil = this.time + 2.5;
+      },
+    });
     this.detectRenderer();
     this.build();
     this.caption = new Caption(this.gl);
@@ -323,10 +284,13 @@ export class Engine implements StageEngine {
         this.setLook(message.name, message.look);
         break;
       case "speak":
-        void this.speak(message.id, message.text, message.emotion, message.audioUrl, message.durationMs);
+        this.speaker.speak(lineOf(message));
         break;
-      case "prefetch":
-        this.audio.prefetch(message.audioUrl);
+      case "cue":
+        this.speaker.enqueue(lineOf(message));
+        break;
+      case "drop":
+        this.speaker.drop(message.ids);
         break;
       case "stop":
         this.speaker.stop();
@@ -483,19 +447,6 @@ export class Engine implements StageEngine {
 
   // ---- speech -------------------------------------------------------------
 
-  private async speak(id: string, text: string, emotion: Emotion, audioUrl: string | null, durationMs: number): Promise<void> {
-    this.face.setEmotion(emotion);
-    this.emotionUntil = Infinity;
-    this.caption.show(text);
-    await this.speaker.speak(id, text, audioUrl, durationMs, {
-      started: (durationS) => this.caption.start(this.time, durationS),
-      finished: () => {
-        this.caption.finish(this.time);
-        this.emotionUntil = this.time + 2.5;
-      },
-    });
-  }
-
   private alert(kind: "gift" | "follow" | "share", name: string, detail: string, diamonds: number): void {
     this.alerts.push(kind, name, detail, this.time, this.scale);
     if (kind === "gift") {
@@ -578,10 +529,11 @@ export class Engine implements StageEngine {
       this.bounce.impulse(arrival.big ? -3 : -1.2);
       if (this.arrivals.length === 0 && !this.speaker.current) this.setEmotion("excited", 1.8);
     }
-    const speaking = this.speaker.current !== null;
+    const cue = this.speaker.current;
+    const speaking = cue !== null;
     if (!speaking && t > this.emotionUntil && this.face.current !== "neutral") this.face.setEmotion("neutral");
     this.face.update(dt, t, speaking ? this.amplitude : 0, this.vowel);
-    this.caption.update(dt, t, this.scale);
+    this.caption.update(dt, t, this.scale, cue?.handle ? cue.handle.elapsed() : -1);
     this.alerts.update(dt, t);
     this.chrome.update(dt, t);
   }
@@ -881,15 +833,16 @@ class FallbackEngine implements StageEngine {
       ...(options.mode === "broadcast" ? { sampleRate: BROADCAST_SAMPLE_RATE } : {}),
       ...(options.fetch ? { fetch: options.fetch } : {}),
     });
-    this.speaker = new Speaker(this.audio, this.mode, this.events);
+    this.speaker = new Speaker(this.audio, this.mode !== "preview" ? { spoken: (id) => this.events.emit("spoken", id) } : {});
     this.ctx = canvas.getContext("2d");
     this.resize();
     queueMicrotask(() => this.events.emit("telemetry", this.telemetry()));
   }
 
   apply(message: StageServerPayload): void {
-    if (message.t === "speak") void this.speaker.speak(message.id, message.text, message.audioUrl, message.durationMs);
-    else if (message.t === "prefetch") this.audio.prefetch(message.audioUrl);
+    if (message.t === "speak") this.speaker.speak(lineOf(message));
+    else if (message.t === "cue") this.speaker.enqueue(lineOf(message));
+    else if (message.t === "drop") this.speaker.drop(message.ids);
     else if (message.t === "stop") this.speaker.stop();
     else if (message.t === "hello" || message.t === "look") this.setLook(message.name);
   }
@@ -945,4 +898,15 @@ class FallbackEngine implements StageEngine {
     ctx.fillText("Turn on hardware acceleration in OBS:", w / 2, h / 2 + 18);
     ctx.fillText("Settings > Advanced > Sources", w / 2, h / 2 + 42);
   }
+}
+
+function lineOf(message: Extract<StageServerPayload, { t: "speak" | "cue" }>): Line {
+  return {
+    id: message.id,
+    text: message.text,
+    emotion: message.emotion,
+    audioUrl: message.audioUrl,
+    durationMs: message.durationMs,
+    words: message.words,
+  };
 }

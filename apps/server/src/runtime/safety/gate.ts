@@ -4,6 +4,9 @@ import type { Logger } from "../../log";
 import type { UsageReport } from "../usage";
 import { checkSpokenOutput } from "./rules";
 
+/** A sentence the moderator hasn't cleared by then counts as a moderator failure. */
+export const MODERATION_TIMEOUT_MS = 6_000;
+
 export type SafetyVerdict = { safe: true } | { safe: false; reason: string };
 
 /** A second opinion on whether a sentence is OK to say on a public stream. */
@@ -52,6 +55,8 @@ export interface ClaudeModeratorOptions {
 
 export class ClaudeModerator implements Moderator {
   private readonly cache = new Map<string, SafetyVerdict>();
+  /** Reviews in flight, so the same sentence asked twice at once costs one call. */
+  private readonly inflight = new Map<string, Promise<SafetyVerdict>>();
   private policy: string;
 
   constructor(private readonly options: ClaudeModeratorOptions) {
@@ -67,11 +72,19 @@ export class ClaudeModerator implements Moderator {
     this.cache.clear();
   }
 
-  async review(sentence: string): Promise<SafetyVerdict> {
+  review(sentence: string): Promise<SafetyVerdict> {
     const key = sentence.trim().toLowerCase();
     const cached = this.cache.get(key);
-    if (cached) return cached;
+    if (cached) return Promise.resolve(cached);
+    const pending = this.inflight.get(key);
+    if (pending) return pending;
+    const review = this.request(sentence, key).finally(() => this.inflight.delete(key));
+    this.inflight.set(key, review);
+    return review;
+  }
 
+  private async request(sentence: string, key: string): Promise<SafetyVerdict> {
+    // No retries: a line that waits on a retry is a line said too late; the gate decides what a failure means.
     const response = await this.options.client.messages.create({
       model: this.options.model,
       max_tokens: 2000,
@@ -83,7 +96,7 @@ export class ClaudeModerator implements Moderator {
           content: `<sentence>${escapeForPrompt(sentence)}</sentence>\nIs this sentence safe to say on stream?`,
         },
       ],
-    });
+    }, { timeout: MODERATION_TIMEOUT_MS, maxRetries: 0 });
     this.options.onUsage?.({
       kind: "moderation",
       model: this.options.model,
@@ -118,6 +131,8 @@ export interface SafetyGateOptions {
   moderator?: Moderator;
   /** When the moderator errors: speak anyway (true) or drop the sentence (false). */
   failOpen?: boolean;
+  /** How long the moderator gets per sentence before it counts as failed. */
+  timeoutMs?: number;
   log?: Logger;
 }
 
@@ -144,11 +159,20 @@ export class SafetyGate {
     const rules = checkSpokenOutput(sentence, this.blocklist);
     if (!rules.ok) return { safe: false, reason: rules.reason };
     if (!this.options.moderator) return { safe: true };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutMs = this.options.timeoutMs ?? MODERATION_TIMEOUT_MS;
     try {
-      return await this.options.moderator.review(sentence);
+      return await Promise.race([
+        this.options.moderator.review(sentence),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`moderator took longer than ${timeoutMs} ms`)), timeoutMs);
+        }),
+      ]);
     } catch (err) {
       this.options.log?.warn("moderator failed", err);
       return this.options.failOpen ? { safe: true } : { safe: false, reason: "moderator unavailable" };
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

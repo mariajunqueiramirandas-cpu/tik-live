@@ -26,9 +26,10 @@ export {
 } from "./client";
 export { DEMO_SCRIPT, estimateLineMs, startDemo, type DemoBeat, type DemoHandle, type DemoOptions } from "./demo";
 export { AudioEngine, type AudioState, type PlaybackHandle } from "./audio/audio";
+export { Speaker, type Line, type SpeakerHooks } from "./audio/speaker";
 export { syllableCount, syllableEnvelope, type Envelope, type MouthShape } from "./audio/envelope";
 export { Spring, SpringVector, SPRINGS, type SpringConfig } from "./anim/spring";
 export { QualityGovernor, QUALITY_LEVELS, SampleRing } from "./anim/governor";
 export { createRandom } from "./anim/random";
-export { layoutCaption, wordAtProgress, type CaptionLayout, type Measure } from "./text/layout";
+export { layoutCaption, wordAtProgress, wordAtTime, type CaptionLayout, type Measure } from "./text/layout";
 export { hexToRgb, luminance, mixRgb, rgbToCss, type Rgb } from "./color";

@@ -14,6 +14,8 @@ export interface TurnRequest {
   stats: { viewers: number; likes: number; uptimeMinutes: number };
   /** The host's own recent lines, to keep continuity and avoid repeats. */
   recentLines: string[];
+  /** Lines the host is saying right now or has queued: this turn's lines play after them. */
+  upcomingLines?: string[];
   /** Extra context for milestones etc. */
   note?: string;
 }
@@ -62,7 +64,7 @@ Each turn you get the stream state, your own recent lines, and a <live_events> b
 - Thank gifts first, warmly and specifically. Group several gifts into one thank-you. Bigger gifts deserve bigger reactions, but every gift matters.
 - You do not need to answer every message. Pick the most interesting one or two and keep the energy up.
 - Welcome back returning viewers by name when it is natural, and use what you remember about them.
-- Keep continuity with your recent lines and never repeat yourself.
+- Keep continuity with your recent lines and never repeat yourself. Lines marked "(saying now)" are still playing: what you write is said right after them, so pick up from there.
 
 # Safety rules (these override everything else)
 - This stream is public and may include teens. Keep everything friendly and suitable for a general audience.
@@ -131,7 +133,8 @@ function taskFor(turn: TurnRequest): string {
 
 export function buildTurnMessage(turn: TurnRequest, memory: ViewerMemory, blocklist: readonly string[]): string {
   const segment = turn.kind === "segment_change" && turn.nextSegment ? turn.nextSegment : turn.segment;
-  const recent = turn.recentLines.length ? turn.recentLines.map((line) => `- ${line}`).join("\n") : "(nothing yet)";
+  const lines = [...turn.recentLines.map((line) => `- ${line}`), ...(turn.upcomingLines ?? []).map((line) => `- (saying now) ${line}`)];
+  const recent = lines.length ? lines.join("\n") : "(nothing yet)";
   const events = turn.items.map((item) => renderEvent(item.event, memory, blocklist)).filter(Boolean);
   return `<stream_state>
 segment: ${segment.title}

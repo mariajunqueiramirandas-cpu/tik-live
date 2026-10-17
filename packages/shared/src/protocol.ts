@@ -8,7 +8,7 @@ import { emotionSchema, lookSchema } from "./persona";
  * and `t` (type). The server validates every inbound message and speaks the
  * current and previous version.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 const v = z.literal(PROTOCOL_VERSION);
 
@@ -17,6 +17,21 @@ const v = z.literal(PROTOCOL_VERSION);
 
 export const STAGE_ROLES = ["program", "preview", "broadcast"] as const;
 export type StageRole = (typeof STAGE_ROLES)[number];
+
+const cueFields = {
+  id: z.string(),
+  text: z.string(),
+  emotion: emotionSchema,
+  audioUrl: z.string().nullable(),
+  durationMs: z.number(),
+  /** When each word starts, in ms from the start of the line (one per word of `speechWords(text)`). */
+  words: z.array(z.number()).max(200).optional(),
+};
+
+/** The words of a line as captions lay them out; word timings index into this. */
+export function speechWords(text: string): string[] {
+  return text.split(/\s+/).filter(Boolean);
+}
 
 export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({
@@ -29,17 +44,12 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
     /** Set when the client speaks an unsupported version: reload the page. */
     reload: z.boolean().optional(),
   }),
-  z.object({
-    v,
-    t: z.literal("speak"),
-    id: z.string(),
-    text: z.string(),
-    emotion: emotionSchema,
-    audioUrl: z.string().nullable(),
-    durationMs: z.number(),
-  }),
-  /** Audio for an upcoming line: fetch and decode it now so playback starts instantly. */
-  z.object({ v, t: z.literal("prefetch"), audioUrl: z.string() }),
+  /** Say this line now, cutting off anything playing (previews and the demo). */
+  z.object({ v, t: z.literal("speak"), ...cueFields }),
+  /** Queue this line: it plays right after the lines queued before it, without a gap. */
+  z.object({ v, t: z.literal("cue"), ...cueFields }),
+  /** Take these queued lines back if they haven't started; a line already playing finishes. */
+  z.object({ v, t: z.literal("drop"), ids: z.array(z.string()).max(64) }),
   z.object({ v, t: z.literal("stop") }),
   z.object({
     v,
@@ -152,15 +162,15 @@ export interface LiveEventSummary {
 // Studio: server -> studio
 
 export type StudioServerMessage =
-  | { v: 1; t: "snapshot"; state: RuntimeSnapshot }
-  | { v: 1; t: "patch"; state: Partial<RuntimeSnapshot> }
+  | { v: typeof PROTOCOL_VERSION; t: "snapshot"; state: RuntimeSnapshot }
+  | { v: typeof PROTOCOL_VERSION; t: "patch"; state: Partial<RuntimeSnapshot> }
   /** Sent right after the snapshot: recent lines and events, oldest first, so the room isn't empty on reload. */
-  | { v: 1; t: "history"; transcript: TranscriptLine[]; events: LiveEventSummary[] }
-  | { v: 1; t: "transcript"; line: TranscriptLine }
-  | { v: 1; t: "live-event"; event: LiveEventSummary }
-  | { v: 1; t: "log"; level: "info" | "warn" | "error"; msg: string; at: number }
-  | { v: 1; t: "notice"; level: "info" | "warn" | "error"; code: string; message: string; at: number }
-  | { v: 1; t: "ack"; id: string; ok: boolean; error?: string };
+  | { v: typeof PROTOCOL_VERSION; t: "history"; transcript: TranscriptLine[]; events: LiveEventSummary[] }
+  | { v: typeof PROTOCOL_VERSION; t: "transcript"; line: TranscriptLine }
+  | { v: typeof PROTOCOL_VERSION; t: "live-event"; event: LiveEventSummary }
+  | { v: typeof PROTOCOL_VERSION; t: "log"; level: "info" | "warn" | "error"; msg: string; at: number }
+  | { v: typeof PROTOCOL_VERSION; t: "notice"; level: "info" | "warn" | "error"; code: string; message: string; at: number }
+  | { v: typeof PROTOCOL_VERSION; t: "ack"; id: string; ok: boolean; error?: string };
 
 type StudioPayloadOf<T> = T extends unknown ? Omit<T, "v"> : never;
 export type StudioServerPayload = StudioPayloadOf<StudioServerMessage>;

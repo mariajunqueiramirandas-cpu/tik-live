@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import type { ChannelDto, RuntimeSnapshot } from "@tik-live/shared";
+import { PROTOCOL_VERSION, type ChannelDto, type RuntimeSnapshot } from "@tik-live/shared";
 import path from "node:path";
 import { openDatabase } from "../../src/db/client";
 import { createSession, listSessions, listUtterances } from "../../src/repos/streams";
@@ -26,7 +26,7 @@ async function programStage(channel: ChannelDto): Promise<TestSocket> {
   const stage = await server.socket(`/ws/stage/${stageKeyFrom(channel.stageUrl)}?role=program`);
   stage.ws.addEventListener("message", (event) => {
     const message = JSON.parse(String(event.data));
-    if (message.t === "speak") stage.send({ v: 1, t: "spoken", id: message.id });
+    if (message.t === "cue") stage.send({ v: PROTOCOL_VERSION, t: "spoken", id: message.id });
   });
   return stage;
 }
@@ -36,7 +36,7 @@ describe("running a channel end to end", () => {
     const channel = await newChannel();
     const stage = await programStage(channel);
     const hello = await stage.next((m) => m.t === "hello");
-    expect(hello).toMatchObject({ v: 1, name: "Blip", disclosure: "Blip is an AI host" });
+    expect(hello).toMatchObject({ v: PROTOCOL_VERSION, name: "Blip", disclosure: "Blip is an AI host" });
 
     const studio = await server.socket(`/ws/studio/${channel.id}`, "streamer");
     const snapshot = await studio.next<{ state: RuntimeSnapshot }>((m) => m.t === "snapshot");
@@ -47,8 +47,8 @@ describe("running a channel end to end", () => {
     expect(started.body.channel.desiredState).toBe("running");
 
     // The opening line goes to the stage, and the studio sees it in the transcript.
-    const speak = await stage.next((m) => m.t === "speak");
-    expect(speak).toMatchObject({ emotion: "excited", audioUrl: null });
+    const cue = await stage.next((m) => m.t === "cue");
+    expect(cue).toMatchObject({ emotion: "excited", audioUrl: null });
     const line = await studio.next<{ line: { text: string; status: string } }>((m) => m.t === "transcript" && m.line.status === "spoken");
     expect(line.line.text).toContain("Blip");
     await studio.next((m) => m.t === "patch" && m.state.status === "live");
@@ -58,7 +58,7 @@ describe("running a channel end to end", () => {
     source.push({ kind: "viewers", at: Date.now(), count: 7 });
     source.push({ kind: "gift", at: Date.now(), viewer: { id: "v1", handle: "maria", nickname: "Maria" }, giftName: "Rose", count: 3, diamonds: 3 });
     await stage.next((m) => m.t === "alert" && m.kind === "gift" && m.name === "Maria");
-    await stage.next((m) => m.t === "speak" && m.text.includes("Maria"));
+    await stage.next((m) => m.t === "cue" && m.text.includes("Maria"));
     await studio.next((m) => m.t === "live-event" && m.event.kind === "gift");
 
     // Injection attempts from chat are filtered and shown as such in the studio.
@@ -67,13 +67,13 @@ describe("running a channel end to end", () => {
     expect(filtered.event.filtered).toBe("prompt injection");
 
     // Commands: pause acks and flips state; say is spoken even while paused.
-    studio.send({ v: 1, t: "command", id: "c1", command: { kind: "pause" } });
+    studio.send({ v: PROTOCOL_VERSION, t: "command", id: "c1", command: { kind: "pause" } });
     expect(await studio.next((m) => m.t === "ack" && m.id === "c1")).toMatchObject({ ok: true });
     await studio.next((m) => m.t === "patch" && m.state.paused === true);
-    studio.send({ v: 1, t: "command", id: "c2", command: { kind: "say", text: "Operator here, hello!" } });
+    studio.send({ v: PROTOCOL_VERSION, t: "command", id: "c2", command: { kind: "say", text: "Operator here, hello!" } });
     expect(await studio.next((m) => m.t === "ack" && m.id === "c2")).toMatchObject({ ok: true });
-    await stage.next((m) => m.t === "speak" && m.text === "Operator here, hello!");
-    studio.send({ v: 1, t: "command", id: "c3", command: { kind: "segment", id: "does-not-exist" } });
+    await stage.next((m) => m.t === "cue" && m.text === "Operator here, hello!");
+    studio.send({ v: PROTOCOL_VERSION, t: "command", id: "c3", command: { kind: "segment", id: "does-not-exist" } });
     expect(await studio.next((m) => m.t === "ack" && m.id === "c3")).toMatchObject({ ok: false });
     studio.send("not json at all");
     expect(await studio.next((m) => m.t === "ack" && m.id === "?")).toMatchObject({ ok: false });
@@ -106,7 +106,7 @@ describe("running a channel end to end", () => {
     const channel = await newChannel();
     const studio = await server.socket(`/ws/studio/${channel.id}`, "streamer");
     await studio.next((m) => m.t === "snapshot");
-    studio.send({ v: 1, t: "command", id: "x", command: { kind: "pause" } });
+    studio.send({ v: PROTOCOL_VERSION, t: "command", id: "x", command: { kind: "pause" } });
     expect(await studio.next((m) => m.t === "ack")).toMatchObject({ ok: false, error: "Start the host first." });
     expect((await server.api("/ws/stage/AAAAAAAAAAAAAAAAAAAAAA")).status).toBe(404);
     studio.close();

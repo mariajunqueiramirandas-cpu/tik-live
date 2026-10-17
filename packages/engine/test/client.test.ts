@@ -56,8 +56,8 @@ describe("connectStage", () => {
     expect(telemetry).toMatchObject({ t: "telemetry", fps: 60, renderer: "fake" });
     expect(states).toEqual(["connected"]);
 
-    socket().receive({ v: 1, t: "hello", serverTime: 1, name: "Blip", look, disclosure: "Blip is an AI host" });
-    socket().receive({ v: 1, t: "segment", title: "Q&A" });
+    socket().receive({ v: PROTOCOL_VERSION, t: "hello", serverTime: 1, name: "Blip", look, disclosure: "Blip is an AI host" });
+    socket().receive({ v: PROTOCOL_VERSION, t: "segment", title: "Q&A" });
     expect(engine.applied.map((m) => m.t)).toEqual(["hello", "segment"]);
     expect("v" in (engine.applied[0] as object)).toBe(false);
   });
@@ -66,15 +66,15 @@ describe("connectStage", () => {
     const { engine, socket } = setup();
     socket().open();
     socket().receive("not json");
-    socket().receive({ v: 1, t: "explode" });
-    socket().receive({ v: 1, t: "speak", id: 5 });
+    socket().receive({ v: PROTOCOL_VERSION, t: "explode" });
+    socket().receive({ v: PROTOCOL_VERSION, t: "speak", id: 5 });
     expect(engine.applied).toEqual([]);
   });
 
   it("reports spoken cues back to the server", async () => {
     const { socket } = setup();
     socket().open();
-    socket().receive({ v: 1, t: "speak", id: "cue-1", text: "Hi", emotion: "happy", audioUrl: null, durationMs: 800 });
+    socket().receive({ v: PROTOCOL_VERSION, t: "speak", id: "cue-1", text: "Hi", emotion: "happy", audioUrl: null, durationMs: 800 });
     await Promise.resolve();
     expect(socket().sent.at(-1)).toEqual({ v: PROTOCOL_VERSION, t: "spoken", id: "cue-1" });
   });
@@ -102,7 +102,7 @@ describe("connectStage", () => {
     socket().drop();
     timers.runNext();
     socket().open();
-    socket().receive({ v: 1, t: "hold" });
+    socket().receive({ v: PROTOCOL_VERSION, t: "hold" });
     socket().drop(1001);
     expect(timers.runNext()).toBeLessThanOrEqual(1500);
   });
@@ -125,7 +125,7 @@ describe("connectStage", () => {
     socket().open();
     socket().receive({ v: 1, t: "hello", serverTime: 1, name: "B", look, disclosure: "x", reload: true });
     expect(reloads()).toBe(1);
-    socket().receive({ v: 2, t: "hello", serverTime: 1, name: "B", look, disclosure: "x", newThing: 1 });
+    socket().receive({ v: PROTOCOL_VERSION + 1, t: "hello", serverTime: 1, name: "B", look, disclosure: "x", newThing: 1 });
     expect(reloads()).toBe(2);
     expect(engine.applied).toEqual([]);
   });

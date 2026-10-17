@@ -63,6 +63,10 @@ export class Triage {
     if ((event.kind === "chat" || event.kind === "question") && this.isDuplicateQueued(event.text)) {
       return this.drop("duplicate of queued message");
     }
+    if (event.kind === "gift") {
+      const merged = this.mergeGift(event);
+      if (merged) return { queued: true, item: merged };
+    }
 
     const item: QueueItem = { event, priority, expiresAt: this.now() + ttl };
     this.queue.push(item);
@@ -161,6 +165,24 @@ export class Triage {
     if (repeated) return "repeated message";
     if (inWindow.length >= FLOOD_MAX_MESSAGES) return "flooding";
     return undefined;
+  }
+
+  /**
+   * The same viewer sending the same gift again before the host thanked them
+   * joins the queued gift, so a burst gets one thank-you ("10 roses"), not ten.
+   */
+  private mergeGift(event: Extract<LiveEvent, { kind: "gift" }>): QueueItem | undefined {
+    this.prune();
+    const item = this.queue.find(
+      (queued) => queued.event.kind === "gift" && queued.event.viewer.id === event.viewer.id && queued.event.giftName === event.giftName,
+    );
+    if (!item || item.event.kind !== "gift") return undefined;
+    // Keep the first gift's time, so latency is measured from it.
+    item.event = { ...item.event, count: item.event.count + event.count, diamonds: item.event.diamonds + event.diamonds };
+    item.priority = this.score(item.event) as number;
+    item.expiresAt = this.now() + (TTL_MS.gift ?? 0);
+    this.queue.sort((a, b) => b.priority - a.priority);
+    return item;
   }
 
   private isDuplicateQueued(text: string): boolean {
