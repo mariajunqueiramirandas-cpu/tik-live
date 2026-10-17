@@ -31,6 +31,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0023](0023-chat-minigames.md) | Chat minigames, game scenes and stage reactions | Proposed |
 | [0024](0024-music-as-code.md) | Music as code | Proposed |
 | [0025](0025-host-context-and-memory.md) | What the host knows each turn | Proposed |
+| [0026](0026-brazilian-portuguese-product.md) | The product is in Brazilian Portuguese | Accepted |
 
 ## Evidence used
 
