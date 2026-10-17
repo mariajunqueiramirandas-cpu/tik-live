@@ -51,6 +51,12 @@ export default defineConfig({
         stage: resolve(import.meta.dirname, "stage.html"),
         landing: resolve(import.meta.dirname, "landing.html"),
       },
+      output: {
+        // React's JSX runtime gets its own chunk. Otherwise the bundler parks
+        // it with the dashboard's Brand component, and the stage page, which
+        // only needs the runtime, downloads Brand's code and CSS too (~7 KB).
+        codeSplitting: { groups: [{ name: "jsx-runtime", test: (id: string) => id.includes("jsx-runtime"), priority: 100 }] },
+      },
     },
   },
 });
