@@ -53,8 +53,8 @@ test("every emotion renders a face on the orb", async ({ page }) => {
 test("captions and alerts appear when the host speaks and gifts arrive", async ({ page }) => {
   await page.evaluate(() => {
     const lab = (window as any).__lab;
-    lab.apply({ t: "speak", id: "c1", text: "Thank you for the roses, everyone in chat!", emotion: "happy", audioUrl: null, durationMs: 3000 });
-    lab.apply({ t: "alert", kind: "gift", name: "maria", giftName: "Rose", count: 5, diamonds: 5 });
+    lab.apply({ t: "speak", id: "c1", text: "Obrigado pelas rosas, pessoal do chat!", emotion: "happy", audioUrl: null, durationMs: 3000 });
+    lab.apply({ t: "alert", kind: "gift", name: "mari", giftName: "Rose", count: 5, diamonds: 5 });
   });
   // The reveal starts once playback begins (a microtask later), so render separately.
   await page.evaluate(() => (window as any).__lab.frame(2.5));

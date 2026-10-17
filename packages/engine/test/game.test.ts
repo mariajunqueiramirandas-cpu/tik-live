@@ -3,10 +3,13 @@ import { EFFECTS, GAME_KINDS, type GameScene } from "@tik-live/shared";
 import {
   deadlineFor,
   easeOutBack,
+  countOf,
   ellipsize,
   fitText,
+  formatCount,
   formatSeconds,
   leader,
+  letterList,
   PALETTES,
   percentages,
   sceneChange,
@@ -17,6 +20,7 @@ import {
   timerFraction,
   trackPosition,
 } from "../src/game/model";
+import { alertDetail } from "../src/engine";
 import { giftFlavor, giftTier, KIND } from "../src/stage/fx";
 
 // Monospace stand-in: every character is 0.5em wide.
@@ -156,7 +160,45 @@ describe("animation helpers", () => {
     expect(easeOutBack(0)).toBeCloseTo(0);
     expect(easeOutBack(1)).toBeCloseTo(1);
     expect(Math.max(...Array.from({ length: 50 }, (_, i) => easeOutBack(i / 49)))).toBeGreaterThan(1.05);
-    expect(formatSeconds(1420)).toBe("1.4 s");
+  });
+});
+
+describe("pt-BR board text", () => {
+  it("writes seconds with a decimal comma", () => {
+    expect(formatSeconds(1420)).toBe("1,4 s");
+    expect(formatSeconds(900)).toBe("0,9 s");
+    expect(formatSeconds(75_000)).toBe("75 s");
+  });
+
+  it("groups thousands with a dot", () => {
+    expect(formatCount(0)).toBe("0");
+    expect(formatCount(999)).toBe("999");
+    expect(formatCount(1234)).toBe("1.234");
+    expect(formatCount(1_000_000)).toBe("1.000.000");
+    expect(formatCount(-4200)).toBe("-4.200");
+  });
+
+  it("counts in the singular only for one", () => {
+    expect(countOf(1, "resposta")).toBe("1 resposta");
+    expect(countOf(12, "resposta")).toBe("12 respostas");
+    expect(countOf(0, "palpite")).toBe("0 palpites");
+    expect(countOf(1, "voto")).toBe("1 voto");
+    expect(countOf(1500, "voto")).toBe("1.500 votos");
+  });
+
+  it("lists the letters to type with 'ou'", () => {
+    expect(letterList(["A", "B"])).toBe("A ou B");
+    expect(letterList(["A", "B", "C"])).toBe("A, B ou C");
+    expect(letterList(["A", "B", "C", "D"])).toBe("A, B, C ou D");
+    expect(letterList(["A"])).toBe("A");
+  });
+
+  it("words alerts in Portuguese, keeping TikTok's gift names", () => {
+    expect(alertDetail({ t: "alert", kind: "gift", name: "duda", giftName: "Galaxy", count: 1, diamonds: 1000 })).toBe("Galaxy");
+    expect(alertDetail({ t: "alert", kind: "gift", name: "duda", giftName: "Rose", count: 5, diamonds: 5 })).toBe("Rose ×5");
+    expect(alertDetail({ t: "alert", kind: "gift", name: "duda", count: 1, diamonds: 1 })).toBe("um presente");
+    expect(alertDetail({ t: "alert", kind: "follow", name: "lu" })).toBe("começou a seguir");
+    expect(alertDetail({ t: "alert", kind: "share", name: "lu" })).toBe("compartilhou a live");
   });
 });
 

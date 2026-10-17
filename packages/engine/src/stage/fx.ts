@@ -213,7 +213,7 @@ export class FxLayer {
       this.character.move("jump", now, 1.2);
       this.screenFlash = 1;
       this.flash = 1.4;
-      this.showBanner(giftName || "Gift", name, now);
+      this.showBanner(giftName || "Presente", name, now);
     }
   }
 
@@ -382,7 +382,7 @@ export class FxLayer {
   }
 
   private showBanner(gift: string, from: string, now: number): void {
-    this.bannerText = [truncate(gift.toUpperCase(), 18), `from ${truncate(from, 24)}`];
+    this.bannerText = [truncate(gift.toUpperCase(), 18), `de ${truncate(from, 24)}`];
     this.bannerUntil = now + 3.2;
     this.paintBanner(this.scale);
     this.banner.opacity.snap(0);
