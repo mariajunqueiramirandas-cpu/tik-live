@@ -102,6 +102,45 @@ describe("running a channel end to end", () => {
     studio.close();
   });
 
+  it("runs a minigame and music from the studio, all the way to the stage", async () => {
+    const channel = await newChannel();
+    const stage = await programStage(channel);
+    await stage.next((m) => m.t === "hello");
+    const studio = await server.socket(`/ws/studio/${channel.id}`, "streamer");
+    await studio.next((m) => m.t === "snapshot");
+    await server.json(`/api/channels/${channel.id}/start`, { method: "POST", user: "streamer" });
+    await stage.next((m) => m.t === "speak");
+
+    studio.send({ v: 1, t: "command", id: "g1", command: { kind: "game_start", game: { kind: "trivia", rounds: 1 } } });
+    expect(await studio.next((m) => m.t === "ack" && m.id === "g1")).toMatchObject({ ok: true });
+    const scene = await stage.next<{ scene: { kind: string; phase: string; correct: number | null } }>((m) => m.t === "game" && m.scene?.kind === "trivia");
+    expect(scene.scene).toMatchObject({ phase: "open", correct: null });
+    const status = await studio.next<{ state: RuntimeSnapshot }>((m) => m.t === "patch" && m.state.game?.phase === "open");
+    expect(status.state.game).toMatchObject({ kind: "trivia", round: 1, rounds: 1, source: "studio" });
+    studio.send({ v: 1, t: "command", id: "g2", command: { kind: "game_start", game: { kind: "poll" } } });
+    expect(await studio.next((m) => m.t === "ack" && m.id === "g2")).toMatchObject({ ok: false });
+
+    // A viewer's answer goes to the game and shows in the room as one.
+    server.sources.get(channel.id)!.push({ kind: "chat", at: Date.now(), viewer: { id: "v9", handle: "ana", nickname: "Ana" }, text: "B" });
+    const answer = await studio.next<{ event: { filtered?: string } }>((m) => m.t === "live-event" && m.event.who === "Ana");
+    expect(answer.event.filtered).toBe("game answer");
+
+    studio.send({ v: 1, t: "command", id: "m1", command: { kind: "music_play", library: "funk-beat" } });
+    expect(await studio.next((m) => m.t === "ack" && m.id === "m1")).toMatchObject({ ok: true });
+    const music = await stage.next<{ track: { title: string } }>((m) => m.t === "music" && m.track !== null);
+    expect(music.track.title).toBe("Batidão");
+
+    studio.send({ v: 1, t: "command", id: "g3", command: { kind: "game_stop" } });
+    expect(await studio.next((m) => m.t === "ack" && m.id === "g3")).toMatchObject({ ok: true });
+    await stage.next((m) => m.t === "game" && m.scene === null);
+    studio.send({ v: 1, t: "command", id: "m2", command: { kind: "music_stop" } });
+    await stage.next((m) => m.t === "music" && m.track === null);
+
+    await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "streamer" });
+    stage.close();
+    studio.close();
+  });
+
   it("rejects commands for a stopped host and unknown stage keys", async () => {
     const channel = await newChannel();
     const studio = await server.socket(`/ws/studio/${channel.id}`, "streamer");
