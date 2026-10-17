@@ -7,19 +7,36 @@ import type { MouthShape } from "../audio/envelope";
  * parameters; springs blend between them, so expressions morph smoothly
  * into each other instead of switching.
  */
-//               open  width happy heart  lid  brow  sparkle  smile round smirk blush desat
-type FaceTarget = [number, number, number, number, number, number, number, number, number, number, number, number];
+// The last five drive the head tilt and the voice line's style (speed,
+// calm, jitter, warmth), so a voice-only host shows the mood too.
+//               open  width happy heart  lid  brow  sparkle  smile round smirk blush desat | tilt speed calm jitter warmth
+type FaceTarget = [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number];
 
 const FACES: Record<Emotion, FaceTarget> = {
-  neutral: [1.0, 1.0, 0, 0, 0, 0, 0.3, 0.6, 0, 0, 0.15, 0],
-  happy: [1.0, 1.0, 1, 0, 0, 0, 0, 1.0, 0, 0, 0.8, 0],
-  excited: [1.15, 1.1, 0, 0, 0, 0, 1, 1.0, 0, 0, 0.8, 0],
-  laugh: [1.0, 1.0, 1, 0, 0, 0, 0, 1.0, 0, 0, 1.0, 0],
-  surprised: [1.25, 1.2, 0, 0, 0, 0, 0.6, 0, 1, 0, 0.2, 0],
-  thinking: [0.85, 1.0, 0, 0, 0, 0, 0.2, 0.1, 0, 0.45, 0.1, 0],
-  sad: [0.9, 0.95, 0, 0, 0, 1, 0.2, -0.8, 0, 0, 0, 0.35],
-  love: [1.0, 1.0, 0, 1, 0, 0, 0, 1.0, 0, 0, 1.0, 0],
-  mischief: [0.9, 1.05, 0, 0, 1, 0, 0.2, 0.7, 0, 1, 0.3, 0],
+  neutral: [1.0, 1.0, 0, 0, 0, 0, 0.3, 0.6, 0, 0, 0.15, 0, 0, 1, 0, 0, 0],
+  happy: [1.0, 1.0, 1, 0, 0, 0, 0, 1.0, 0, 0, 0.8, 0, 0, 1.15, 0, 0, 0.2],
+  excited: [1.15, 1.1, 0, 0, 0, 0, 1, 1.0, 0, 0, 0.8, 0, 0, 1.6, 0, 0, 0.1],
+  laugh: [1.0, 1.0, 1, 0, 0, 0, 0, 1.0, 0, 0, 1.0, 0, 0, 1.4, 0, 0.2, 0.2],
+  surprised: [1.25, 1.2, 0, 0, 0, 0, 0.6, 0, 1, 0, 0.2, 0, 0, 1.3, 0, 0.3, 0],
+  thinking: [0.85, 1.0, 0, 0, 0, 0, 0.2, 0.1, 0, 0.45, 0.1, 0, 0.08, 0.7, 0.2, 0, 0],
+  sad: [0.9, 0.95, 0, 0, 0, 1, 0.2, -0.8, 0, 0, 0, 0.35, 0, 0.55, 0.7, 0, 0],
+  love: [1.0, 1.0, 0, 1, 0, 0, 0, 1.0, 0, 0, 1.0, 0, 0, 0.9, 0, 0, 1],
+  mischief: [0.9, 1.05, 0, 0, 1, 0, 0.2, 0.7, 0, 1, 0.3, 0, -0.06, 1.1, 0, 0.1, 0.3],
+  confused: [1.05, 0.95, 0, 0, 0.3, 0.6, 0.15, -0.25, 0.3, 1, 0.1, 0, -0.17, 0.8, 0.1, 1, 0],
+  shy: [0.55, 0.9, 0, 0, 0, 0, 0.7, 0.35, 0, 0.25, 1.0, 0, 0.12, 0.7, 0.3, 0, 0.8],
+  sleepy: [0.2, 1.05, 0, 0, 0.9, 0, 0, 0.05, 0.6, 0, 0.2, 0.25, 0.13, 0.35, 1, 0, 0],
+  proud: [1.0, 1.1, 1, 0, 0, 0, 0, 0.9, 0, 0.75, 0.5, 0, -0.1, 1.0, 0, 0, 0.3],
+  pout: [0.9, 1.0, 0, 0, 0.6, 0, 0.1, -0.7, 1, 0, 0.9, 0.05, 0.07, 0.8, 0.2, 0.3, 0.2],
+};
+
+/** Where an emotion looks when nothing else holds its attention. */
+const GAZE: Partial<Record<Emotion, [number, number]>> = {
+  thinking: [0.6, -0.7],
+  confused: [-0.5, -0.55],
+  shy: [0.55, 0.6],
+  sleepy: [0, 0.55],
+  proud: [0, -0.6],
+  pout: [-0.75, 0.05],
 };
 
 export interface FaceState {
@@ -31,6 +48,10 @@ export interface FaceState {
   vowel: [number, number];
   blush: number;
   desat: number;
+  /** Head tilt in radians. */
+  tilt: number;
+  /** Voice-line style: speed, calm, jitter, warmth. */
+  mood: [number, number, number, number];
 }
 
 export class FaceController {
@@ -53,6 +74,8 @@ export class FaceController {
     vowel: [0, 0],
     blush: 0.15,
     desat: 0,
+    tilt: 0,
+    mood: [1, 0, 0, 0],
   };
 
   constructor(private readonly random: () => number) {}
@@ -77,9 +100,10 @@ export class FaceController {
     if (this.attention && t < this.attention.until) {
       this.gazeX.target = this.attention.x;
       this.gazeY.target = this.attention.y;
-    } else if (this.emotion === "thinking") {
-      this.gazeX.target = 0.6;
-      this.gazeY.target = -0.7;
+    } else if (GAZE[this.emotion]) {
+      const gaze = GAZE[this.emotion] as [number, number];
+      this.gazeX.target = gaze[0];
+      this.gazeY.target = gaze[1];
     } else if (t > this.nextGlance) {
       this.gazeX.target = (this.random() - 0.5) * 0.8;
       this.gazeY.target = (this.random() - 0.5) * 0.5;
@@ -126,6 +150,11 @@ export class FaceController {
     s.vowel[1] = clamp01(this.mouthWide.value);
     s.blush = clamp01(this.shape.get(10));
     s.desat = clamp01(this.shape.get(11));
+    s.tilt = this.shape.get(12);
+    s.mood[0] = this.shape.get(13);
+    s.mood[1] = clamp01(this.shape.get(14));
+    s.mood[2] = clamp01(this.shape.get(15));
+    s.mood[3] = clamp01(this.shape.get(16));
     return s;
   }
 }

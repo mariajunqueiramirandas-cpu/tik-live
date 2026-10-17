@@ -62,3 +62,36 @@ describe("FaceController", () => {
     expect(face.state.gaze[1]).toBeLessThan(-0.3);
   });
 });
+
+describe("new expressions", () => {
+  it("makes confused, shy, sleepy, proud and pout clearly different from each other and from neutral", () => {
+    const settled = (emotion: (typeof EMOTIONS)[number]) => {
+      const face = new FaceController(createRandom(1));
+      face.setEmotion(emotion);
+      settle(face, 3);
+      const s = face.state;
+      return [...s.eye, ...s.eye2.slice(0, 3), ...s.mouth.slice(1), s.blush, s.desat, s.tilt, ...s.mood, ...s.gaze];
+    };
+    const names = ["neutral", "confused", "shy", "sleepy", "proud", "pout"] as const;
+    const vectors = names.map(settled);
+    for (let i = 0; i < names.length; i++) {
+      for (let j = i + 1; j < names.length; j++) {
+        const distance = Math.hypot(...vectors[i]!.map((v, k) => v - vectors[j]![k]!));
+        expect(distance, `${names[i]} vs ${names[j]}`).toBeGreaterThan(0.6);
+      }
+    }
+  });
+
+  it("calms the voice line when sleepy and warms it when in love", () => {
+    const mood = (emotion: (typeof EMOTIONS)[number]) => {
+      const face = new FaceController(createRandom(1));
+      face.setEmotion(emotion);
+      settle(face, 3);
+      return face.state.mood;
+    };
+    expect(mood("sleepy")[1]).toBeGreaterThan(0.9);
+    expect(mood("sleepy")[0]).toBeLessThan(0.5);
+    expect(mood("love")[3]).toBeGreaterThan(0.9);
+    expect(mood("confused")[2]).toBeGreaterThan(0.9);
+  });
+});

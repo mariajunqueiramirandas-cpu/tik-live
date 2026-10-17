@@ -33,6 +33,8 @@ export class AudioEngine {
   private output: GainNode | null = null;
   /** Voice, music and sound effects together, before volume and mute. */
   private mix: GainNode | null = null;
+  /** A brickwall-ish limiter after the mix: speech near 0 dBFS plus music must not clip. */
+  private limiter: DynamicsCompressorNode | null = null;
   private readonly samples = new Float32Array(1024);
   private readonly spectrum = new Uint8Array(512);
   private source: AudioBufferSourceNode | null = null;
@@ -90,7 +92,7 @@ export class AudioEngine {
    */
   tap(): { context: AudioContext; node: AudioNode } | null {
     const ctx = this.ensure();
-    return ctx && this.mix ? { context: ctx, node: this.mix } : null;
+    return ctx && this.limiter ? { context: ctx, node: this.limiter } : null;
   }
 
   /**
@@ -99,7 +101,8 @@ export class AudioEngine {
    * and the broadcast tap.
    */
   mixInput(): { context: AudioContext; node: AudioNode } | null {
-    return this.tap();
+    const ctx = this.ensure();
+    return ctx && this.mix ? { context: ctx, node: this.mix } : null;
   }
 
   /** Starts fetching and decoding a clip so `play` can start it without delay. */
@@ -239,7 +242,14 @@ export class AudioEngine {
     this.analyser.smoothingTimeConstant = 0.5;
     this.output = ctx.createGain();
     this.mix = ctx.createGain();
-    this.analyser.connect(this.mix).connect(this.output).connect(ctx.destination);
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -2;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.1;
+    this.limiter = limiter;
+    this.analyser.connect(this.mix).connect(limiter).connect(this.output).connect(ctx.destination);
     ctx.addEventListener("statechange", () => {
       const state: AudioState = ctx.state === "running" ? "running" : "suspended";
       for (const listener of this.stateListeners) listener(state);

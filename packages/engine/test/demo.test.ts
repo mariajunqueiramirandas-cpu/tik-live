@@ -39,3 +39,25 @@ describe("demo driver", () => {
     for (const beat of DEMO_SCRIPT) if (beat.kind === "say") expect(beat.text.length).toBeLessThan(140);
   });
 });
+
+describe("demo game and effect beats", () => {
+  it("puts game scenes and reactions on stage", async () => {
+    const engine = new FakeEngine("demo");
+    const scene = { kind: "scoreboard" as const, title: "Final scores", rows: [{ name: "ana", points: 10 }] };
+    const demo = startDemo(engine, {
+      loop: false,
+      script: [
+        { kind: "game", scene },
+        { kind: "fx", fx: "confetti", intensity: 2 },
+        { kind: "game", scene: null },
+      ],
+    });
+    await Bun.sleep(30);
+    expect(engine.applied).toEqual([
+      { t: "game", scene },
+      { t: "fx", fx: "confetti", intensity: 2 },
+      { t: "game", scene: null },
+    ]);
+    demo.stop();
+  });
+});

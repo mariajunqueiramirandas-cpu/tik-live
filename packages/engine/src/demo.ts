@@ -1,4 +1,4 @@
-import type { Emotion, Look, StageServerPayload } from "@tik-live/shared";
+import type { Effect, Emotion, GameScene, Look, StageServerPayload } from "@tik-live/shared";
 import type { StageEngine } from "./engine";
 
 /**
@@ -15,6 +15,10 @@ export type DemoBeat =
   | { kind: "follow"; name: string }
   | { kind: "share"; name: string }
   | { kind: "segment"; title: string }
+  /** A game scene on stage, or null to go back to the show. */
+  | { kind: "game"; scene: GameScene | null }
+  /** A reaction (confetti, a spin...). */
+  | { kind: "fx"; fx: Effect; intensity?: number }
   | { kind: "pause"; ms: number };
 
 export interface DemoOptions {
@@ -120,6 +124,12 @@ export function startDemo(engine: StageEngine, options: DemoOptions = {}): DemoH
             break;
           case "segment":
             apply({ t: "segment", title: beat.title });
+            break;
+          case "game":
+            apply({ t: "game", scene: beat.scene });
+            break;
+          case "fx":
+            apply({ t: "fx", fx: beat.fx, ...(beat.intensity ? { intensity: beat.intensity } : {}) });
             break;
           case "chat":
             await sleep(700);

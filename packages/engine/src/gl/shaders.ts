@@ -42,6 +42,7 @@ uniform float u_glow;
 uniform float u_flash;
 uniform vec4 u_halo;     // body radius (stage px), squash, voice amplitude, character alpha
 uniform float u_haloAa;  // about two screen pixels, in body radii
+uniform vec2 u_fx;       // spotlight 0..1, gold over the whole stage 0..1
 ${NOISE}
 // Rendered at reduced resolution into an offscreen buffer (everything here is
 // soft); UPSCALE_FRAGMENT brings it to full size and adds the dither.
@@ -88,6 +89,17 @@ void main() {
     vec3 haloCol = mix(u_primary, u_secondary, 0.3) + u_gold * u_flash * 0.4;
     col = col * (1.0 - 0.5 * halo) + haloCol * halo;
   }
+
+  // Spotlight: a cone of light from above onto the character, the rest dimmed.
+  if (u_fx.x > 0.0) {
+    float r = u_halo.x;
+    float spread = 50.0 + max(0.0, px.y + 200.0) / (u_orb.y + 200.0) * r * 1.4;
+    float cone = smoothstep(spread, spread * 0.5, abs(px.x - u_orb.x)) * smoothstep(u_orb.y + r * 2.4, u_orb.y + r * 0.8, px.y);
+    vec2 pd = (px - u_orb - vec2(0.0, r * 1.35)) / vec2(r * 1.7, r * 0.32);
+    col *= 1.0 - u_fx.x * 0.62 * (1.0 - cone);
+    col += (vec3(1.0, 0.95, 0.82) * 0.2 * cone + u_primary * 0.3 * exp(-dot(pd, pd))) * u_fx.x;
+  }
+  col += u_gold * u_fx.y * 0.4;
 
   vec2 vv = v_uv - 0.5;
   col *= 1.0 - dot(vv, vv) * 0.55;
@@ -148,36 +160,6 @@ void main() {
   o = vec4(u_color * a, a);
 }`;
 
-export const OFFERINGS_VERTEX = /* glsl */ `#version 300 es
-layout(location = 0) in vec2 a_corner;
-layout(location = 1) in vec4 a_instance;  // origin.xy, start time, bend
-layout(location = 2) in vec4 a_instance2; // size, duration, big, unused
-uniform vec2 u_res;
-uniform float u_time;
-uniform vec2 u_orb;
-out vec2 v_uv;
-out float v_alpha;
-void main() {
-  float p = (u_time - a_instance.z) / a_instance2.y;
-  if (p <= 0.0 || p >= 1.0) {
-    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    v_uv = vec2(0.0);
-    v_alpha = 0.0;
-    return;
-  }
-  float e = p * p * (3.0 - 2.0 * p);
-  vec2 a = a_instance.xy;
-  vec2 dir = normalize(u_orb - a + vec2(0.0001));
-  vec2 perp = vec2(-dir.y, dir.x);
-  vec2 pos = mix(a, u_orb, e) + perp * sin(e * 3.14159) * a_instance.w;
-  float size = a_instance2.x * (1.0 - e * 0.6) * (a_instance2.z > 0.5 ? 1.5 : 1.0);
-  v_alpha = smoothstep(0.0, 0.08, p) * (1.0 - smoothstep(0.92, 1.0, p));
-  vec2 corner = (a_corner - 0.5) * size * 8.0;
-  v_uv = a_corner - 0.5;
-  vec2 q = pos + corner;
-  gl_Position = vec4(q.x / u_res.x * 2.0 - 1.0, 1.0 - q.y / u_res.y * 2.0, 0.0, 1.0);
-}`;
-
 export const ORB_FRAGMENT = /* glsl */ `#version 300 es
 precision highp float;
 in vec2 v_uv;
@@ -200,6 +182,7 @@ uniform vec4 u_mouth;    // open, smile, round, smirk
 uniform vec2 u_vowel;    // while talking: round (o, u), wide (i, e)
 uniform float u_blush;
 uniform float u_alpha;   // cross-fade with the other character style
+uniform float u_rot;     // spin and head tilt, radians
 
 float sdEllipse(vec2 p, vec2 r) { return (length(p / r) - 1.0) * min(r.x, r.y); }
 float sdSegment(vec2 p, vec2 a, vec2 b) {
@@ -223,7 +206,7 @@ mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 float fill(float d, float aa) { return 1.0 - smoothstep(-aa, aa, d); }
 
 void main() {
-  vec2 p = (v_uv - 0.5) * 2.0 * u_extent;
+  vec2 p = rot(u_rot) * ((v_uv - 0.5) * 2.0 * u_extent);
   p.x /= (1.0 + u_squash);
   p.y /= (1.0 - u_squash);
   float aa = u_px * 1.2;
@@ -318,10 +301,12 @@ uniform vec3 u_gold;
 uniform float u_flash;
 uniform float u_px;
 uniform float u_alpha;
+uniform vec4 u_mood;  // speed, calm (sleepy, sad), jitter (confused), warmth (love, shy)
 float wave(float x, float t, float phase, float a) {
   float edge = sin(clamp((x - 160.0) / 760.0, 0.0, 1.0) * 3.14159);
-  float w = sin(x * 0.02 + t * 6.0 + phase) * 0.6 + sin(x * 0.045 - t * 9.0 + phase * 1.7) * 0.4;
-  return w * edge * a;
+  float w = sin(x * 0.02 + t * 6.0 * u_mood.x + phase) * 0.6 + sin(x * 0.045 - t * 9.0 * u_mood.x + phase * 1.7) * 0.4;
+  w += sin(x * 0.13 + t * 17.0 + phase * 3.1) * u_mood.z * 0.45;
+  return w * edge * a * (1.0 - u_mood.y * 0.55);
 }
 void main() {
   vec2 px = u_rect.xy + v_uv * u_rect.zw;
@@ -336,6 +321,8 @@ void main() {
     float core = 1.0 - smoothstep(2.0 - fi * 0.5, 2.0 + u_px * 2.0, d);
     float halo = exp(-d / (16.0 + u_amp * 14.0)) * 0.45;
     vec3 c = i == 0 ? u_primary : (i == 1 ? u_secondary : mix(u_primary, u_secondary, 0.5));
+    c = mix(c, u_secondary, u_mood.w * 0.5);
+    c = mix(c, vec3(dot(c, vec3(0.3, 0.59, 0.11))), u_mood.y * 0.45);
     c = mix(c, u_gold, u_flash * 0.5);
     float s = (core * 0.75 + halo) * (1.0 - fi * 0.3) * fade;
     col += c * s;

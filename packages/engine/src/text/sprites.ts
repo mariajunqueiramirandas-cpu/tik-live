@@ -96,6 +96,8 @@ export class TextSprite {
 // ---------------------------------------------------------------------------
 
 const CAPTION = { centerX: 540, top: 1060, maxWidth: 900, maxLines: 3, sizes: [64, 56, 48], lineHeight: 1.12, pad: 40 };
+/** During games the caption sits under the board, above TikTok's bottom UI. */
+const GAME_CAPTION = { top: 1512, maxLines: 2, sizes: [52, 46, 40] };
 
 /** The spoken line, revealed word by word in time with the voice. */
 export class Caption {
@@ -107,6 +109,7 @@ export class Caption {
   private shownWord = -2;
   private glow = "#7CF5FF";
   private fadeAt = -1;
+  private game = false;
 
   constructor(gl: Gl) {
     this.sprite = new TextSprite(gl);
@@ -120,10 +123,11 @@ export class Caption {
   /** New line: lay it out now; the reveal starts with `start()`. */
   show(text: string): void {
     this.text = text;
+    const fit = this.game ? GAME_CAPTION : CAPTION;
     this.layout = layoutCaption(text, {
       maxWidth: CAPTION.maxWidth,
-      maxLines: CAPTION.maxLines,
-      fontSizes: CAPTION.sizes,
+      maxLines: fit.maxLines,
+      fontSizes: fit.sizes,
       measure: (size) => measureWith(`720 ${size}px ${FONT_FAMILY}`),
     });
     this.startedAt = -1;
@@ -156,8 +160,23 @@ export class Caption {
     if (this.text) this.show(this.text);
   }
 
-  update(dt: number, now: number, scale: number): void {
+  /** `game` 0..1: how far the stage is into game layout (the caption moves down). */
+  update(dt: number, now: number, scale: number, game = 0): void {
     if (this.fadeAt >= 0 && now > this.fadeAt) this.hide();
+    if (game > 0.5 !== this.game) {
+      // Re-fit at the size for where it's going; keep the reveal where it was.
+      this.game = !this.game;
+      if (this.layout) {
+        this.layout = layoutCaption(this.text, {
+          maxWidth: CAPTION.maxWidth,
+          maxLines: this.game ? GAME_CAPTION.maxLines : CAPTION.maxLines,
+          fontSizes: this.game ? GAME_CAPTION.sizes : CAPTION.sizes,
+          measure: (size) => measureWith(`720 ${size}px ${FONT_FAMILY}`),
+        });
+        this.sprite.width = 0;
+      }
+    }
+    this.sprite.y = CAPTION.top + (GAME_CAPTION.top - CAPTION.top) * game - CAPTION.pad;
     if (this.layout) {
       let word = this.shownWord;
       if (this.startedAt >= 0) {
@@ -180,7 +199,6 @@ export class Caption {
     const height = layout.lines * lineHeight + CAPTION.pad * 2;
     const width = CAPTION.maxWidth + CAPTION.pad * 2;
     this.sprite.x = CAPTION.centerX - width / 2;
-    this.sprite.y = CAPTION.top - CAPTION.pad;
     const current = this.shownWord;
     const glow = this.glow;
     this.sprite.draw(
@@ -392,7 +410,7 @@ export class Chrome {
   }
 }
 
-function roundRect(ctx: Canvas2D, x: number, y: number, w: number, h: number, r: number): void {
+export function roundRect(ctx: Canvas2D, x: number, y: number, w: number, h: number, r: number): void {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -403,11 +421,11 @@ function roundRect(ctx: Canvas2D, x: number, y: number, w: number, h: number, r:
 }
 
 /** "#7CF5FF" + 0.5 → "rgba(124,245,255,0.5)". */
-function withAlpha(hex: string, alpha: number): string {
+export function withAlpha(hex: string, alpha: number): string {
   const n = Number.parseInt(hex.replace("#", ""), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
-function truncate(text: string, max: number): string {
+export function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
