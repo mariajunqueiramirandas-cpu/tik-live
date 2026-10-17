@@ -20,7 +20,7 @@ export class AppError extends Error {
   }
 }
 
-export const notFound = (what = "That") => new AppError(404, "not_found", `${what} doesn't exist.`);
+export const notFound = (what = "Isso") => new AppError(404, "not_found", `${what} não existe.`);
 export const badRequest = (message: string, details?: unknown) => new AppError(400, "bad_request", message, details);
 
 export function problem(c: Context, status: ContentfulStatusCode, code: string, message: string, details?: unknown) {
@@ -32,12 +32,12 @@ export function errorHandler(log: Logger) {
   return (err: Error, c: Context) => {
     if (err instanceof AppError) return problem(c, err.status, err.code, err.message, err.details);
     if (err instanceof ZodError) {
-      return problem(c, 400, "invalid_input", "Some fields aren't valid.", err.issues.map((i) => ({ path: i.path.join("."), message: i.message })));
+      return problem(c, 400, "invalid_input", "Alguns campos não são válidos.", err.issues.map((i) => ({ path: i.path.join("."), message: i.message })));
     }
     if (err instanceof HTTPException) {
-      return problem(c, err.status as ContentfulStatusCode, "http_error", err.message || "Request failed.");
+      return problem(c, err.status as ContentfulStatusCode, "http_error", err.message || "A requisição falhou.");
     }
     log.error(`unhandled error on ${c.req.method} ${c.req.path}`, err);
-    return problem(c, 500, "internal", "Something went wrong on our side. Try again in a moment.");
+    return problem(c, 500, "internal", "Algo deu errado do nosso lado. Tente de novo em instantes.");
   };
 }

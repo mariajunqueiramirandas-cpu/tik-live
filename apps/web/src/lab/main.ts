@@ -88,7 +88,7 @@ if (params.has("demo")) startDemo(engine);
 
 const scene = params.get("scene");
 if (scene) {
-  engine.apply({ t: "segment", title: "Game time" });
+  engine.apply({ t: "segment", title: "Hora do jogo" });
   lab.scene(scene);
   if (params.get("caption") !== "0") void ready().then(() => lab.caption("Valendo! Quem acertar primeiro ganha pontos em dobro nesta rodada."));
 }
@@ -121,20 +121,20 @@ function panel(): void {
       root.append(button);
     }
   };
-  group("Emotions", EMOTIONS, (e) => lab.emotion(e as Emotion, 4));
-  group("Effects", EFFECTS, (e) => lab.fx(e as Effect));
-  group("Gifts", Object.keys(GIFTS), (g) => lab.gift(g));
-  group("Follow, share, likes", ["follow", "share", "likes +25"], (k) => {
-    if (k === "follow" || k === "share") engine.apply({ t: "alert", kind: k, name: "lua.draws" });
+  group("Emoções", EMOTIONS, (e) => lab.emotion(e as Emotion, 4));
+  group("Efeitos", EFFECTS, (e) => lab.fx(e as Effect));
+  group("Presentes", Object.keys(GIFTS), (g) => lab.gift(g));
+  group("Seguir, compartilhar, curtidas", ["follow", "share", "likes +25"], (k) => {
+    if (k === "follow" || k === "share") engine.apply({ t: "alert", kind: k, name: "lu.desenha" });
     else {
       likes += 25;
       engine.apply({ t: "stats", viewers: 120, likes });
     }
   });
-  group("Scenes", ["(none)", ...Object.keys(SCENES)], (s) => lab.scene(s === "(none)" ? null : s));
-  group("Music", ["(stop)", ...Object.keys(MUSIC_LIBRARY)], (m) => lab.music(m === "(stop)" ? null : m));
-  group("Sounds", SOUNDS, (s) => lab.sfx(s as Sound));
-  group("Voice", ["speak a line", "unmute"], (k) => {
+  group("Jogos", ["(none)", ...Object.keys(SCENES)], (s) => lab.scene(s === "(none)" ? null : s));
+  group("Música", ["(stop)", ...Object.keys(MUSIC_LIBRARY)], (m) => lab.music(m === "(stop)" ? null : m));
+  group("Sons", SOUNDS, (s) => lab.sfx(s as Sound));
+  group("Voz", ["speak a line", "unmute"], (k) => {
     if (k === "unmute") {
       engine.audio.setMuted(false);
       void engine.audio.unlock();

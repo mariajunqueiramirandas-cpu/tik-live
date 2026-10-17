@@ -353,7 +353,7 @@ describe("Director with games and context", () => {
     const announce = host.turns.at(-1)!;
     expect(announce.kind).toBe("game");
     expect(announce.note).toContain("Round 1 of 2");
-    expect(announce.game).toContain("Guess the number");
+    expect(announce.game).toContain("Adivinhe o número");
 
     director.handleEvent(chat("ana", "50"));
     expect(triage.pending()).toBe(0); // the game took it

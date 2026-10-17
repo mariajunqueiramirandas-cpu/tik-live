@@ -22,8 +22,8 @@ const sound = document.getElementById("sound") as HTMLButtonElement;
 const engine = createEngine(canvas, { mode: role, quality, ...(fps ? { maxFps: fps } : {}) });
 
 const NOTICES: Partial<Record<StageConnectionState, string>> = {
-  revoked: "This stage link was replaced. Copy the new link from your dashboard into OBS.",
-  gone: "This host was deleted. Remove this source from OBS.",
+  revoked: "Este link do palco foi trocado. Copie o novo link no seu painel e cole no OBS.",
+  gone: "Este apresentador foi excluído. Remova esta fonte do OBS.",
 };
 
 const connection = connectStage({

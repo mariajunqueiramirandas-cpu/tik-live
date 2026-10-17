@@ -40,13 +40,13 @@ export async function call<R extends { ok: boolean; status: number; json(): Prom
   try {
     res = await request;
   } catch {
-    throw new ApiError(0, "network", "Can't reach the server. Check your connection and try again.");
+    throw new ApiError(0, "network", "Não deu para falar com o servidor. Confira sua conexão e tente de novo.");
   }
   if (res.status === 204) return undefined as Success<R>;
   const body = (await res.json().catch(() => null)) as { error?: Problem } | null;
   if (!res.ok) {
     const problem = body?.error;
-    throw new ApiError(res.status, problem?.code ?? "http_error", problem?.message ?? `Request failed (${res.status}).`, problem?.details);
+    throw new ApiError(res.status, problem?.code ?? "http_error", problem?.message ?? `A solicitação falhou (${res.status}).`, problem?.details);
   }
   return body as Success<R>;
 }
@@ -54,5 +54,5 @@ export async function call<R extends { ok: boolean; status: number; json(): Prom
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
-  return "Something went wrong.";
+  return "Algo deu errado.";
 }

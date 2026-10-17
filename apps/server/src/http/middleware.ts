@@ -122,8 +122,8 @@ export function csrfGuard(deps: AppDeps): MiddlewareHandler<AppEnv> {
     if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
     if (c.req.path === "/api/billing/webhook") return next();
     const origin = c.req.header("origin");
-    if (origin && !allowed.has(origin)) return problem(c, 403, "bad_origin", "This request came from another site and was blocked.");
-    if (!origin && c.req.header("sec-fetch-site") === "cross-site") return problem(c, 403, "bad_origin", "This request came from another site and was blocked.");
+    if (origin && !allowed.has(origin)) return problem(c, 403, "bad_origin", "Esta requisição veio de outro site e foi bloqueada.");
+    if (!origin && c.req.header("sec-fetch-site") === "cross-site") return problem(c, 403, "bad_origin", "Esta requisição veio de outro site e foi bloqueada.");
     return next();
   };
 }
@@ -154,7 +154,7 @@ export function devGate(password: string): MiddlewareHandler<AppEnv> {
 export function requireUser(deps: AppDeps): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const identity = await deps.identity.resolve(c.req.raw);
-    if (!identity) return problem(c, 401, "unauthenticated", "Sign in to continue.");
+    if (!identity) return problem(c, 401, "unauthenticated", "Entre para continuar.");
     for (const cookie of identity.setCookies ?? []) c.header("set-cookie", cookie, { append: true });
     let user = await getUserByExternalId(deps.db, identity.externalId);
     if (!user || (identity.email && identity.email !== user.email) || (identity.name && identity.name !== user.name)) {
@@ -189,7 +189,7 @@ export function rateLimit(options: { windowMs: number; max: number; key: (c: Con
     entry.count += 1;
     if (entry.count > options.max) {
       c.header("retry-after", String(Math.ceil((entry.resetAt - now) / 1000)));
-      return problem(c, 429, "rate_limited", "Too many requests. Slow down for a moment.");
+      return problem(c, 429, "rate_limited", "Muitas requisições. Espere um pouco.");
     }
     return next();
   };

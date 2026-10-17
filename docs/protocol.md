@@ -57,7 +57,7 @@ each line's estimated duration so the show keeps a realistic rhythm.
 #### `hello`
 
 ```json
-{ "v": 1, "t": "hello", "serverTime": 1760616000000, "name": "Blip", "look": { "character": "orb", "primary": "#7CF5FF", "secondary": "#FF5FD2", "background": "#0B0420" }, "disclosure": "Blip is an AI host" }
+{ "v": 1, "t": "hello", "serverTime": 1760616000000, "name": "Blip", "look": { "character": "orb", "primary": "#7CF5FF", "secondary": "#FF5FD2", "background": "#0B0420" }, "disclosure": "Blip é uma IA" }
 ```
 
 First message on every connection. `look` is the persona's look
@@ -328,7 +328,7 @@ Operational log lines for the Health panel.
 #### `notice`
 
 ```json
-{ "v": 1, "t": "notice", "level": "warn", "code": "budget_warning", "message": "This host is close to its hourly AI budget.", "at": 1760616000000 }
+{ "v": 1, "t": "notice", "level": "warn", "code": "budget_warning", "message": "Este apresentador está perto do orçamento de IA desta hora.", "at": 1760616000000 }
 ```
 
 Something the owner should see as a toast: budget thresholds
@@ -339,7 +339,7 @@ Something the owner should see as a toast: budget thresholds
 #### `ack`
 
 ```json
-{ "v": 1, "t": "ack", "id": "cmd-12", "ok": false, "error": "Start the host first." }
+{ "v": 1, "t": "ack", "id": "cmd-12", "ok": false, "error": "Coloque o apresentador no ar primeiro." }
 ```
 
 The result of a [`command`](#command), with the same `id`. An unparseable

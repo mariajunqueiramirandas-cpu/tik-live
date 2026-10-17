@@ -125,7 +125,7 @@ export class StudioStore {
     ws.onclose = () => {
       if (this.socket !== ws) return;
       this.socket = null;
-      for (const [id, entry] of this.pending) this.settle(id, { ok: false, error: "Lost the connection before the host confirmed." }, entry);
+      for (const [id, entry] of this.pending) this.settle(id, { ok: false, error: "A conexão caiu antes de o apresentador confirmar." }, entry);
       if (this.closed) return this.set({ connection: "closed" });
       this.set({ connection: "reconnecting" });
       const ceiling = Math.min(10_000, 500 * 2 ** this.attempt++);
@@ -162,7 +162,7 @@ export class StudioStore {
       }
       case "ack": {
         const entry = this.pending.get(message.id);
-        if (entry) this.settle(message.id, message.ok ? { ok: true } : { ok: false, error: message.error ?? "The host didn't accept that." }, entry);
+        if (entry) this.settle(message.id, message.ok ? { ok: true } : { ok: false, error: message.error ?? "O apresentador não aceitou o comando." }, entry);
         break;
       }
       case "log":
@@ -194,7 +194,7 @@ export class StudioStore {
   command(command: StudioCommand, optimistic?: Partial<RuntimeSnapshot>): Promise<CommandResult> {
     const ws = this.socket;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      return Promise.resolve({ ok: false, error: "Not connected to the host right now. Reconnecting…" });
+      return Promise.resolve({ ok: false, error: "Sem conexão com o apresentador agora. Reconectando…" });
     }
     const id = crypto.randomUUID();
     let rollback: (() => void) | undefined;
@@ -210,7 +210,7 @@ export class StudioStore {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         const entry = this.pending.get(id);
-        if (entry) this.settle(id, { ok: false, error: "The host didn't respond. Try again." }, entry);
+        if (entry) this.settle(id, { ok: false, error: "O apresentador não respondeu. Tente de novo." }, entry);
       }, COMMAND_TIMEOUT_MS);
       this.pending.set(id, { resolve, ...(rollback ? { rollback } : {}), timer });
       ws.send(JSON.stringify({ v: PROTOCOL_VERSION, t: "command", id, command }));

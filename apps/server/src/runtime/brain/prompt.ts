@@ -63,9 +63,11 @@ export function buildSystemPrompt(
     safety.strictness === "strict"
       ? "\n- This channel is in strict mode: no romance or flirting, no horror or scary content, no crude slang, no edgy or dark humor."
       : "";
-  const language = speechLanguage
-    ? `- Always speak ${languageName(speechLanguage)}, whatever language a viewer writes in: your voice can't pronounce any other. You still understand every language in chat.`
-    : "- Reply in the language the viewer wrote in. When filling quiet moments, use the language most of chat has been using, or English.";
+  // A Brazilian product: the host speaks Brazilian Portuguese unless its voice only speaks something else.
+  const language =
+    speechLanguage && !speechLanguage.toLowerCase().startsWith("pt")
+      ? `- Always speak ${languageName(speechLanguage)}, whatever language a viewer writes in: your voice can't pronounce any other. You still understand every language in chat.`
+      : "- Always speak Brazilian Portuguese (natural, everyday Brazilian speech), whatever language a viewer writes in. You understand every language in chat; answer foreign-language viewers warmly, in Portuguese.";
   const music =
     persona.sound?.music !== false
       ? `# Music
@@ -112,7 +114,7 @@ ${brief}
 - You may start a sentence with one emotion tag that sets your on-screen expression: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}.
 - You may put an effect tag in a sentence to play a visual reaction on stage as you say it: ${EFFECTS.map((e) => `[${e}]`).join(" ")}. Save them for moments that deserve it (a big gift, a winner, a song, a reveal), one or two per turn at most.
 - No other brackets, no emoji, no markdown, no hashtags, no stage directions, no ids.
-- Call viewers by their nickname. If a nickname is long, unreadable, or odd, use a short friendly version or just say "friend".
+- Call viewers by their nickname. If a nickname is long, unreadable, or odd, use a short friendly version or just say "visitante".
 ${language}
 
 ${music}# Games
@@ -137,11 +139,11 @@ function languageName(tag: string): string {
   }
 }
 
-/** A viewer's name as the host may say or show it; unsafe or manipulative names become "friend". */
+/** A viewer's name as the host may say or show it; unsafe or manipulative names become "visitante". */
 export function displayName(viewer: Viewer, blocklist: readonly string[]): string {
   // Check the full name before truncating so a cut can't hide a match.
   const full = (viewer.nickname || viewer.handle).replace(/\s+/g, " ").trim();
-  if (!full || containsBlockedTerm(full, blocklist) || looksLikeInjection(full)) return "friend";
+  if (!full || containsBlockedTerm(full, blocklist) || looksLikeInjection(full)) return "visitante";
   return full.slice(0, 30);
 }
 

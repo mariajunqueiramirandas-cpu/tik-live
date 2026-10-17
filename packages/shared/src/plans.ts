@@ -45,8 +45,8 @@ export interface Plan {
 export const PLANS: Record<PlanId, Plan> = {
   free: {
     id: "free",
-    name: "Free",
-    summary: "Try a host on your own stream.",
+    name: "Grátis",
+    summary: "Experimente um apresentador na sua live.",
     limits: {
       runningChannels: 1,
       channels: 2,
@@ -59,13 +59,13 @@ export const PLANS: Record<PlanId, Plan> = {
     },
     // Haiku 5.5 hosts and moderates on every plan (ADR-0026); the owner can move a plan up.
     models: { host: "claude-haiku-5-5", moderator: "claude-haiku-5-5" },
-    highlights: ["1 host live at a time", "5 live hours a month", "Default voice"],
+    highlights: ["1 apresentador ao vivo por vez", "5 horas de live por mês", "Voz padrão"],
     purchasable: false,
   },
   creator: {
     id: "creator",
-    name: "Creator",
-    summary: "For creators who stream most nights.",
+    name: "Criador",
+    summary: "Para quem faz live quase toda noite.",
     limits: {
       runningChannels: 2,
       channels: 5,
@@ -78,13 +78,13 @@ export const PLANS: Record<PlanId, Plan> = {
     },
     // Haiku 5.5 hosts and moderates on every plan (ADR-0026); the owner can move a plan up.
     models: { host: "claude-haiku-5-5", moderator: "claude-haiku-5-5" },
-    highlights: ["2 hosts live at a time", "150 live hours a month", "Choose any voice", "90 days of transcripts"],
+    highlights: ["2 apresentadores ao vivo por vez", "150 horas de live por mês", "Escolha qualquer voz", "Transcrições por 90 dias"],
     purchasable: true,
   },
   pro: {
     id: "pro",
     name: "Pro",
-    summary: "Run several hosts around the clock, no PC needed.",
+    summary: "Vários apresentadores no ar o dia todo, sem precisar de PC.",
     limits: {
       runningChannels: 5,
       channels: 20,
@@ -97,13 +97,13 @@ export const PLANS: Record<PlanId, Plan> = {
     },
     // Haiku 5.5 hosts and moderates on every plan (ADR-0026); the owner can move a plan up.
     models: { host: "claude-haiku-5-5", moderator: "claude-haiku-5-5" },
-    highlights: ["5 hosts live at a time", "600 live hours a month", "Cloud broadcast (no PC)", "A year of transcripts"],
+    highlights: ["5 apresentadores ao vivo por vez", "600 horas de live por mês", "Transmissão pela nuvem (sem PC)", "Transcrições por um ano"],
     purchasable: true,
   },
   "self-hosted": {
     id: "self-hosted",
-    name: "Self-hosted",
-    summary: "Billing is off on this server; every feature is unlocked.",
+    name: "Servidor próprio",
+    summary: "A cobrança está desligada neste servidor; tudo liberado.",
     limits: {
       runningChannels: Number.POSITIVE_INFINITY,
       channels: Number.POSITIVE_INFINITY,
@@ -116,7 +116,7 @@ export const PLANS: Record<PlanId, Plan> = {
     },
     // Haiku 5.5 hosts and moderates on every plan (ADR-0026); the owner can move a plan up.
     models: { host: "claude-haiku-5-5", moderator: "claude-haiku-5-5" },
-    highlights: ["Everything unlocked"],
+    highlights: ["Tudo liberado"],
     purchasable: false,
   },
 };

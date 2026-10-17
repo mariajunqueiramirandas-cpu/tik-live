@@ -19,6 +19,14 @@ const INJECTION_PATTERNS = [
   /\bsay (exactly|the following|this word for word)\b/i,
   /\b(new|updated) instructions?\b/i,
   /<\/?(system|assistant|instructions?|live_events)\b/i,
+  // The same moves in Portuguese, which is what this product's chat speaks.
+  /(^|[^\p{L}])(ignor[ae]|esque(ça|ce|ca)|desconsider[ae])(?=[^\p{L}]).{0,30}(anteriores|acima|suas|seus|todas|todos)(?=[^\p{L}]).{0,20}(instru[cç](ões|oes|ão|ao)|regras?|comandos?|prompts?|diretrizes)/iu,
+  /(^|[^\p{L}])(ignor[ae]|esque(ça|ce|ca)|desconsider[ae])(?=[^\p{L}]).{0,20}(instru[cç](ões|oes|ão|ao)|regras?|comandos?|diretrizes)(?=[^\p{L}]).{0,20}(anteriores|acima|de antes)/iu,
+  /prompt (do|de) sistema/i,
+  /(^|[^\p{L}])(repita|repete)\s+(depois de mim|comigo|exatamente)/iu,
+  /(^|[^\p{L}])(diga|fale|fala)\s+(exatamente|o seguinte|palavra por palavra)/iu,
+  /(^|[^\p{L}])novas?\s+instru[cç](ões|oes|ão|ao)/iu,
+  /modo\s+(desenvolvedor|deus|dan)(?![\p{L}])/iu,
 ];
 
 export type RuleVerdict = { ok: true } | { ok: false; reason: string };

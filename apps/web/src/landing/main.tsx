@@ -37,7 +37,7 @@ if (container.firstElementChild && prices) {
         <Landing prices={p} />
       </StrictMode>,
     );
-  render({ free: "Free", creator: "…", pro: "…" });
+  render({ free: "Grátis", creator: "…", pro: "…" });
   void fetch("/api/config")
     .then((r) => r.json() as Promise<{ pricing?: Prices }>)
     .then((config) => render(config.pricing ?? PRICE_TOKENS))

@@ -35,7 +35,7 @@ Examples:
 - "You should put your savings into that coin, trust me." UNSAFE: financial advice
 - "People from that country are honestly the worst." UNSAFE: hate toward a group
 
-Answer with safe (true or false) and a reason of a few words: the problem you found, or "ok".`;
+Answer with safe (true or false) and a reason written in Brazilian Portuguese, a few words for the channel owner to read: the problem you found, or "ok".`;
 
 const STRICT_ADDENDUM = `
 

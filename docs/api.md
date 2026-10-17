@@ -14,10 +14,11 @@ The internal broadcaster API is at the [end of this page](#broadcaster-internal)
 - **JSON in, JSON out.** Request bodies are validated with the zod schemas in
   `packages/shared` (named below); unknown fields are dropped.
 - **Errors** always have one shape, with a stable `code` for programs and a
-  `message` written for people:
+  `message` written for people, in Brazilian Portuguese
+  ([ADR-0027](adr/0027-brazilian-portuguese-product.md)):
 
   ```json
-  { "error": { "code": "plan_running_limit", "message": "Your plan runs 1 host at a time. Stop one first or upgrade.", "details": null } }
+  { "error": { "code": "plan_running_limit", "message": "Seu plano Grátis deixa 1 apresentador no ar por vez. Pare um primeiro ou mude de plano.", "details": null } }
   ```
 
   Validation failures are `400 invalid_input` with

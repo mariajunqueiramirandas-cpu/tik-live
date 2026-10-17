@@ -127,7 +127,7 @@ const HOW_TO_ANSWER: Record<GameKind, string> = {
   poll: "vote by typing the letter of their pick",
   scramble: "type the unscrambled word",
   number: "type a number; the screen narrows the range after every guess",
-  truefalse: "type T for true or F for false",
+  truefalse: "type V for true (verdadeiro) or F for false (falso)",
   math: "type the result",
   riddle: "type the answer",
   fastest: "type the word on screen as fast as they can",
@@ -188,7 +188,7 @@ export class GameMaster {
   }
 
   start(config: GameConfig, source: "segment" | "studio", chatSample: string[] = []): { ok: true } | { ok: false; error: string } {
-    if (this.game) return { ok: false, error: "A game is already running. Stop it first." };
+    if (this.game) return { ok: false, error: "Já tem um jogo rolando. Pare esse primeiro." };
     const now = this.now();
     const game: ActiveGame = {
       config,
@@ -497,7 +497,7 @@ export class GameMaster {
       : "";
     this.cues.push({
       note: `${intro}Round ${game.index + 1} of ${game.config.rounds} is on screen now: ${promptOf(round)} ${openInstruction(content)} They have ${Math.round(round.durationMs / 1000)} seconds.`,
-      line: first ? `${label}! Round ${game.index + 1}. ${spokenPrompt(round)}` : `Round ${game.index + 1}! ${spokenPrompt(round)}`,
+      line: first ? `${label}! Rodada ${game.index + 1}. ${spokenPrompt(round)}` : `Rodada ${game.index + 1}! ${spokenPrompt(round)}`,
       history: `${label} round ${game.index + 1} of ${game.config.rounds} opened: ${promptOf(round)}`,
       round: game.index,
       phase: "open",
@@ -537,7 +537,7 @@ export class GameMaster {
         const total = round.answers.size;
         won = right.length > 0;
         summary = `The answer: ${answerOf(content)}. ${won ? `${right[0]?.[1].name} was fastest; ${right.length} of ${total} got it right.` : total ? `Nobody of ${total} got it.` : "Nobody answered."}`;
-        line = `It was ${answerOf(content)}! ${won ? `${right[0]?.[1].name} got it first.` : "Nobody got it this time."}`;
+        line = `Era ${answerOf(content)}! ${won ? `${right[0]?.[1].name} acertou primeiro.` : "Ninguém acertou dessa vez."}`;
         break;
       }
       case "poll": {
@@ -546,7 +546,7 @@ export class GameMaster {
         const results = content.options.map((option, i) => `${OPTION_LETTERS[i]}) ${option}: ${tally[i]} vote${tally[i] === 1 ? "" : "s"}${total ? ` (${Math.round(((tally[i] ?? 0) / total) * 100)}%)` : ""}`);
         const top = tally.indexOf(Math.max(...tally));
         summary = total ? `Votes are in. ${results.join("; ")}.` : "Nobody voted.";
-        line = total ? `The votes are in, and ${content.options[top]} wins!` : "Nobody voted? Wow.";
+        line = total ? `Votação encerrada, e ${content.options[top]} venceu!` : "Ninguém votou? Sério?";
         won = total > 0;
         break;
       }
@@ -555,14 +555,14 @@ export class GameMaster {
         summary = won
           ? `${round.winner?.name} guessed it: ${content.secret}, after ${round.guesses} guesses in total.`
           : `Time's up. Nobody got it: the number was ${content.secret}${round.guesses ? `, and the closest window was ${round.low} to ${round.high}` : ""}.`;
-        line = won ? `${round.winner?.name} got it! It was ${content.secret}.` : `Time's up! It was ${content.secret}.`;
+        line = won ? `${round.winner?.name} acertou! Era ${content.secret}.` : `Tempo esgotado! Era ${content.secret}.`;
         break;
       default: {
         won = round.winner !== null;
         const answer = answerOf(content);
         const speed = round.winner ? ` in ${(round.winner.ms / 1000).toFixed(1)} seconds` : "";
         summary = won ? `${round.winner?.name} got it first${speed}: ${answer}.` : `Time's up, nobody got it. The answer was ${answer}.`;
-        line = won ? `${round.winner?.name} got it! ${answer}.` : `Time's up! It was ${answer}.`;
+        line = won ? `${round.winner?.name} acertou! ${answer}.` : `Tempo esgotado! Era ${answer}.`;
       }
     }
     this.publish();
@@ -600,12 +600,12 @@ export class GameMaster {
     const cue = scored
       ? {
           note: `Game over! Final scores: ${top}. Crown the winner, celebrate the top players, and thank everyone who played.`,
-          line: `Game over! The winner is ${board[0]?.name}! Thanks for playing, everyone.`,
+          line: `Fim de jogo! Quem venceu foi ${board[0]?.name}! Valeu por jogarem, galera.`,
           history: `${label} game over. Final scores: ${top}.`,
         }
       : {
           note: `That was the last round of ${label}. Thank everyone who played and say you'll do another one later.`,
-          line: "That's the game! Thanks for playing.",
+          line: "Fim de jogo! Valeu por jogarem.",
           history: `${label} game over.`,
         };
     this.cues.push({ ...cue, round: game.index, phase: "results", at: now });
@@ -666,7 +666,7 @@ export class GameMaster {
     if (game.phase === "results") {
       return {
         kind: "scoreboard",
-        title: `${GAME_LABELS[game.config.kind]}: final scores`.slice(0, 60),
+        title: `Placar final · ${GAME_LABELS[game.config.kind]}`.slice(0, 60),
         rows: this.leaderboard(game).slice(0, 5),
       };
     }
@@ -771,17 +771,17 @@ function promptOf(round: Round): string {
     case "poll":
       return `"${content.question}" ${content.options.map((option, i) => `${OPTION_LETTERS[i]}) ${option}`).join("  ")}`;
     case "truefalse":
-      return `True or false: "${content.statement}"`;
+      return `Verdadeiro ou falso: "${content.statement}"`;
     case "scramble":
-      return `Unscramble: ${round.letters}`;
+      return `Desembaralhe: ${round.letters}`;
     case "number":
-      return `Guess the number from ${content.min} to ${content.max} (now between ${round.low} and ${round.high})`;
+      return `Adivinhe o número de ${content.min} a ${content.max} (agora entre ${round.low} e ${round.high})`;
     case "math":
       return `${content.expression} = ?`;
     case "riddle":
-      return `Riddle: "${content.riddle}"`;
+      return `Charada: "${content.riddle}"`;
     case "fastest":
-      return `Type it first: ${content.word.toUpperCase()}`;
+      return `Digite primeiro: ${content.word.toUpperCase()}`;
   }
 }
 
@@ -793,17 +793,17 @@ function spokenPrompt(round: Round): string {
     case "poll":
       return `${content.question} ${content.options.map((option, i) => `${OPTION_LETTERS[i]}, ${option}.`).join(" ")}`;
     case "truefalse":
-      return `True or false? ${content.statement}`;
+      return `Verdadeiro ou falso? ${content.statement}`;
     case "scramble":
-      return "Unscramble the word on screen!";
+      return "Desembaralhe a palavra na tela!";
     case "number":
-      return `I'm thinking of a number from ${content.min} to ${content.max}. Guess it!`;
+      return `Pensei num número de ${content.min} a ${content.max}. Adivinha!`;
     case "math":
-      return `Quick, what's ${content.expression.replace("×", "times").replace("−", "minus")}?`;
+      return `Rápido, quanto é ${content.expression.replace("×", "vezes").replace("−", "menos")}?`;
     case "riddle":
       return content.riddle;
     case "fastest":
-      return "Type the word on screen, fast!";
+      return "Digite a palavra da tela, rápido!";
   }
 }
 
@@ -814,7 +814,7 @@ function openInstruction(content: RoundContent): string {
     case "poll":
       return "Ask it with some drama and tell chat to vote with the letter.";
     case "truefalse":
-      return "Read the statement and tell chat to type T or F.";
+      return "Read the statement and tell chat to type V (verdadeiro) or F (falso).";
     case "scramble":
       return "Say the scrambled letters are on screen and tell chat to type the word. Never say the word or spell it out.";
     case "number":
@@ -836,7 +836,7 @@ function answerOf(content: RoundContent): string | null {
     case "poll":
       return null;
     case "truefalse":
-      return content.answer ? "true" : "false";
+      return content.answer ? "verdadeiro" : "falso";
     case "scramble":
     case "fastest":
       return content.word.toUpperCase();

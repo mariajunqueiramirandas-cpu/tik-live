@@ -32,6 +32,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0024](0024-music-as-code.md) | Music as code | Proposed |
 | [0025](0025-host-context-and-memory.md) | What the host knows each turn | Proposed (amended by 0026) |
 | [0026](0026-turn-engine-and-context-cache.md) | A turn engine over one cached conversation, on Claude Haiku 5.5 | Proposed |
+| [0027](0027-brazilian-portuguese-product.md) | The product is in Brazilian Portuguese | Accepted |
 
 ## Evidence used
 

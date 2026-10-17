@@ -583,14 +583,14 @@ export class Director {
           kind: "react",
           items: focus.items,
           brief: focus.brief,
-          ...(also ? { also: `${also}: celebrate it in a few words.` } : {}),
+          ...(also ? { also: `${also.note}: celebrate it in a few words.` } : {}),
           originAt: Number.isFinite(first) ? first : now,
         };
       }
     }
 
     const milestone = this.takeMilestone();
-    if (milestone) return { ...base, kind: "milestone", items: [], note: milestone };
+    if (milestone) return { ...base, kind: "milestone", items: [], note: milestone.note, line: milestone.line };
 
     if (this.reactOnly()) return undefined;
 
@@ -632,11 +632,15 @@ export class Director {
     this.owed = [...this.owed, { event, at: this.now() }].slice(-OWED_MAX);
   }
 
-  private takeMilestone(): string | undefined {
+  private takeMilestone(): { note: string; line: string } | undefined {
     if (this.pendingMilestone === undefined) return undefined;
-    const note = `the stream just passed ${this.pendingMilestone.toLocaleString("en-US")} likes`;
+    const crossed = this.pendingMilestone;
     this.pendingMilestone = undefined;
-    return note;
+    // The note is for the model (English numbers); the line is spoken by the offline host (Brazilian numbers).
+    return {
+      note: `the stream just passed ${crossed.toLocaleString("en-US")} likes`,
+      line: `Passamos de ${crossed.toLocaleString("pt-BR")} curtidas`,
+    };
   }
 
   private changeSegment(now: number, base: Omit<TurnPlan, "kind" | "items">): TurnPlan {

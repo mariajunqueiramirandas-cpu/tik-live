@@ -45,9 +45,9 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
     try {
       await deps.database.ping();
     } catch {
-      return problem(c, 503, "not_ready", "Database unreachable.");
+      return problem(c, 503, "not_ready", "Banco de dados inacessível.");
     }
-    if (eventLoopLagMs > 200) return problem(c, 503, "overloaded", `Event loop lag is ${eventLoopLagMs} ms.`, { eventLoopLagMs });
+    if (eventLoopLagMs > 200) return problem(c, 503, "overloaded", `Atraso do event loop: ${eventLoopLagMs} ms.`, { eventLoopLagMs });
     return c.json({ ok: true, database: deps.database.kind, eventLoopLagMs });
   });
 
@@ -56,7 +56,7 @@ export function createApp(deps: AppDeps): Hono<AppEnv> {
   const identityRoutes = deps.identity.routes?.();
   if (identityRoutes) app.route("/", identityRoutes);
   mountRealtime(app, deps);
-  app.notFound((c) => (c.req.path.startsWith("/api/") ? problem(c, 404, "not_found", "No such endpoint.") : c.text("Not found", 404)));
+  app.notFound((c) => (c.req.path.startsWith("/api/") ? problem(c, 404, "not_found", "Esse endereço não existe.") : c.text("Não encontrado", 404)));
   mountStatic(app, deps);
   return app;
 }

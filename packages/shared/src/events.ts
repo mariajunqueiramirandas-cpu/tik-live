@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt-br";
 
 /** A person in the LIVE audience, normalized across event sources. */
 export interface Viewer {
@@ -46,7 +47,7 @@ export const injectEventSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("gift"),
     handle: z.string().trim().min(1).max(40),
-    giftName: z.string().trim().min(1).max(40).default("Rose"),
+    giftName: z.string().trim().min(1).max(40).default("Rosa"),
     count: z.number().int().min(1).max(999).default(1),
     diamonds: z.number().int().min(1).max(50_000).default(1),
   }),

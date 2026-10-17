@@ -21,29 +21,29 @@ function HostRow({ channel }: { channel: ChannelListItem }) {
         <HostSwatch look={channel.persona.look} size={40} />
         <span className={s.identity}>
           <span className={s.name}>{channel.name}</span>
-          <span className={s.where}>{channel.source === "tiktok" && channel.tiktokUsername ? `@${channel.tiktokUsername}` : "Practice mode"}</span>
+          <span className={s.where}>{channel.source === "tiktok" && channel.tiktokUsername ? `@${channel.tiktokUsername}` : "Modo de treino"}</span>
         </span>
       </Link>
       <span className={s.status}>
         <Status status={channel.runtime.status} />
-        {live && <span className={s.watching}>{count(channel.runtime.viewers)} watching</span>}
+        {live && <span className={s.watching}>{count(channel.runtime.viewers)} assistindo</span>}
       </span>
       <span className={s.trend}>
         {last ? (
           <>
-            <Sparkline values={last.viewers} label={`Last stream peaked at ${last.peakViewers} viewers`} />
+            <Sparkline values={last.viewers} label={`A última live teve pico de ${last.peakViewers} espectadores`} />
             <span className={s.trendText}>
-              <span>Peak {count(last.peakViewers)}</span>
-              <span className={s.dim}>{live ? "now" : ago(last.endedAt ?? last.startedAt)}</span>
+              <span>Pico {count(last.peakViewers)}</span>
+              <span className={s.dim}>{live ? "agora" : ago(last.endedAt ?? last.startedAt)}</span>
             </span>
           </>
         ) : (
-          <span className={s.dim}>No streams yet</span>
+          <span className={s.dim}>Nenhuma live ainda</span>
         )}
       </span>
       <span className={s.rowActions}>
         <ButtonLink to={to} size="sm" variant={live ? "secondary" : "ghost"} {...prefetchProps(to)}>
-          {live ? "Open studio" : "Studio"}
+          {live ? "Abrir estúdio" : "Estúdio"}
         </ButtonLink>
       </span>
     </li>
@@ -59,14 +59,14 @@ function UsageMeter() {
   return (
     <div className={s.usage}>
       <div className={s.usageText}>
-        <span>Live this month</span>
+        <span>Ao vivo neste mês</span>
         <span>
           <strong>{duration(liveSeconds * 1000)}</strong>
-          {liveHoursLimit !== null && <span className={s.dim}> of {liveHoursLimit} h on {data.plan.name}</span>}
+          {liveHoursLimit !== null && <span className={s.dim}> de {liveHoursLimit} h no plano {data.plan.name}</span>}
         </span>
       </div>
       {liveHoursLimit !== null && (
-        <div className={s.meter} role="meter" aria-valuemin={0} aria-valuemax={liveHoursLimit} aria-valuenow={Math.round(used * 10) / 10} aria-label="Live hours used this month">
+        <div className={s.meter} role="meter" aria-valuemin={0} aria-valuemax={liveHoursLimit} aria-valuenow={Math.round(used * 10) / 10} aria-label="Horas ao vivo usadas neste mês">
           <span style={{ width: `${pct}%` }} data-high={pct > 85 || undefined} />
         </div>
       )}
@@ -81,13 +81,13 @@ export default function Home() {
     <div className={p.page}>
       <header className={p.header}>
         <div>
-          <h1>Your hosts</h1>
+          <h1>Seus apresentadores</h1>
           <p className={p.lede}>
-            {liveCount > 0 ? `${liveCount === 1 ? "One host is" : `${liveCount} hosts are`} live right now.` : "Each host is a character that runs a TikTok LIVE on its own."}
+            {liveCount > 0 ? `${liveCount === 1 ? "Um apresentador está" : `${liveCount} apresentadores estão`} ao vivo agora.` : "Cada apresentador é um personagem que comanda uma TikTok LIVE sozinho."}
           </p>
         </div>
         <ButtonLink to="/app/new" variant="primary" icon={<Plus aria-hidden />} {...prefetchProps("/app/new")}>
-          New host
+          Novo apresentador
         </ButtonLink>
       </header>
 
@@ -98,14 +98,14 @@ export default function Home() {
           ))}
         </div>
       ) : channels && channels.length > 0 ? (
-        <ul role="list" className={s.list} aria-label="Hosts">
+        <ul role="list" className={s.list} aria-label="Apresentadores">
           {channels.map((channel) => (
             <HostRow key={channel.id} channel={channel} />
           ))}
         </ul>
       ) : (
-        <Empty title="Create your first host" action={<ButtonLink to="/app/new" variant="primary" icon={<Plus aria-hidden />}>Create a host</ButtonLink>}>
-          <p>Pick a character, give it a name, and try it in practice mode before it ever goes live. It takes about a minute.</p>
+        <Empty title="Crie seu primeiro apresentador" action={<ButtonLink to="/app/new" variant="primary" icon={<Plus aria-hidden />}>Criar apresentador</ButtonLink>}>
+          <p>Escolha um personagem, dê um nome e teste no modo de treino antes de entrar ao vivo. Leva cerca de um minuto.</p>
         </Empty>
       )}
 

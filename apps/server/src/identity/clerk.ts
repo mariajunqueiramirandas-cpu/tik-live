@@ -92,12 +92,12 @@ export class ClerkIdentityProvider implements IdentityProvider {
     return new Hono<AppEnv>().post("/api/identity/clerk-webhook", async (c) => {
       const secret = this.config.CLERK_WEBHOOK_SIGNING_SECRET;
       const db = this.options.database;
-      if (!secret || !db) return problem(c, 404, "not_found", "Not configured.");
+      if (!secret || !db) return problem(c, 404, "not_found", "Não configurado.");
       let event;
       try {
         event = await verifyWebhook(c.req.raw, { signingSecret: secret });
       } catch {
-        return problem(c, 401, "bad_signature", "Invalid signature.");
+        return problem(c, 401, "bad_signature", "Assinatura inválida.");
       }
       const id = (event.data as { id?: string }).id;
       if (!id) return c.json({ received: true });

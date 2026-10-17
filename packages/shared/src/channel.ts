@@ -9,7 +9,7 @@ export const tiktokHandleSchema = z
   .string()
   .trim()
   .transform((value) => value.replace(/^@/, ""))
-  .pipe(z.string().regex(/^[A-Za-z0-9._]{2,24}$/, "That doesn't look like a TikTok handle"));
+  .pipe(z.string().regex(/^[A-Za-z0-9._]{2,24}$/, "Isso não parece um usuário do TikTok"));
 
 export const voiceSettingsSchema = z.object({
   provider: z.enum(["elevenlabs", "pocket", "none"]).default("none"),
@@ -46,7 +46,7 @@ export const broadcastUpdateSchema = z.object({
     .string()
     .trim()
     .max(300)
-    .regex(/^rtmps?:\/\/[^\s/]+(\/\S*)?$/i, "Use an rtmp:// or rtmps:// URL")
+    .regex(/^rtmps?:\/\/[^\s/]+(\/\S*)?$/i, "Use um endereço rtmp:// ou rtmps://")
     .nullable()
     .optional(),
   /** Write-only. Send null to clear. */

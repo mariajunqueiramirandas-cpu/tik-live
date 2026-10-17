@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { gameConfigSchema } from "./game";
+// Installs the pt-BR messages wherever schemas are used. A bare import kept here, not in
+// index.ts: bundlers skip the barrel and go straight to the module that defines a symbol.
+import "./zod-pt-br";
 
 export const EMOTIONS = [
   "neutral",
@@ -50,7 +53,7 @@ export type CharacterKind = (typeof CHARACTER_KINDS)[number];
 
 const hexColor = z
   .string()
-  .regex(/^#[0-9a-fA-F]{6}$/, "Use a 6-digit hex color like #7CF5FF")
+  .regex(/^#[0-9a-fA-F]{6}$/, "Use uma cor hexadecimal de 6 dígitos, como #7CF5FF")
   .transform((value) => value.toUpperCase());
 
 export const DEFAULT_LOOK = {
@@ -74,7 +77,7 @@ export const timeZoneSchema = z
   .string()
   .trim()
   .max(64)
-  .refine((zone) => isTimeZone(zone), "That isn't a time zone this server knows");
+  .refine((zone) => isTimeZone(zone), "Esse fuso horário não é reconhecido");
 
 export function isTimeZone(zone: string): boolean {
   try {
@@ -90,7 +93,7 @@ export const segmentSchema = z.object({
     .string()
     .min(1)
     .max(40)
-    .regex(/^[a-z0-9-]+$/, "Lowercase letters, numbers and dashes only"),
+    .regex(/^[a-z0-9-]+$/, "Só letras minúsculas, números e hífens"),
   title: z.string().trim().min(1).max(40),
   /** How long the segment runs before the director rotates to the next one. */
   minutes: z.number().min(1).max(120),

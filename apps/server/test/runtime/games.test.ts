@@ -97,7 +97,7 @@ describe("GameMaster", () => {
     expect(scene.phase).toBe("open");
     expect(scene.correct).toBeNull(); // never sent before the reveal
     const opening = games.takeCue();
-    expect(opening?.note).toContain("start of a Trivia game");
+    expect(opening?.note).toContain("start of a Quiz game");
     expect(games.hostContext()).not.toContain("Answer:");
 
     const status = games.status()!;
@@ -252,7 +252,7 @@ describe("GameMaster", () => {
     games.tick(false);
     const reveal = scenes.at(-1);
     if (reveal?.kind !== "truefalse") throw new Error("expected a true/false reveal");
-    expect(reveal.winners).toEqual(["friend"]);
+    expect(reveal.winners).toEqual(["visitante"]);
     games.stop();
     expect(games.isActive()).toBe(false);
     expect(scenes.at(-1)).toBeNull();

@@ -104,9 +104,9 @@ export async function checkRtmpServer(
   const host = url.hostname.replace(/^\[|\]$/g, "");
   try {
     await (options.connect ?? tcpConnect)(host, port, options.timeoutMs ?? 5000);
-    return { ok: true, detail: `Reached ${host}:${port}.` };
+    return { ok: true, detail: `Conectou em ${host}:${port}.` };
   } catch {
-    return { ok: false, detail: `Couldn't reach ${host}:${port}. Check the server URL.` };
+    return { ok: false, detail: `Não deu para conectar em ${host}:${port}. Confira o endereço do servidor.` };
   }
 }
 

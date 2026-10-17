@@ -91,11 +91,12 @@ describe("prompts", () => {
     expect(buildSystemPrompt({ ...persona, rules: [] })).not.toContain("show rules");
   });
 
-  it("keeps a single-language voice's host in that language", () => {
-    expect(buildSystemPrompt(persona)).toContain("Reply in the language the viewer wrote in.");
-    const pt = buildSystemPrompt(persona, undefined, "pt-BR");
-    expect(pt).toContain("Always speak Brazilian Portuguese, whatever language a viewer writes in");
-    expect(pt).not.toContain("Reply in the language the viewer wrote in.");
+  it("speaks Brazilian Portuguese, unless the voice can only speak something else", () => {
+    expect(buildSystemPrompt(persona)).toContain("Always speak Brazilian Portuguese (natural, everyday Brazilian speech), whatever language a viewer writes in");
+    expect(buildSystemPrompt(persona, undefined, "pt-BR")).toContain("Always speak Brazilian Portuguese (natural");
+    const spanish = buildSystemPrompt(persona, undefined, "es");
+    expect(spanish).toContain("Always speak Spanish, whatever language a viewer writes in: your voice can't pronounce any other.");
+    expect(spanish).not.toContain("Brazilian Portuguese");
   });
 });
 

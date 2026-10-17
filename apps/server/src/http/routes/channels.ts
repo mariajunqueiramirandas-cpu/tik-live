@@ -39,7 +39,7 @@ const sessionParam = z.object({ id: z.string(), sid: z.string() });
 export function channelRoutes(deps: AppDeps) {
   const owned = async (userId: string, id: string): Promise<ChannelRow> => {
     const row = await getChannel(deps.db, userId, id);
-    if (!row) throw notFound("That host");
+    if (!row) throw notFound("Esse apresentador");
     return row;
   };
 
@@ -116,10 +116,10 @@ export function channelRoutes(deps: AppDeps) {
       const source = patch.source ?? current.source;
       const handle = patch.tiktokUsername !== undefined ? patch.tiktokUsername : current.tiktokUsername;
       if (source === "tiktok" && !handle) {
-        return problem(c, 400, "tiktok_handle_required", "Add the TikTok handle this host should listen to.");
+        return problem(c, 400, "tiktok_handle_required", "Adicione o usuário do TikTok que este apresentador deve acompanhar.");
       }
       const row = await updateChannel(deps.db, user.id, current.id, patch);
-      if (!row) throw notFound("That host");
+      if (!row) throw notFound("Esse apresentador");
       await deps.manager.apply(row);
       return c.json({ channel: await toChannelDto(deps, row) });
     })
@@ -140,7 +140,7 @@ export function channelRoutes(deps: AppDeps) {
         stageKeyLookup: stage.stageKeyLookup,
         stageKeyCiphertext: stage.stageKeyCiphertext,
       });
-      if (!row) throw notFound("That host");
+      if (!row) throw notFound("Esse apresentador");
       await deps.manager.rotateStageKey(row, stage.key);
       await audit(deps.db, { userId: user.id, action: "channel.stage_key_rotated", target: row.id, ip: clientIp(c) });
       return c.json({ channel: await toChannelDto(deps, row) });
@@ -151,10 +151,10 @@ export function channelRoutes(deps: AppDeps) {
       const input = c.req.valid("json");
       const plan = await deps.entitlements.planFor(user.id);
       if (input.enabled && !plan.limits.cloudBroadcast) {
-        return problem(c, 402, "plan_no_broadcast", `Cloud broadcast is part of the ${PLANS.pro.name} plan.`);
+        return problem(c, 402, "plan_no_broadcast", `A transmissão pela nuvem faz parte do plano ${PLANS.pro.name}.`);
       }
       if (input.enabled && !deps.config.BROADCAST_ENABLED) {
-        return problem(c, 409, "broadcast_disabled", "Cloud broadcast isn't turned on for this server.");
+        return problem(c, 409, "broadcast_disabled", "A transmissão pela nuvem não está ligada neste servidor.");
       }
       const broadcast = { ...current.broadcast };
       if (input.enabled !== undefined) broadcast.enabled = input.enabled;
@@ -165,18 +165,18 @@ export function channelRoutes(deps: AppDeps) {
         await audit(deps.db, { userId: user.id, action: "channel.stream_key_changed", target: current.id, ip: clientIp(c) });
       }
       if (broadcast.enabled && !(broadcast.rtmpUrl && broadcast.streamKeyCiphertext)) {
-        return problem(c, 400, "broadcast_incomplete", "Add the server URL and stream key before turning cloud broadcast on.");
+        return problem(c, 400, "broadcast_incomplete", "Adicione o endereço do servidor e a chave de transmissão antes de ligar a transmissão pela nuvem.");
       }
       const row = await updateChannel(deps.db, user.id, current.id, { broadcast });
-      if (!row) throw notFound("That host");
+      if (!row) throw notFound("Esse apresentador");
       await deps.manager.apply(row);
       return c.json({ channel: await toChannelDto(deps, row) });
     })
     .post("/:id/broadcast/check", valid("param", idParam), valid("json", z.object({ rtmpUrl: z.string().trim().max(300).optional() })), async (c) => {
       const row = await owned(c.get("user").id, c.req.valid("param").id);
       const rtmpUrl = c.req.valid("json").rtmpUrl || row.broadcast.rtmpUrl;
-      if (!rtmpUrl) return problem(c, 400, "broadcast_incomplete", "Add the server URL first.");
-      if (!deps.broadcasts) return problem(c, 409, "broadcast_disabled", "Cloud broadcast isn't turned on for this server.");
+      if (!rtmpUrl) return problem(c, 400, "broadcast_incomplete", "Adicione o endereço do servidor primeiro.");
+      if (!deps.broadcasts) return problem(c, 409, "broadcast_disabled", "A transmissão pela nuvem não está ligada neste servidor.");
       return c.json(await deps.broadcasts.check(rtmpUrl));
     })
     .post(
@@ -187,7 +187,7 @@ export function channelRoutes(deps: AppDeps) {
         const user = c.get("user");
         const row = await owned(user.id, c.req.valid("param").id);
         if (row.source === "tiktok" && !row.tiktokUsername) {
-          return problem(c, 400, "tiktok_handle_required", "Add the TikTok handle this host should listen to.");
+          return problem(c, 400, "tiktok_handle_required", "Adicione o usuário do TikTok que este apresentador deve acompanhar.");
         }
         const result = await deps.manager.start(row);
         if (!result.ok) return problem(c, result.code === "shutting_down" ? 503 : 402, result.code, result.message);
@@ -230,7 +230,7 @@ export function channelRoutes(deps: AppDeps) {
       const params = c.req.valid("param");
       const row = await owned(c.get("user").id, params.id);
       const session = await getSession(deps.db, row.id, params.sid);
-      if (!session) throw notFound("That stream");
+      if (!session) throw notFound("Essa live");
       const [samples, lines] = await Promise.all([listSamples(deps.db, session.id), listUtterances(deps.db, session.id, 1000)]);
       return c.json({
         session: {

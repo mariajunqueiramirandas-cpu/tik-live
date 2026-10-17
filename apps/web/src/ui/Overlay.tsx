@@ -66,7 +66,7 @@ export function Confirm({
       actions={
         <>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
-            Cancel
+            Cancelar
           </Button>
           <Button
             variant={danger ? "danger" : "primary"}
@@ -77,7 +77,7 @@ export function Confirm({
                 await onConfirm();
                 onOpenChange(false);
               } catch (error) {
-                toast.error(`Couldn't ${confirmLabel.toLowerCase()}`, error);
+                toast.error(`Não deu para ${confirmLabel.toLowerCase()}`, error);
               } finally {
                 setBusy(false);
               }
@@ -161,7 +161,7 @@ function ToastView({ item }: { item: ToastItem }) {
         )}
         <Toast.Close asChild>
           <Button size="sm" variant="ghost" iconOnly icon={<X aria-hidden />}>
-            Dismiss
+            Fechar
           </Button>
         </Toast.Close>
       </div>
@@ -172,7 +172,7 @@ function ToastView({ item }: { item: ToastItem }) {
 export function Toaster() {
   const items = useSyncExternalStore(toast.subscribe, toast.get, toast.get);
   return (
-    <Toast.Provider swipeDirection="right" label="Notifications">
+    <Toast.Provider swipeDirection="right" label="Notificações">
       {items.map((item) => (
         <ToastView key={item.id} item={item} />
       ))}

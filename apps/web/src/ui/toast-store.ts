@@ -34,7 +34,7 @@ export const toast = {
   success: (title: string, description?: string) => push({ tone: "success", title, ...(description ? { description } : {}) }),
   error: (title: string, error?: unknown) => push({ tone: "error", title, ...(error !== undefined ? { description: errorMessage(error) } : {}) }),
   /** For reversible actions: "Deleted. Undo" instead of a confirm dialog. */
-  undoable: (title: string, undo: () => void) => push({ tone: "info", title, action: { label: "Undo", run: undo }, durationMs: 6000 }),
+  undoable: (title: string, undo: () => void) => push({ tone: "info", title, action: { label: "Desfazer", run: undo }, durationMs: 6000 }),
   dismiss(id: number): void {
     items = items.filter((t) => t.id !== id);
     emit();

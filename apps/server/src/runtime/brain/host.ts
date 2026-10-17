@@ -304,24 +304,24 @@ export class ScriptedHost implements HostBrain {
 
   private lines(turn: TurnRequest): string[] {
     const name = (item: TurnRequest["items"][number]) =>
-      "viewer" in item.event ? item.event.viewer.nickname || item.event.viewer.handle : "friend";
+      "viewer" in item.event ? item.event.viewer.nickname || item.event.viewer.handle : "visitante";
     switch (turn.kind) {
       case "opening":
-        return [`[excited] ${this.persona.catchphrases[0] ?? "Hello!"} ${this.persona.name} is on air!`, `[happy] Welcome to ${turn.segment.title}.`];
+        return [`[excited] ${this.persona.catchphrases[0] ?? "Oi, gente!"} ${this.persona.name} está no ar!`, `[happy] Bem-vindos ao ${turn.segment.title}.`];
       case "segment_change":
-        return [`[excited] New segment time: ${turn.nextSegment?.title ?? "something new"}!`];
+        return [`[excited] Hora de quadro novo: ${turn.nextSegment?.title ?? "uma novidade"}!`];
       case "milestone":
-        return [`[excited] ${turn.note ?? "We did it"}! You are all amazing.`];
+        return [`[excited] ${turn.line ?? "Conseguimos"}! Vocês são demais.`];
       case "game":
-        return [`[excited] ${turn.line ?? "Game time!"}`];
+        return [`[excited] ${turn.line ?? "Hora do jogo!"}`];
       case "request":
-        return ["[happy] You got it, coming right up!"];
+        return ["[happy] Pode deixar, já vai!"];
       case "filler": {
         const fillers = [
-          "[thinking] Quick question for chat: what did you eat today?",
-          "[mischief] I have a theory that ducks are secretly in charge.",
-          `[happy] If you just got here, hi! I'm ${this.persona.name}, an AI host, and this is my show.`,
-          "[surprised] Wait, is it already this late? Time is weird in here.",
+          "[thinking] Pergunta rápida pro chat: o que vocês comeram hoje?",
+          "[mischief] Tenho uma teoria de que os patos estão secretamente no comando.",
+          `[happy] Se você acabou de chegar, oi! Eu sou ${this.persona.name}, uma IA, e esse é o meu programa.`,
+          "[surprised] Pera, já é essa hora? O tempo aqui dentro é estranho.",
         ];
         return [fillers[this.fillerIndex++ % fillers.length] as string];
       }
@@ -329,11 +329,11 @@ export class ScriptedHost implements HostBrain {
         const out: string[] = [];
         for (const item of turn.items.slice(0, turn.brief ? 2 : 3)) {
           const e = item.event;
-          if (e.kind === "gift") out.push(`[excited] ${name(item)}, thank you for the ${e.count} ${e.giftName}!`);
-          else if (e.kind === "follow") out.push(`[love] Thanks for the follow, ${name(item)}!`);
-          else if (e.kind === "share") out.push(`[love] ${name(item)} shared the stream, legend!`);
-          else if (e.kind === "join") out.push(`[happy] Welcome back, ${name(item)}!`);
-          else if (e.kind === "chat" || e.kind === "question") out.push(`[thinking] ${name(item)}, great point. I'll think about that one.`);
+          if (e.kind === "gift") out.push(`[excited] ${name(item)}, obrigado pelo ${e.count}x ${e.giftName}!`);
+          else if (e.kind === "follow") out.push(`[love] Valeu por seguir, ${name(item)}!`);
+          else if (e.kind === "share") out.push(`[love] ${name(item)} compartilhou a live, que lenda!`);
+          else if (e.kind === "join") out.push(`[happy] Que bom te ver de novo, ${name(item)}!`);
+          else if (e.kind === "chat" || e.kind === "question") out.push(`[thinking] ${name(item)}, boa! Vou pensar nessa.`);
         }
         return out;
       }

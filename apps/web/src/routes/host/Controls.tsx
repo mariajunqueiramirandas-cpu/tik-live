@@ -14,15 +14,15 @@ import { toast } from "../../ui/toast-store";
 import { useHost } from "./context";
 import s from "./studio.module.css";
 
-async function send(store: StudioStore, command: StudioCommand, optimistic?: Partial<RuntimeSnapshot>, failTitle = "The host didn't do that"): Promise<boolean> {
+async function send(store: StudioStore, command: StudioCommand, optimistic?: Partial<RuntimeSnapshot>, failTitle = "O apresentador não fez isso"): Promise<boolean> {
   const result = await store.command(command, optimistic);
-  if (!result.ok) toast.error(failTitle, new Error(result.error ?? "Try again."));
+  if (!result.ok) toast.error(failTitle, new Error(result.error ?? "Tente de novo."));
   return result.ok;
 }
 
 function minutesLeft(sec: number): string {
-  if (sec <= 60) return "less than a minute left";
-  return `${Math.round(sec / 60)} min left`;
+  if (sec <= 60) return "falta menos de um minuto";
+  return `faltam ${Math.round(sec / 60)} min`;
 }
 
 function SayBox({ store, disabled, inputRef }: { store: StudioStore; disabled: boolean; inputRef: React.RefObject<HTMLTextAreaElement | null> }) {
@@ -33,13 +33,13 @@ function SayBox({ store, disabled, inputRef }: { store: StudioStore; disabled: b
     const trimmed = text.trim();
     if (!trimmed || busy) return;
     setBusy(true);
-    const ok = await send(store, { kind: "say", text: trimmed }, undefined, "Couldn't send that line");
+    const ok = await send(store, { kind: "say", text: trimmed }, undefined, "Não deu para enviar a fala");
     setBusy(false);
     if (ok) setText("");
   };
   return (
     <form className={s.say} onSubmit={submit}>
-      <Field label="Say something" hint="Your host says it next, in its own voice. Enter sends; Shift+Enter adds a line." count={{ value: text.length, max: 300 }}>
+      <Field label="Falar algo" hint="O apresentador fala isso em seguida, com a própria voz. Enter envia; Shift+Enter quebra a linha." count={{ value: text.length, max: 300 }}>
         {(props) => (
           <TextArea
             {...props}
@@ -48,7 +48,7 @@ function SayBox({ store, disabled, inputRef }: { store: StudioStore; disabled: b
             maxLength={300}
             rows={2}
             disabled={disabled}
-            placeholder="Thanks for hanging out tonight, everyone!"
+            placeholder="Valeu por ficarem aqui hoje, galera!"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -61,7 +61,7 @@ function SayBox({ store, disabled, inputRef }: { store: StudioStore; disabled: b
         )}
       </Field>
       <Button type="submit" icon={<Send aria-hidden />} busy={busy} disabled={disabled || !text.trim()}>
-        Say it
+        Falar
       </Button>
     </form>
   );
@@ -69,48 +69,48 @@ function SayBox({ store, disabled, inputRef }: { store: StudioStore; disabled: b
 
 function TestEvents({ store, disabled }: { store: StudioStore; disabled: boolean }) {
   const [kind, setKind] = useState<"chat" | "gift" | "follow" | "share">("chat");
-  const [handle, setHandle] = useState("test_viewer");
-  const [text, setText] = useState("hi! are you real?");
-  const [gift, setGift] = useState("Rose");
+  const [handle, setHandle] = useState("espectador_teste");
+  const [text, setText] = useState("oi! você é de verdade?");
+  const [gift, setGift] = useState("Rosa");
   const [diamonds, setDiamonds] = useState(1);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const who = handle.trim() || "test_viewer";
+    const who = handle.trim() || "espectador_teste";
     const injected: StudioCommand =
       kind === "chat"
-        ? { kind: "inject", event: { kind: "chat", handle: who, text: text.trim() || "hello" } }
+        ? { kind: "inject", event: { kind: "chat", handle: who, text: text.trim() || "oi" } }
         : kind === "gift"
-          ? { kind: "inject", event: { kind: "gift", handle: who, giftName: gift.trim() || "Rose", count: 1, diamonds: Math.max(1, diamonds) } }
+          ? { kind: "inject", event: { kind: "gift", handle: who, giftName: gift.trim() || "Rosa", count: 1, diamonds: Math.max(1, diamonds) } }
           : { kind: "inject", event: { kind, handle: who } };
-    await send(store, injected, undefined, "Couldn't send the test");
+    await send(store, injected, undefined, "Não deu para enviar o teste");
   };
   return (
     <details className={s.tests}>
-      <summary>Test with a pretend viewer</summary>
+      <summary>Testar com um espectador de mentira</summary>
       <form className={s.testForm} onSubmit={submit}>
-        <p className={s.paneHint}>Only your host sees these. Use them to check reactions before a real stream.</p>
+        <p className={s.paneHint}>Só o apresentador vê estes eventos. Use para conferir as reações antes de uma live de verdade.</p>
         <div className={s.testRow}>
-          <Field label="What happens">
+          <Field label="O que acontece">
             {(props) => (
               <Select {...props} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-                <option value="chat">Chat message</option>
-                <option value="gift">Gift</option>
-                <option value="follow">Follow</option>
-                <option value="share">Share</option>
+                <option value="chat">Mensagem no chat</option>
+                <option value="gift">Presente</option>
+                <option value="follow">Novo seguidor</option>
+                <option value="share">Compartilhamento</option>
               </Select>
             )}
           </Field>
-          <Field label="Viewer">{(props) => <Input {...props} value={handle} maxLength={40} onChange={(e) => setHandle(e.target.value)} />}</Field>
+          <Field label="Espectador">{(props) => <Input {...props} value={handle} maxLength={40} onChange={(e) => setHandle(e.target.value)} />}</Field>
         </div>
-        {kind === "chat" && <Field label="Message">{(props) => <Input {...props} value={text} maxLength={300} onChange={(e) => setText(e.target.value)} />}</Field>}
+        {kind === "chat" && <Field label="Mensagem">{(props) => <Input {...props} value={text} maxLength={300} onChange={(e) => setText(e.target.value)} />}</Field>}
         {kind === "gift" && (
           <div className={s.testRow}>
-            <Field label="Gift">{(props) => <Input {...props} value={gift} maxLength={40} onChange={(e) => setGift(e.target.value)} />}</Field>
-            <Field label="Diamonds">{(props) => <Input {...props} type="number" min={1} max={50000} value={diamonds} onChange={(e) => setDiamonds(Number(e.target.value))} />}</Field>
+            <Field label="Presente">{(props) => <Input {...props} value={gift} maxLength={40} onChange={(e) => setGift(e.target.value)} />}</Field>
+            <Field label="Diamantes">{(props) => <Input {...props} type="number" min={1} max={50000} value={diamonds} onChange={(e) => setDiamonds(Number(e.target.value))} />}</Field>
           </div>
         )}
         <Button type="submit" size="sm" disabled={disabled}>
-          Send test
+          Enviar teste
         </Button>
       </form>
     </details>
@@ -140,7 +140,7 @@ function GameRunning({ game, store, disabled }: { game: GameStatus; store: Studi
   const [stopping, setStopping] = useState(false);
   const stop = async () => {
     setStopping(true);
-    await send(store, { kind: "game_stop" }, { game: null }, "Couldn't stop the game");
+    await send(store, { kind: "game_stop" }, { game: null }, "Não deu para parar o jogo");
     setStopping(false);
   };
   const live = game.phase === "open" || game.phase === "reveal";
@@ -148,13 +148,13 @@ function GameRunning({ game, store, disabled }: { game: GameStatus; store: Studi
   return (
     <div className={s.game}>
       <p className={s.gamePhase}>
-        {game.phase === "reveal" ? `Round ${game.round} of ${game.rounds} · ` : ""}
+        {game.phase === "reveal" ? `Rodada ${game.round}/${game.rounds} · ` : ""}
         {gamePhase(game)}
         {game.phase === "open" && (
           <>
             {" · "}
             <span role="timer" className={s.gameTimer}>
-              {Math.ceil(left)} s left
+              faltam {Math.ceil(left)} s
             </span>
           </>
         )}
@@ -164,18 +164,18 @@ function GameRunning({ game, store, disabled }: { game: GameStatus; store: Studi
         <dl className={s.gameFacts}>
           {game.answer !== null && (
             <div>
-              <dt>Answer (only you see this)</dt>
+              <dt>Resposta (só você vê)</dt>
               <dd className={s.gameAnswer}>{game.answer}</dd>
             </div>
           )}
           <div>
-            <dt>In chat</dt>
+            <dt>No chat</dt>
             <dd>{plural(game.answers, ...ANSWER_WORD[game.kind])}</dd>
           </div>
         </dl>
       )}
       {top.length > 0 && (
-        <ol className={s.leaderboard} aria-label="Leaderboard">
+        <ol className={s.leaderboard} aria-label="Placar">
           {top.map((row, i) => (
             <li key={`${row.name}-${i}`}>
               <span className={s.leaderRank} aria-hidden>
@@ -189,9 +189,9 @@ function GameRunning({ game, store, disabled }: { game: GameStatus; store: Studi
       )}
       <div className={s.gameActions}>
         <Button size="sm" variant="quietDanger" icon={<Square aria-hidden />} busy={stopping} disabled={disabled} onClick={() => void stop()}>
-          Stop game
+          Parar jogo
         </Button>
-        {game.source === "segment" && <span className={s.paneHint}>Started by the segment</span>}
+        {game.source === "segment" && <span className={s.paneHint}>Iniciado pelo quadro</span>}
       </div>
     </div>
   );
@@ -209,12 +209,12 @@ function GameSetup({ store, disabled }: { store: StudioStore; disabled: boolean 
     const trimmed = topic.trim();
     setBusy(true);
     const preparing: GameStatus = { kind, topic: trimmed || null, phase: "preparing", round: 0, rounds, prompt: "", answer: null, remainingSec: 0, answers: 0, leaderboard: [], source: "studio" };
-    await send(store, { kind: "game_start", game: { kind, rounds, ...(trimmed ? { topic: trimmed } : {}) } }, { game: preparing }, "Couldn't start the game");
+    await send(store, { kind: "game_start", game: { kind, rounds, ...(trimmed ? { topic: trimmed } : {}) } }, { game: preparing }, "Não deu para começar o jogo");
     setBusy(false);
   };
   return (
     <form className={s.gameForm} onSubmit={submit}>
-      <Field label="Game" hint={GAME_HOW[kind]}>
+      <Field label="Jogo" hint={GAME_HOW[kind]}>
         {(props) => (
           <Select {...props} value={kind} disabled={disabled} onChange={(e) => setKind(e.target.value as GameKind)}>
             {GAME_KINDS.map((k) => (
@@ -226,15 +226,15 @@ function GameSetup({ store, disabled }: { store: StudioStore; disabled: boolean 
         )}
       </Field>
       <div className={s.gameRow}>
-        <Field label="Rounds" error={validRounds ? null : "1 to 10"}>
+        <Field label="Rodadas" error={validRounds ? null : "De 1 a 10"}>
           {(props) => <Input {...props} type="number" min={1} max={10} value={Number.isNaN(rounds) ? "" : rounds} disabled={disabled} onChange={(e) => setRounds(e.target.valueAsNumber)} />}
         </Field>
-        <Field label="Topic" optional>
-          {(props) => <Input {...props} value={topic} maxLength={80} disabled={disabled} placeholder="e.g. 90s cartoons" onChange={(e) => setTopic(e.target.value)} />}
+        <Field label="Tema" optional>
+          {(props) => <Input {...props} value={topic} maxLength={80} disabled={disabled} placeholder="ex.: futebol" onChange={(e) => setTopic(e.target.value)} />}
         </Field>
       </div>
       <Button type="submit" size="sm" variant="primary" icon={<Gamepad2 aria-hidden />} busy={busy} disabled={disabled || !validRounds}>
-        Start game
+        Começar jogo
       </Button>
     </form>
   );
@@ -244,7 +244,7 @@ function Games({ store, game, disabled }: { store: StudioStore; game: GameStatus
   return (
     <section className={s.games} aria-labelledby="games-heading">
       <div className={s.paneHead}>
-        <h2 id="games-heading">Games</h2>
+        <h2 id="games-heading">Jogos</h2>
         {game && (
           <span className={s.paneHint}>
             {GAME_LABELS[game.kind]}
@@ -268,7 +268,7 @@ function NowPlaying({ music, store, disabled, host }: { music: NonNullable<Runti
       <div className={s.playingText}>
         <p className={s.playingTitle}>{music.title}</p>
         <p className={s.paneHint}>
-          {music.byHost ? `By ${host}` : "From the library"} · <span role="timer">{clock(left)} left</span>
+          {music.byHost ? `Por ${host}` : "Da biblioteca"} · <span role="timer">faltam {clock(left)}</span>
         </p>
       </div>
       <Button
@@ -279,11 +279,11 @@ function NowPlaying({ music, store, disabled, host }: { music: NonNullable<Runti
         disabled={disabled}
         onClick={async () => {
           setBusy(true);
-          await send(store, { kind: "music_stop" }, { music: null }, "Couldn't stop the music");
+          await send(store, { kind: "music_stop" }, { music: null }, "Não deu para parar a música");
           setBusy(false);
         }}
       >
-        Stop
+        Parar
       </Button>
     </div>
   );
@@ -299,43 +299,43 @@ function MusicPane({ store, music, disabled, host, musicOff, characterUrl }: { s
     const text = prompt.trim();
     if (!text || asking) return;
     setAsking(true);
-    const ok = await send(store, { kind: "music_play", prompt: text }, undefined, "Couldn't ask for that beat");
+    const ok = await send(store, { kind: "music_play", prompt: text }, undefined, "Não deu para pedir essa batida");
     setAsking(false);
     if (ok) {
       setPrompt("");
-      toast.success(`${host} is on it`, "The beat plays on stage once it's written.");
+      toast.success(`${host} já está criando`, "A batida toca no palco assim que ficar pronta.");
     }
   };
   const play = async (event: FormEvent) => {
     event.preventDefault();
     if (!piece || playing) return;
     setPlaying(true);
-    await send(store, { kind: "music_play", library: piece }, undefined, "Couldn't play that");
+    await send(store, { kind: "music_play", library: piece }, undefined, "Não deu para tocar essa música");
     setPlaying(false);
   };
   return (
     <section className={s.music} aria-labelledby="music-heading">
       <div className={s.paneHead}>
-        <h2 id="music-heading">Music</h2>
-        {!music && <span className={s.paneHint}>Plays on stage, under the voice</span>}
+        <h2 id="music-heading">Música</h2>
+        {!music && <span className={s.paneHint}>Toca no palco, por baixo da voz</span>}
       </div>
       {music && <NowPlaying music={music} store={store} disabled={disabled} host={host} />}
       {musicOff && (
         <p className={s.paneHint}>
-          {host} doesn't play music on its own. <Link to={characterUrl}>Change that in Character</Link>
+          {host} não toca música por conta própria. <Link to={characterUrl}>Mude isso em Personagem</Link>
         </p>
       )}
       <form className={s.inlineForm} onSubmit={ask}>
-        <Field label="Ask for a beat">
+        <Field label="Pedir uma batida">
           {(props) => <Input {...props} value={prompt} maxLength={120} disabled={disabled} placeholder="funk carioca, 130 bpm" onChange={(e) => setPrompt(e.target.value)} />}
         </Field>
         <Button type="submit" icon={<Sparkles aria-hidden />} busy={asking} disabled={disabled || !prompt.trim()}>
-          Ask
+          Pedir
         </Button>
       </form>
       {LIBRARY.length > 0 && (
         <form className={s.inlineForm} onSubmit={play}>
-          <Field label="From the library">
+          <Field label="Da biblioteca">
             {(props) => (
               <Select {...props} value={piece} disabled={disabled} onChange={(e) => setPiece(e.target.value)}>
                 {LIBRARY.map((item) => (
@@ -347,7 +347,7 @@ function MusicPane({ store, music, disabled, host, musicOff, characterUrl }: { s
             )}
           </Field>
           <Button type="submit" icon={<Play aria-hidden />} busy={playing} disabled={disabled || !piece}>
-            Play
+            Tocar
           </Button>
         </form>
       )}
@@ -373,33 +373,33 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
   useHotkeys({ p: togglePause, k: skip, s: () => sayRef.current?.focus() }, usable);
 
   return (
-    <aside className={s.controls} aria-label="Controls">
+    <aside className={s.controls} aria-label="Controles">
       <div className={s.kill}>
         {paused ? (
           <Button variant="primary" size="lg" icon={<Play aria-hidden />} onClick={togglePause} disabled={!usable}>
-            Resume the host
+            Retomar o apresentador
           </Button>
         ) : (
           <Button variant="danger" size="lg" icon={<Pause aria-hidden />} onClick={togglePause} disabled={!usable}>
-            Pause the host
+            Pausar o apresentador
           </Button>
         )}
         <p className={s.killHint}>
-          {paused ? "Paused. Nothing is said until you resume." : "Stops the current line at once and holds the host."} <kbd>P</kbd>
+          {paused ? "Pausado. Nada é dito até você retomar." : "Corta a fala atual na hora e segura o apresentador."} <kbd>P</kbd>
         </p>
       </div>
 
       <div className={s.nowSaying}>
         <div className={s.paneHead}>
-          <h2>Now saying</h2>
-          <Tooltip content={<>Skip this line <kbd>K</kbd></>}>
+          <h2>Falando agora</h2>
+          <Tooltip content={<>Pular esta fala <kbd>K</kbd></>}>
             <Button size="sm" variant="ghost" icon={<SkipForward aria-hidden />} onClick={skip} disabled={!usable || !snapshot?.nowSaying}>
-              Skip
+              Pular
             </Button>
           </Tooltip>
         </div>
         <p className={cx(s.saying, !snapshot?.nowSaying && s.sayingIdle)}>
-          {snapshot?.nowSaying?.text ?? (snapshot?.thinking ? "Thinking of what to say…" : paused ? "Paused" : onAir ? "Listening to the room" : "Off air")}
+          {snapshot?.nowSaying?.text ?? (snapshot?.thinking ? "Pensando no que dizer…" : paused ? "Pausado" : onAir ? "Ouvindo a sala" : "Fora do ar")}
         </p>
       </div>
 
@@ -421,7 +421,7 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
       {snapshot && snapshot.segments.length > 0 && (
         <div className={s.segments}>
           <div className={s.paneHead}>
-            <h2 id="segment-heading">Segment</h2>
+            <h2 id="segment-heading">Quadro</h2>
             {onAir && <span className={s.paneHint}>{minutesLeft(snapshot.segment.endsInSec)}</span>}
           </div>
           <ul role="list" aria-labelledby="segment-heading" className={s.segmentList}>
@@ -442,7 +442,7 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
                     {game && (
                       <span className={s.segmentGame}>
                         <Gamepad2 aria-hidden />
-                        <span className="visually-hidden">, game: </span>
+                        <span className="visually-hidden">, jogo: </span>
                         {GAME_LABELS[game]}
                       </span>
                     )}
@@ -457,8 +457,8 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
       {snapshot && snapshot.queue.length > 0 && (
         <div className={s.queue}>
           <div className={s.paneHead}>
-            <h2 id="queue-heading">Up next</h2>
-            <span className={s.paneHint}>{snapshot.queue.length} waiting</span>
+            <h2 id="queue-heading">A seguir</h2>
+            <span className={s.paneHint}>{snapshot.queue.length} na fila</span>
           </div>
           <ol aria-labelledby="queue-heading" className={s.queueList}>
             {snapshot.queue.slice(0, 5).map((item, i) => (

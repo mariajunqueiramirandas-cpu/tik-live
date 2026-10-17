@@ -14,15 +14,18 @@ function Item({ tone, label, value }: { tone: Tone; label: string; value: string
   );
 }
 
-const BROADCAST_TEXT = { starting: "Starting", live: "Live", retrying: "Reconnecting", failed: "Not streaming", stopped: "Off" } as const;
+const BROADCAST_TEXT = { starting: "Iniciando", live: "Ao vivo", retrying: "Reconectando", failed: "Sem transmissão", stopped: "Desligada" } as const;
+
+/** "4,5" */
+const oneDecimal = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 function BroadcastItem({ broadcast }: { broadcast: NonNullable<RuntimeSnapshot["health"]["broadcast"]> }) {
   const tone: Tone = broadcast.state === "live" ? "ok" : broadcast.state === "failed" ? "bad" : broadcast.state === "stopped" ? "off" : "warn";
-  const value = broadcast.state === "live" && broadcast.bitrateKbps ? `Live, ${(broadcast.bitrateKbps / 1000).toFixed(1)} Mbps` : BROADCAST_TEXT[broadcast.state];
+  const value = broadcast.state === "live" && broadcast.bitrateKbps ? `Ao vivo, ${oneDecimal(broadcast.bitrateKbps / 1000)} Mbps` : BROADCAST_TEXT[broadcast.state];
   return (
     <li className={cx(s.healthItem, s[tone])} title={broadcast.detail}>
       <span className={s.healthDot} aria-hidden />
-      <span className={s.healthLabel}>Cloud broadcast</span>
+      <span className={s.healthLabel}>Transmissão pela nuvem</span>
       <span className={s.healthValue}>{value}</span>
     </li>
   );
@@ -35,27 +38,27 @@ export function Health({ snapshot, onAir }: { snapshot: RuntimeSnapshot | null; 
   const onStage = health.stages.program + health.stages.broadcast;
   const engine = health.engine;
   return (
-    <ul role="list" className={s.health} aria-label="Health">
+    <ul role="list" className={s.health} aria-label="Saúde da live">
       <Item
         tone={!onAir ? "off" : health.source.connected ? "ok" : "warn"}
-        label={health.source.name === "simulator" ? "Practice viewers" : "TikTok"}
-        value={!onAir ? "Off" : health.source.connected ? "Connected" : health.source.detail || "Connecting"}
+        label={health.source.name === "simulator" ? "Plateia simulada" : "TikTok"}
+        value={!onAir ? "Desligado" : health.source.connected ? "Conectado" : health.source.detail || "Conectando"}
       />
       <Item
         tone={onStage > 0 ? "ok" : onAir ? "warn" : "off"}
-        label="On stream"
-        value={health.stages.broadcast > 0 ? "Cloud broadcast" : onStage > 0 ? (onStage === 1 ? "OBS connected" : `${onStage} OBS sources`) : "OBS not connected"}
+        label="Na live"
+        value={health.stages.broadcast > 0 ? "Transmissão pela nuvem" : onStage > 0 ? (onStage === 1 ? "OBS conectado" : `${onStage} fontes no OBS`) : "OBS não conectado"}
       />
-      {engine && <Item tone={engine.error ? "bad" : engine.fps >= 24 ? "ok" : "warn"} label="Stage" value={engine.error ? "Drawing problem" : `${Math.round(engine.fps)} fps`} />}
-      {health.latency && <Item tone={health.latency.p50 < 4000 ? "ok" : "warn"} label="Reply time" value={`${(health.latency.p50 / 1000).toFixed(1)} s`} />}
+      {engine && <Item tone={engine.error ? "bad" : engine.fps >= 24 ? "ok" : "warn"} label="Palco" value={engine.error ? "Erro ao desenhar" : `${Math.round(engine.fps)} fps`} />}
+      {health.latency && <Item tone={health.latency.p50 < 4000 ? "ok" : "warn"} label="Tempo de resposta" value={`${oneDecimal(health.latency.p50 / 1000)} s`} />}
       {health.brain.context && onAir && (
-        <Item tone={health.brain.context.cachedPct >= 50 ? "ok" : "warn"} label="Show memory" value={`${health.brain.context.cachedPct}% reused`} />
+        <Item tone={health.brain.context.cachedPct >= 50 ? "ok" : "warn"} label="Memória da live" value={`${health.brain.context.cachedPct}% reaproveitado`} />
       )}
       {health.budget.limitTokensPerHour !== null && (
-        <Item tone={health.budget.usedPct < 80 ? "ok" : health.budget.usedPct < 100 ? "warn" : "bad"} label="AI budget this hour" value={`${Math.round(health.budget.usedPct)}%`} />
+        <Item tone={health.budget.usedPct < 80 ? "ok" : health.budget.usedPct < 100 ? "warn" : "bad"} label="Orçamento de IA nesta hora" value={`${Math.round(health.budget.usedPct)}%`} />
       )}
       {health.broadcast && <BroadcastItem broadcast={health.broadcast} />}
-      {snapshot.reactOnly && onAir && <Item tone="warn" label="Mode" value="Reacting only" />}
+      {snapshot.reactOnly && onAir && <Item tone="warn" label="Modo" value="Só reagindo" />}
     </ul>
   );
 }

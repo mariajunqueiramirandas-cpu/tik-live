@@ -4,11 +4,11 @@ import s from "./save-indicator.module.css";
 import { cx } from "../ui/cx";
 
 const TEXT: Record<SaveState, string> = {
-  saved: "Saved",
-  dirty: "Saving soon",
-  saving: "Saving",
-  invalid: "Not saved: fix the highlighted fields",
-  error: "Couldn't save. Your edits are kept here; try again.",
+  saved: "Salvo",
+  dirty: "Salvando em instantes",
+  saving: "Salvando",
+  invalid: "Não salvo: corrija os campos destacados",
+  error: "Não deu para salvar. Suas edições continuam aqui; tente de novo.",
 };
 
 export function SaveIndicator({ state }: { state: SaveState }) {

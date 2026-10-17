@@ -1,4 +1,4 @@
-import { EMOTIONS, GAME_KINDS, GAME_LABELS, personaSchema, type Emotion, type GameConfig, type GameKind, type Look, type Persona, type Segment, type VoiceSettings } from "@tik-live/shared";
+import { EMOTIONS, GAME_KINDS, GAME_LABELS, PLANS, personaSchema, type Emotion, type GameConfig, type GameKind, type Look, type Persona, type Segment, type VoiceSettings } from "@tik-live/shared";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Tabs } from "radix-ui";
 import { useEffect, useMemo, useState } from "react";
@@ -16,63 +16,64 @@ import { useHost } from "./context";
 import s from "./character.module.css";
 
 const TABS = [
-  { id: "identity", label: "Identity" },
-  { id: "voice", label: "Voice and sound" },
-  { id: "look", label: "Look" },
-  { id: "show", label: "Show" },
-  { id: "rules", label: "Rules" },
+  { id: "identity", label: "Identidade" },
+  { id: "voice", label: "Voz e som" },
+  { id: "look", label: "Visual" },
+  { id: "show", label: "Roteiro" },
+  { id: "rules", label: "Regras" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
 const EMOTION_LABEL: Record<Emotion, string> = {
-  neutral: "Calm",
-  happy: "Happy",
-  excited: "Excited",
-  laugh: "Laughing",
-  surprised: "Surprised",
-  thinking: "Thinking",
-  sad: "Sad",
-  love: "Loving",
-  mischief: "Mischief",
-  confused: "Confused",
-  shy: "Shy",
-  sleepy: "Sleepy",
-  proud: "Proud",
-  pout: "Pouting",
+  neutral: "Calma",
+  happy: "Alegria",
+  excited: "Empolgação",
+  laugh: "Risada",
+  surprised: "Surpresa",
+  thinking: "Pensando",
+  sad: "Tristeza",
+  love: "Carinho",
+  mischief: "Travessura",
+  confused: "Confusão",
+  shy: "Timidez",
+  sleepy: "Sono",
+  proud: "Orgulho",
+  pout: "Biquinho",
 };
 
 function sampleLine(persona: Persona, emotion: Emotion): string {
+  const name = persona.name;
   const lines: Record<Emotion, string> = {
-    neutral: `I'm ${persona.name}, ${persona.tagline}.`,
-    happy: "Hi chat! It's so good to see you all tonight.",
-    excited: "Wait, wait, wait! That's the best thing I've heard all day!",
-    laugh: "Ha! Okay, that one actually got me.",
-    surprised: "No way. Did that really just happen?",
-    thinking: "Hmm. Let me think about that one for a second.",
-    sad: "Aw, you're leaving already? Come back soon, okay?",
-    love: "You all make this stream feel like home.",
-    mischief: "I have a theory, and you're not going to like it.",
-    confused: "Wait, what? I don't get it. Explain it to me like I'm an orb.",
-    shy: "Oh, stop it. You're making me blush.",
-    sleepy: "Mmm. Is it late already? I could nap right here.",
-    proud: "Did you see that? I nailed it.",
-    pout: "Hmph. Nobody laughed at my joke.",
+    neutral: `Eu sou ${name}, ${persona.tagline}.`,
+    happy: `Oi, chat! ${name} na área. Que bom ver todo mundo aqui hoje.`,
+    excited: "Pera, pera, pera! Essa foi a melhor coisa que eu ouvi hoje!",
+    laugh: "Hahaha! Tá, essa me pegou de verdade.",
+    surprised: "Não acredito. Isso aconteceu mesmo?",
+    thinking: "Hmm. Deixa eu pensar nessa um segundinho.",
+    sad: `Ah, já vai? Volta logo, que ${name} fica com saudade.`,
+    love: "Com vocês aqui, essa live parece casa.",
+    mischief: "Tenho uma teoria, e vocês não vão gostar nada dela.",
+    confused: "Quê? Não entendi nada. Explica de novo, bem devagarinho.",
+    shy: "Ai, para. Assim eu fico sem graça.",
+    sleepy: "Hmm. Já é tarde? Eu tirava um cochilo aqui mesmo.",
+    proud: `Viram isso? ${name} mandou muito bem.`,
+    pout: `Hunf. Ninguém riu da piada de ${name}.`,
   };
   return persona.catchphrases[0] && emotion === "neutral" ? `${lines.neutral} ${persona.catchphrases[0]}` : lines[emotion];
 }
 
 /** Palettes that work on the deep-water stage: [primary, secondary, background]. */
 const PALETTES: Array<{ name: string; colors: [string, string, string] }> = [
-  { name: "Lagoon", colors: ["#7CF5FF", "#FF5FD2", "#0B0420"] },
-  { name: "Ember", colors: ["#FFB86B", "#9D7BFF", "#120A26"] },
-  { name: "Sunbeam", colors: ["#FFE45C", "#FF6FB5", "#140A2E"] },
-  { name: "Kelp", colors: ["#7DFFB2", "#4FB3FF", "#04151F"] },
+  { name: "Lagoa", colors: ["#7CF5FF", "#FF5FD2", "#0B0420"] },
+  { name: "Brasa", colors: ["#FFB86B", "#9D7BFF", "#120A26"] },
+  { name: "Raio de sol", colors: ["#FFE45C", "#FF6FB5", "#140A2E"] },
+  { name: "Alga", colors: ["#7DFFB2", "#4FB3FF", "#04151F"] },
   { name: "Coral", colors: ["#FF8A7A", "#FFD15C", "#1A0820"] },
-  { name: "Moon", colors: ["#E8E4FF", "#8C7BFF", "#0A0A1C"] },
+  { name: "Lua", colors: ["#E8E4FF", "#8C7BFF", "#0A0A1C"] },
 ];
 
 function slugify(title: string, taken: Set<string>): string {
-  const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "segment";
+  const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "quadro";
   let id = base;
   for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
   return id;
@@ -84,7 +85,7 @@ function issuesByPath(persona: Persona): Record<string, string> {
   const out: Record<string, string> = {};
   for (const issue of result.error.issues) {
     const key = issue.path.join(".");
-    out[key] ??= issue.code === "too_small" && issue.minimum === 1 ? "This can't be empty." : issue.message;
+    out[key] ??= issue.code === "too_small" && issue.minimum === 1 ? "Este campo não pode ficar vazio." : issue.message;
   }
   return out;
 }
@@ -119,15 +120,15 @@ function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; on
           <li key={segment.id} className={s.segment}>
             <div className={s.segmentHead}>
               <span className={s.segmentNumber}>{i + 1}</span>
-              <Field label="Title" error={errors[`segments.${i}.title`]} className={s.grow}>
+              <Field label="Título" error={errors[`segments.${i}.title`]} className={s.grow}>
                 {(props) => <Input {...props} value={segment.title} maxLength={40} onChange={(e) => update(i, { title: e.target.value })} />}
               </Field>
-              <Field label="Minutes" error={errors[`segments.${i}.minutes`]} className={s.minutes}>
+              <Field label="Minutos" error={errors[`segments.${i}.minutes`]} className={s.minutes}>
                 {(props) => <Input {...props} type="number" min={1} max={120} value={segment.minutes} onChange={(e) => update(i, { minutes: Number(e.target.value) })} />}
               </Field>
             </div>
             <div className={s.gameRow}>
-              <Field label="Minigame" optional hint={segment.game ? GAME_HOW[segment.game.kind] : "The host can run a chat game while this segment is on."} className={s.gameKind}>
+              <Field label="Minijogo" optional hint={segment.game ? GAME_HOW[segment.game.kind] : "O apresentador pode fazer um jogo com o chat durante este quadro."} className={s.gameKind}>
                 {(props) => (
                   <Select
                     {...props}
@@ -137,7 +138,7 @@ function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; on
                       setGame(i, kind ? { ...(segment.game ?? { rounds: 5 }), kind } : null);
                     }}
                   >
-                    <option value="">None</option>
+                    <option value="">Nenhum</option>
                     {GAME_KINDS.map((kind) => (
                       <option key={kind} value={kind}>
                         {GAME_LABELS[kind]}
@@ -148,30 +149,30 @@ function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; on
               </Field>
               {segment.game && (
                 <>
-                  <Field label="Rounds" error={errors[`segments.${i}.game.rounds`] ? "1 to 10" : null} className={s.rounds}>
+                  <Field label="Rodadas" error={errors[`segments.${i}.game.rounds`] ? "De 1 a 10" : null} className={s.rounds}>
                     {(props) => <Input {...props} type="number" min={1} max={10} value={Number.isNaN(segment.game?.rounds) ? "" : segment.game?.rounds} onChange={(e) => patchGame(i, { rounds: e.target.valueAsNumber })} />}
                   </Field>
-                  <Field label="Topic" optional error={errors[`segments.${i}.game.topic`]} className={s.grow}>
+                  <Field label="Tema" optional error={errors[`segments.${i}.game.topic`]} className={s.grow}>
                     {(props) => <Input {...props} value={segment.game?.topic ?? ""} maxLength={80} placeholder={TOPIC_PLACEHOLDER} onChange={(e) => patchGame(i, { topic: e.target.value })} />}
                   </Field>
                 </>
               )}
             </div>
             <Field
-              label={segment.game ? "Between rounds, the host…" : "When chat is quiet, the host…"}
-              hint={segment.game ? "With a minigame on, this is what the host does between rounds: who to cheer, what to tease." : "What to talk about or ask during this segment."}
+              label={segment.game ? "Entre as rodadas, o apresentador…" : "Quando o chat está parado, o apresentador…"}
+              hint={segment.game ? "Com um minijogo ligado, é o que o apresentador faz entre as rodadas: quem animar, o que provocar." : "Sobre o que falar ou o que perguntar durante este quadro."}
               error={errors[`segments.${i}.prompt`]} count={{ value: segment.prompt.length, max: 600 }}>
               {(props) => <TextArea {...props} value={segment.prompt} maxLength={600} onChange={(e) => update(i, { prompt: e.target.value })} />}
             </Field>
             <div className={s.segmentActions}>
               <Button size="sm" variant="ghost" iconOnly icon={<ArrowUp aria-hidden />} disabled={i === 0} onClick={() => move(i, -1)}>
-                Move {segment.title || "segment"} up
+                Mover {segment.title || "quadro"} para cima
               </Button>
               <Button size="sm" variant="ghost" iconOnly icon={<ArrowDown aria-hidden />} disabled={i === segments.length - 1} onClick={() => move(i, 1)}>
-                Move {segment.title || "segment"} down
+                Mover {segment.title || "quadro"} para baixo
               </Button>
               <Button size="sm" variant="quietDanger" icon={<Trash2 aria-hidden />} disabled={segments.length <= 1} onClick={() => onChange(segments.filter((_, j) => j !== i))}>
-                Remove
+                Remover
               </Button>
             </div>
           </li>
@@ -182,10 +183,10 @@ function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; on
         disabled={segments.length >= 12}
         onClick={() => {
           const taken = new Set(segments.map((seg) => seg.id));
-          onChange([...segments, { id: slugify("New segment", taken), title: "New segment", minutes: 8, prompt: "Ask the audience an easy, fun question they can answer in one word." }]);
+          onChange([...segments, { id: slugify("Novo quadro", taken), title: "Novo quadro", minutes: 8, prompt: "Faça uma pergunta fácil e divertida que a plateia responda com uma palavra." }]);
         }}
       >
-        Add a segment
+        Adicionar quadro
       </Button>
     </div>
   );
@@ -211,21 +212,21 @@ function TimeZoneField({ name, value, onChange }: { name: string; value: string 
   const suggest = !value && browser;
   return (
     <Field
-      label="Time zone"
+      label="Fuso horário"
       hint={
         value ? (
           <>
-            So {name} knows the local time and says “good morning” at the right hour. It's {now} there now.
+            Assim {name} sabe a hora local e dá “bom dia” na hora certa. Agora são {now} lá.
           </>
         ) : (
-          <>Not set yet, so {name} doesn't know what time it is.{browser ? ` Your browser is on ${browser.replaceAll("_", " ")}.` : ""}</>
+          <>Ainda não definido, então {name} não sabe que horas são.{browser ? ` Seu navegador usa o fuso ${browser.replaceAll("_", " ")}.` : ""}</>
         )
       }
     >
       {(props) => (
         <div className={s.voiceRow}>
           <Select {...props} value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
-            <option value="">Not set</option>
+            <option value="">Não definido</option>
             {options.map((option) => (
               <option key={option.zone} value={option.zone}>
                 {option.label}
@@ -234,7 +235,7 @@ function TimeZoneField({ name, value, onChange }: { name: string; value: string 
           </Select>
           {suggest && (
             <Button onClick={() => onChange(browser)} aria-describedby={props["aria-describedby"]}>
-              Use my time zone
+              Usar meu fuso horário
             </Button>
           )}
         </div>
@@ -249,8 +250,8 @@ function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: Voi
   if (isPending) return <Skeleton height={120} />;
   if (!data?.enabled) {
     return (
-      <Banner title="Voice isn't set up on this server">
-        Your host speaks in captions with a moving mouth. Add an ElevenLabs key or the self-hosted voice server to give it a voice.
+      <Banner title="A voz não está configurada neste servidor">
+        Seu apresentador fala por legendas, com a boca se mexendo. Adicione uma chave da ElevenLabs ou o servidor de voz próprio para dar voz a ele.
       </Banner>
     );
   }
@@ -268,25 +269,25 @@ function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: Voi
   return (
     <div className={s.stack}>
       <Segmented
-        label="How the host speaks"
+        label="Como o apresentador fala"
         value={provider}
         onChange={(next) => onChange({ provider: next, voiceId: next === voice.provider ? voice.voiceId : null })}
         options={[
           ...data.providers.map((p) => ({
             value: p,
-            label: data.providers.length === 1 ? "Voice and captions" : p === "pocket" ? "Portuguese voice" : "ElevenLabs voice",
+            label: data.providers.length === 1 ? "Voz e legendas" : p === "pocket" ? "Voz em português" : "Voz ElevenLabs",
           })),
-          { value: "none" as const, label: "Captions only" },
+          { value: "none" as const, label: "Só legendas" },
         ]}
       />
-      {provider === "pocket" && <p className={s.note}>This voice speaks Brazilian Portuguese only, so your host always talks in Portuguese, even to viewers who write in another language.</p>}
+      {provider === "pocket" && <p className={s.note}>Esta voz só fala português do Brasil, então o apresentador sempre fala em português, mesmo com espectadores que escrevem em outra língua.</p>}
       {provider !== "none" &&
         (data.canChoose ? (
-          <Field label="Voice" hint="Pick a voice that fits the character. Your host keeps it for every stream.">
+          <Field label="Voz" hint="Escolha uma voz que combine com o personagem. Ela fica para todas as lives.">
             {(props) => (
               <div className={s.voiceRow}>
                 <Select {...props} value={voice.voiceId ?? ""} onChange={(e) => onChange({ provider, voiceId: e.target.value || null })}>
-                  <option value="">Default voice</option>
+                  <option value="">Voz padrão</option>
                   {voices.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.name}
@@ -295,17 +296,17 @@ function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: Voi
                   ))}
                 </Select>
                 <Button onClick={() => preview(selected?.previewUrl ?? null)} disabled={!selected?.previewUrl}>
-                  Play sample
+                  Ouvir amostra
                 </Button>
               </div>
             )}
           </Field>
         ) : (
-          <Banner title="Your host uses the default voice" action={<ButtonLink to="/app/billing" size="sm">See plans</ButtonLink>}>
-            Choosing from the full voice library is part of the Creator and Pro plans.
+          <Banner title="Seu apresentador usa a voz padrão" action={<ButtonLink to="/app/billing" size="sm">Ver planos</ButtonLink>}>
+            Escolher na biblioteca completa de vozes faz parte dos planos {PLANS.creator.name} e {PLANS.pro.name}.
           </Banner>
         ))}
-      {provider === "none" && <p className={s.note}>The mouth follows each syllable of the caption, so the character still looks like it's talking.</p>}
+      {provider === "none" && <p className={s.note}>A boca acompanha cada sílaba da legenda, então o personagem continua parecendo que está falando.</p>}
     </div>
   );
 }
@@ -334,7 +335,7 @@ export default function Character() {
       <div className={s.form}>
         <Tabs.Root value={tab} onValueChange={(next) => setParams((prev) => ({ ...Object.fromEntries(prev), tab: next }), { replace: true })}>
           <div className={s.tabBar}>
-            <Tabs.List className={s.tabs} aria-label="Character settings">
+            <Tabs.List className={s.tabs} aria-label="Configurações do personagem">
               {TABS.map((t) => (
                 <Tabs.Trigger key={t.id} value={t.id} className={s.tab}>
                   {t.label}
@@ -345,40 +346,40 @@ export default function Character() {
           </div>
 
           <Tabs.Content value="identity" className={s.panel}>
-            <Field label="Name" error={errors.name} count={{ value: persona.name.length, max: 32 }}>
+            <Field label="Nome" error={errors.name} count={{ value: persona.name.length, max: 32 }}>
               {(props) => <Input {...props} value={persona.name} maxLength={32} onChange={(e) => set("name", e.target.value)} />}
             </Field>
-            <Field label="In one line" hint="How the host introduces itself: “a tiny glowing orb who lives inside the stream”." error={errors.tagline} count={{ value: persona.tagline.length, max: 120 }}>
+            <Field label="Em uma frase" hint="Como o apresentador se apresenta: “uma bolinha de luz que mora dentro da live”." error={errors.tagline} count={{ value: persona.tagline.length, max: 120 }}>
               {(props) => <Input {...props} value={persona.tagline} maxLength={120} onChange={(e) => set("tagline", e.target.value)} />}
             </Field>
-            <Field label="Who it is" hint="Personality, backstory, quirks, what it loves and finds strange. The more specific, the more alive it feels." error={errors.description} count={{ value: persona.description.length, max: 2000 }}>
+            <Field label="Quem é" hint="Personalidade, história, manias, do que gosta e o que acha estranho. Quanto mais específico, mais vivo parece." error={errors.description} count={{ value: persona.description.length, max: 2000 }}>
               {(props) => <TextArea {...props} value={persona.description} maxLength={2000} rows={6} onChange={(e) => set("description", e.target.value)} />}
             </Field>
-            <Field label="How it talks" hint="Sentence length, energy, humor. Example: short and punchy, uses viewers' names, never mean." error={errors.style} count={{ value: persona.style.length, max: 800 }}>
+            <Field label="Como fala" hint="Tamanho das frases, energia, humor. Exemplo: curto e direto, chama os espectadores pelo nome, nunca é maldoso." error={errors.style} count={{ value: persona.style.length, max: 800 }}>
               {(props) => <TextArea {...props} value={persona.style} maxLength={800} rows={3} onChange={(e) => set("style", e.target.value)} />}
             </Field>
-            <Field label="Catchphrases" optional hint="Things it says now and then. Press Enter after each one.">
+            <Field label="Bordões" optional hint="Coisas que ele fala de vez em quando. Aperte Enter depois de cada um.">
               {(props) => <Chips {...props} values={persona.catchphrases} onChange={(v) => set("catchphrases", v)} max={8} maxLength={80} placeholder="Blip blip!" />}
             </Field>
             <TimeZoneField name={persona.name || channel.name} value={persona.timezone} onChange={(timezone) => setPersona(({ timezone: _old, ...rest }) => (timezone ? { ...rest, timezone } : rest))} />
-            <Field label={`Longest reply: ${persona.maxSentences} ${persona.maxSentences === 1 ? "sentence" : "sentences"}`} hint="Short replies keep the stream snappy and let more viewers get answered.">
-              {() => <Slider label="Longest reply in sentences" value={persona.maxSentences} min={1} max={6} onChange={(v) => set("maxSentences", v)} />}
+            <Field label={`Resposta mais longa: ${persona.maxSentences} ${persona.maxSentences === 1 ? "frase" : "frases"}`} hint="Respostas curtas deixam a live mais ágil, e mais espectadores recebem resposta.">
+              {() => <Slider label="Resposta mais longa, em frases" value={persona.maxSentences} min={1} max={6} onChange={(v) => set("maxSentences", v)} />}
             </Field>
           </Tabs.Content>
 
           <Tabs.Content value="voice" className={s.panel}>
             <VoiceTab voice={voice} onChange={setVoice} />
             <div className={s.stack}>
-              <p className={s.subhead}>Sound on stage</p>
+              <p className={s.subhead}>Som no palco</p>
               <Switch
-                label={`Let ${persona.name || channel.name} compose and play short music`}
-                hint="Original beats written on the spot, played under the voice. You can also start one from the studio."
+                label={`Deixar ${persona.name || channel.name} compor e tocar músicas curtas`}
+                hint="Batidas originais criadas na hora, tocando por baixo da voz. Você também pode pedir uma pelo estúdio."
                 checked={persona.sound?.music ?? true}
                 onChange={(music) => set("sound", { music, effects: persona.sound?.effects ?? true })}
               />
               <Switch
-                label="Sound effects for gifts, follows and games"
-                hint="Short chimes and fanfares, made on the stage. No recordings."
+                label="Efeitos sonoros para presentes, seguidores e jogos"
+                hint="Sininhos e fanfarras curtas, gerados no palco. Sem gravações."
                 checked={persona.sound?.effects ?? true}
                 onChange={(effects) => set("sound", { music: persona.sound?.music ?? true, effects })}
               />
@@ -386,21 +387,21 @@ export default function Character() {
           </Tabs.Content>
 
           <Tabs.Content value="look" className={s.panel}>
-            <Field label="On stage">
+            <Field label="No palco">
               {() => (
                 <Segmented
-                  label="Character style"
+                  label="Estilo do personagem"
                   value={persona.look.character}
                   onChange={(character) => setLook({ character })}
                   options={[
-                    { value: "orb", label: "Glowing character" },
-                    { value: "voice-line", label: "Voice only" },
+                    { value: "orb", label: "Personagem brilhante" },
+                    { value: "voice-line", label: "Só voz" },
                   ]}
                 />
               )}
             </Field>
             <div>
-              <p className={s.subhead}>Palettes</p>
+              <p className={s.subhead}>Paletas</p>
               <div className={s.palettes}>
                 {PALETTES.map((palette) => {
                   const active = palette.colors[0] === persona.look.primary && palette.colors[1] === persona.look.secondary && palette.colors[2] === persona.look.background;
@@ -420,47 +421,47 @@ export default function Character() {
               </div>
             </div>
             <div className={s.colors}>
-              <Field label="Glow" error={errors["look.primary"]}>
-                {(props) => <ColorField id={props.id} label="Glow" value={persona.look.primary} onChange={(primary) => setLook({ primary })} />}
+              <Field label="Brilho" error={errors["look.primary"]}>
+                {(props) => <ColorField id={props.id} label="Brilho" value={persona.look.primary} onChange={(primary) => setLook({ primary })} />}
               </Field>
-              <Field label="Accent" error={errors["look.secondary"]}>
-                {(props) => <ColorField id={props.id} label="Accent" value={persona.look.secondary} onChange={(secondary) => setLook({ secondary })} />}
+              <Field label="Destaque" error={errors["look.secondary"]}>
+                {(props) => <ColorField id={props.id} label="Destaque" value={persona.look.secondary} onChange={(secondary) => setLook({ secondary })} />}
               </Field>
-              <Field label="Water" error={errors["look.background"]}>
-                {(props) => <ColorField id={props.id} label="Water" value={persona.look.background} onChange={(background) => setLook({ background })} />}
+              <Field label="Água" error={errors["look.background"]}>
+                {(props) => <ColorField id={props.id} label="Água" value={persona.look.background} onChange={(background) => setLook({ background })} />}
               </Field>
             </div>
           </Tabs.Content>
 
           <Tabs.Content value="show" className={s.panel}>
             <p className={s.note}>
-              Segments shape the show when chat is quiet. The host moves to the next one when its time is up, and you can switch any time from the studio. A segment with a minigame runs it while it's on: viewers answer in chat.
+              Os quadros guiam a live quando o chat está parado. O apresentador passa para o próximo quando o tempo acaba, e você pode trocar quando quiser pelo estúdio. Um quadro com minijogo roda o jogo enquanto está no ar: os espectadores respondem no chat.
             </p>
             <SegmentEditor segments={persona.segments} onChange={(segments) => set("segments", segments)} errors={errors} />
           </Tabs.Content>
 
           <Tabs.Content value="rules" className={s.panel}>
             <Panel raised className={s.builtIn}>
-              <h3>Always on, for every host</h3>
+              <h3>Sempre ativo, em todo apresentador</h3>
               <ul>
-                <li>Says it's an AI whenever someone asks.</li>
-                <li>Never asks for gifts or promises anything for them.</li>
-                <li>Every line is checked before it's said; anything unsafe is blocked.</li>
-                <li>Ignores links, spam and messages trying to change its instructions.</li>
+                <li>Diz que é uma IA sempre que alguém pergunta.</li>
+                <li>Nunca pede presentes nem promete nada em troca deles.</li>
+                <li>Toda fala é conferida antes de ser dita; qualquer coisa insegura é bloqueada.</li>
+                <li>Ignora links, spam e mensagens que tentam mudar as instruções dele.</li>
               </ul>
             </Panel>
-            <Field label="Your rules" optional hint="Extra rules for this character. Example: never talk about other streamers. Press Enter after each one.">
-              {(props) => <Chips {...props} values={persona.rules} onChange={(v) => set("rules", v)} max={12} maxLength={200} placeholder="Add a rule" />}
+            <Field label="Suas regras" optional hint="Regras extras para este personagem. Exemplo: nunca falar de outros streamers. Aperte Enter depois de cada uma.">
+              {(props) => <Chips {...props} values={persona.rules} onChange={(v) => set("rules", v)} max={12} maxLength={200} placeholder="Adicione uma regra" />}
             </Field>
           </Tabs.Content>
         </Tabs.Root>
       </div>
 
-      <aside className={s.preview} aria-label="Preview">
+      <aside className={s.preview} aria-label="Prévia">
         <CharacterPreview name={persona.name || channel.name} look={persona.look} line={line} />
         <div className={s.tryLine}>
           <p className={s.subhead} id="try-heading">
-            Try a line
+            Testar uma fala
           </p>
           <div className={s.emotions} role="group" aria-labelledby="try-heading">
             {EMOTIONS.map((emotion) => (

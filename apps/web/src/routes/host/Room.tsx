@@ -2,6 +2,7 @@ import type { LiveEventSummary, TranscriptLine } from "@tik-live/shared";
 import { ArrowDown, Ban, Gamepad2, Gift, Heart, Share2, UserPlus } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { count, time } from "../../lib/format";
+import { blockReason, skipReason } from "../../lib/reasons";
 import { useStudio, type RoomItem, type StudioStore } from "../../lib/studio";
 import { Button } from "../../ui/Button";
 import { cx } from "../../ui/cx";
@@ -10,11 +11,6 @@ import s from "./studio.module.css";
 /** Chat the minigame took as an answer: not skipped, just not for the host to reply to. */
 const GAME_ANSWER = "game answer";
 
-const FILTER_REASONS: Record<string, string> = {
-  flooding: "sending messages too fast",
-  "duplicate of queued message": "already waiting for an answer",
-};
-
 function EventRow({ event }: { event: LiveEventSummary }) {
   switch (event.kind) {
     case "gift":
@@ -22,7 +18,7 @@ function EventRow({ event }: { event: LiveEventSummary }) {
         <div className={cx(s.item, s.gift)}>
           <Gift aria-hidden className={s.itemIcon} />
           <p>
-            <strong>{event.who}</strong> sent {event.giftName ?? "a gift"}
+            <strong>{event.who}</strong> enviou {event.giftName ?? "um presente"}
             {(event.count ?? 1) > 1 && ` ×${event.count}`}
             {event.diamonds ? <span className={s.diamonds}> ✦ {count(event.diamonds)}</span> : null}
           </p>
@@ -33,7 +29,7 @@ function EventRow({ event }: { event: LiveEventSummary }) {
         <div className={cx(s.item, s.quiet)}>
           <UserPlus aria-hidden className={s.itemIcon} />
           <p>
-            <strong>{event.who}</strong> followed
+            <strong>{event.who}</strong> começou a seguir
           </p>
         </div>
       );
@@ -42,7 +38,7 @@ function EventRow({ event }: { event: LiveEventSummary }) {
         <div className={cx(s.item, s.quiet)}>
           <Share2 aria-hidden className={s.itemIcon} />
           <p>
-            <strong>{event.who}</strong> shared the stream
+            <strong>{event.who}</strong> compartilhou a live
           </p>
         </div>
       );
@@ -51,7 +47,7 @@ function EventRow({ event }: { event: LiveEventSummary }) {
         <div className={cx(s.item, s.quiet)}>
           <Heart aria-hidden className={s.itemIcon} />
           <p>
-            <strong>{event.who}</strong> joined
+            <strong>{event.who}</strong> entrou
           </p>
         </div>
       );
@@ -61,7 +57,7 @@ function EventRow({ event }: { event: LiveEventSummary }) {
           <div className={cx(s.item, s.answered)}>
             <Gamepad2 aria-hidden className={s.itemIcon} />
             <p>
-              <strong>{event.who}</strong> answered <span className={s.answerText}>{event.text}</span>
+              <strong>{event.who}</strong> respondeu <span className={s.answerText}>{event.text}</span>
             </p>
           </div>
         );
@@ -71,7 +67,7 @@ function EventRow({ event }: { event: LiveEventSummary }) {
           <p>
             <strong>{event.who}</strong> {event.text}
           </p>
-          {event.filtered && <span className={s.skipped}>Skipped: {FILTER_REASONS[event.filtered] ?? event.filtered}</span>}
+          {event.filtered && <span className={s.skipped}>Pulada: {skipReason(event.filtered)}</span>}
         </div>
       );
   }
@@ -83,7 +79,7 @@ function LineRow({ line, host }: { line: TranscriptLine; host: string }) {
       <div className={cx(s.item, s.blocked)}>
         <Ban aria-hidden className={s.itemIcon} />
         <div>
-          <p className={s.blockedTitle}>Blocked before it was said{line.reason ? `: ${line.reason}` : ""}</p>
+          <p className={s.blockedTitle}>Bloqueada antes de ser dita{line.reason ? `: ${blockReason(line.reason)}` : ""}</p>
           <p className={s.blockedText}>
             <del>{line.text}</del>
           </p>
@@ -94,7 +90,7 @@ function LineRow({ line, host }: { line: TranscriptLine; host: string }) {
   return (
     <div className={cx(s.item, s.line)}>
       <p>
-        <span className={s.speaker}>{line.operator ? `You, as ${host}` : host}</span> {line.text}
+        <span className={s.speaker}>{line.operator ? `Você, como ${host}` : host}</span> {line.text}
       </p>
     </div>
   );
@@ -133,12 +129,12 @@ export function Room({ store, host }: { store: StudioStore; host: string }) {
   return (
     <section className={s.room} aria-labelledby="room-heading">
       <div className={s.paneHead}>
-        <h2 id="room-heading">The room</h2>
-        <span className={s.paneHint}>Viewers and your host, as it happens</span>
+        <h2 id="room-heading">A sala</h2>
+        <span className={s.paneHint}>Espectadores e apresentador, em tempo real</span>
       </div>
       <div className={s.roomScroll} ref={scroller} onScroll={onScroll} role="log" aria-live="polite" aria-relevant="additions" tabIndex={0}>
         {room.length === 0 ? (
-          <p className={s.roomEmpty}>Nothing yet. Chat, gifts and everything the host says will show up here.</p>
+          <p className={s.roomEmpty}>Nada por enquanto. Chat, presentes e tudo o que o apresentador falar aparecem aqui.</p>
         ) : (
           <ol className={s.roomList}>
             {room.map((item: RoomItem, i) => {
@@ -165,7 +161,7 @@ export function Room({ store, host }: { store: StudioStore; host: string }) {
             if (el) el.scrollTop = el.scrollHeight;
           }}
         >
-          {unseen > 0 ? `${unseen} new` : "Jump to latest"}
+          {unseen > 0 ? `${unseen} novos` : "Ir para o mais recente"}
         </Button>
       )}
     </section>

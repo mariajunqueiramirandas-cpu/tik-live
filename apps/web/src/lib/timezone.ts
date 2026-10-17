@@ -55,17 +55,17 @@ export function timeZoneOptions(extra: Array<string | undefined>): string[] {
 export function timeZoneLabel(zone: string, at = new Date()): string {
   const place = zone.replaceAll("_", " ");
   try {
-    const offset = new Intl.DateTimeFormat("en", { timeZone: zone, timeZoneName: "shortOffset" }).formatToParts(at).find((part) => part.type === "timeZoneName")?.value;
+    const offset = new Intl.DateTimeFormat("pt-BR", { timeZone: zone, timeZoneName: "shortOffset" }).formatToParts(at).find((part) => part.type === "timeZoneName")?.value;
     return offset ? `${place} (${offset})` : place;
   } catch {
     return place;
   }
 }
 
-/** "2:05 PM" in that zone. */
+/** "14:05" in that zone. */
 export function timeIn(zone: string, at = new Date()): string {
   try {
-    return at.toLocaleTimeString("en", { hour: "numeric", minute: "2-digit", timeZone: zone });
+    return at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: zone });
   } catch {
     return "";
   }

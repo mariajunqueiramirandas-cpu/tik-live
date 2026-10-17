@@ -78,7 +78,7 @@ export function mountRealtime(app: Hono<AppEnv>, deps: AppDeps): void {
           if (data.length > MAX_MESSAGE_BYTES) return;
           const message = parseMessage(studioClientMessageSchema, data);
           if (!message) {
-            ws.send(JSON.stringify({ v: PROTOCOL_VERSION, t: "ack", id: "?", ok: false, error: "That command wasn't understood." }));
+            ws.send(JSON.stringify({ v: PROTOCOL_VERSION, t: "ack", id: "?", ok: false, error: "Esse comando não foi entendido." }));
             return;
           }
           const result = deps.manager.command(channel.id, message.command);

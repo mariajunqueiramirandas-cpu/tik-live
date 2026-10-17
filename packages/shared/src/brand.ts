@@ -3,5 +3,5 @@ export const PRODUCT_NAME = "Lantern";
 
 /** Shown on every stream, on every plan. Not configurable by design. */
 export function disclosureText(characterName: string): string {
-  return `${characterName} is an AI host`;
+  return `${characterName} é uma IA`;
 }

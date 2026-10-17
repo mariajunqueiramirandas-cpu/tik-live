@@ -82,7 +82,7 @@ export class RuntimeManager {
 
   /** Starts a channel on the owner's request, checking plan limits first. */
   async start(channel: ChannelRow): Promise<EntitlementCheck> {
-    if (!this.accepting) return { ok: false, code: "shutting_down", message: "The server is restarting. Try again in a few seconds." };
+    if (!this.accepting) return { ok: false, code: "shutting_down", message: "O servidor está reiniciando. Tente de novo em alguns segundos." };
     const slot = this.slots.get(channel.id);
     if (slot?.runtime && isActive(slot.runtime.getStatus().status)) return { ok: true };
     const check = await this.options.entitlements.canStart(channel.ownerId, this.runningCountFor(channel.ownerId));
@@ -148,7 +148,7 @@ export class RuntimeManager {
 
   command(channelId: string, command: StudioCommand): CommandResult {
     const runtime = this.slots.get(channelId)?.runtime;
-    if (!runtime) return { ok: false, error: "Start the host first." };
+    if (!runtime) return { ok: false, error: "Coloque o apresentador no ar primeiro." };
     return runtime.command(command);
   }
 
@@ -160,7 +160,7 @@ export class RuntimeManager {
       return { status, detail, viewers: runtime.viewers(), since: since ? new Date(since).toISOString() : null };
     }
     if (slot?.failure) return { status: "failed", detail: slot.failure.message, viewers: 0, since: null };
-    if (channel.desiredState === "running") return { status: "starting", detail: "Starting", viewers: 0, since: null };
+    if (channel.desiredState === "running") return { status: "starting", detail: "Iniciando", viewers: 0, since: null };
     return { status: "stopped", detail: "", viewers: 0, since: null };
   }
 
@@ -291,7 +291,7 @@ export class RuntimeManager {
       t: "notice",
       level: "error",
       code: "start_failed",
-      message: `The host couldn't start: ${message}. Retrying in ${Math.round(delay / 1000)}s.`,
+      message: `O apresentador não conseguiu iniciar: ${message}. Tentando de novo em ${Math.round(delay / 1000)} s.`,
       at: Date.now(),
     });
     const timer = setTimeout(async () => {
@@ -330,7 +330,7 @@ export class RuntimeManager {
           t: "notice",
           level: "error",
           code: "plan_hours_exhausted",
-          message: `You've used all ${plan.limits.liveHoursPerMonth} live hours on the ${plan.name} plan this month, so the host stopped. Upgrade to keep going.`,
+          message: `Você usou todas as ${plan.limits.liveHoursPerMonth} horas de live do plano ${plan.name} neste mês, então o apresentador parou. Mude de plano para continuar.`,
           at: Date.now(),
         });
         await this.stop(slot.channelId, "out of live hours");

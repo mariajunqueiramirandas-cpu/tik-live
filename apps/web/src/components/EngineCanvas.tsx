@@ -42,10 +42,10 @@ export function EngineCanvas({
       if (disposed || !ref.current) return;
       try {
         engine = createEngine(ref.current, { mode, ...(seed !== undefined ? { seed } : {}) });
-        if (engine.failed === "webgl2-unavailable") setFailed("This browser can't draw the stage (WebGL2 is off). Captions and voice still work on stream.");
+        if (engine.failed === "webgl2-unavailable") setFailed("Este navegador não consegue desenhar o palco (o WebGL2 está desligado). Legendas e voz continuam funcionando na live.");
         cleanup = ready.current(engine);
       } catch {
-        setFailed("The stage preview couldn't start in this browser.");
+        setFailed("A prévia do palco não abriu neste navegador.");
       }
     });
     return () => {
