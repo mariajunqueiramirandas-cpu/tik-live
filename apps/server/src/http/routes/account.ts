@@ -45,7 +45,7 @@ export function meRoutes(deps: AppDeps) {
     })
     .post("/dev-user", valid("json", z.object({ name: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{0,31}$/) })), (c) => {
       // Dev-only impersonation switcher (ADR-0018). Unavailable with real sign-in.
-      if (deps.config.AUTH_MODE !== "dev") return problem(c, 404, "not_found", "Not available.");
+      if (deps.config.AUTH_MODE !== "dev") return problem(c, 404, "not_found", "Não disponível.");
       const { name } = c.req.valid("json");
       c.header("set-cookie", `${DEV_USER_COOKIE}=${encodeURIComponent(name)}; Path=/; SameSite=Lax${deps.config.isProduction ? "; Secure" : ""}`);
       return c.json({ devUser: name });

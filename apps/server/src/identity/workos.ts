@@ -118,7 +118,7 @@ export class WorkOSIdentityProvider implements IdentityProvider {
         }
         const expected = readCookie(c.req.header("cookie") ?? null, STATE_COOKIE);
         if (!code || !state.n || !expected || state.n !== expected) {
-          return problem(c, 400, "bad_state", "This sign-in link expired. Start again from the sign-in page.");
+          return problem(c, 400, "bad_state", "Este link de entrada expirou. Comece de novo pela página de entrada.");
         }
         try {
           const result = await this.workos.userManagement.authenticateWithCode({ clientId, code, session: { sealSession: true, cookiePassword } });
@@ -128,7 +128,7 @@ export class WorkOSIdentityProvider implements IdentityProvider {
           return c.redirect(safeReturn(state.r), 302);
         } catch (err) {
           this.log?.warn("workos sign-in failed", { error: String(err) });
-          return problem(c, 401, "sign_in_failed", "Sign-in didn't complete. Try again.");
+          return problem(c, 401, "sign_in_failed", "A entrada não foi concluída. Tente de novo.");
         }
       })
       .get("/auth/sign-out", async (c) => {

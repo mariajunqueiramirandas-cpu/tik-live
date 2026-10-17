@@ -124,7 +124,7 @@ export class BillingService {
    */
   async checkout(user: UserRow, planId: string, ip: string | null): Promise<{ url: string | null; changed: boolean }> {
     const mp = this.requireEnabled();
-    if (!isPaidPlan(planId)) throw new AppError(400, "invalid_plan", "Pick the Creator or Pro plan.");
+    if (!isPaidPlan(planId)) throw new AppError(400, "invalid_plan", "Escolha o plano Criador ou Pro.");
     const price = this.price(planId) as number;
     const existing = await getSubscription(this.db, user.id);
 
@@ -140,7 +140,7 @@ export class BillingService {
     }
 
     if (!user.email || user.email.endsWith("@localhost")) {
-      throw new AppError(400, "email_required", "Your account needs a real email address before you can subscribe.");
+      throw new AppError(400, "email_required", "Sua conta precisa de um e-mail de verdade antes de assinar.");
     }
     const preapproval = await mp.createPreapproval(
       {
@@ -167,7 +167,7 @@ export class BillingService {
       graceUntil: null,
     });
     await audit(this.db, { userId: user.id, action: "billing.checkout_started", meta: { plan: planId }, ip });
-    if (!preapproval.init_point) throw new AppError(502, "provider_error", "Mercado Pago didn't return a checkout link. Try again.");
+    if (!preapproval.init_point) throw new AppError(502, "provider_error", "O Mercado Pago não devolveu um link de pagamento. Tente de novo.");
     return { url: preapproval.init_point, changed: false };
   }
 
@@ -271,7 +271,7 @@ export class BillingService {
   }
 
   private requireEnabled(): MercadoPagoClient {
-    if (!this.enabled || !this.mp) throw new AppError(409, "billing_disabled", "Billing is turned off on this server.");
+    if (!this.enabled || !this.mp) throw new AppError(409, "billing_disabled", "A cobrança está desligada neste servidor.");
     return this.mp;
   }
 }

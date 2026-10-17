@@ -502,9 +502,16 @@ export class Director {
     }
 
     if (this.pendingMilestone !== undefined) {
-      const note = `the stream just passed ${this.pendingMilestone.toLocaleString("en-US")} likes`;
+      const crossed = this.pendingMilestone;
       this.pendingMilestone = undefined;
-      return { ...base, kind: "milestone", items: [], note };
+      // The note is for the model (English numbers); the offline line is spoken (Brazilian numbers).
+      return {
+        ...base,
+        kind: "milestone",
+        items: [],
+        note: `the stream just passed ${crossed.toLocaleString("en-US")} likes`,
+        line: `Passamos de ${crossed.toLocaleString("pt-BR")} curtidas`,
+      };
     }
 
     if (this.reactOnly()) return undefined;
