@@ -3,9 +3,13 @@ import {
   parseMessage,
   PROTOCOL_VERSION,
   stageClientMessageSchema,
+  type Effect,
+  type GameScene,
   type LiveEvent,
+  type MusicTrack,
   type Look,
   type Segment,
+  type Sound,
   type StageRole,
   type StageServerPayload,
 } from "@tik-live/shared";
@@ -68,6 +72,9 @@ export class StageHub implements SpeechOutput, StageNotifier {
   private readonly peers = new Map<string, StagePeer>();
   private readonly playing = new Map<string, Playback>();
   private lastSegment: Segment | undefined;
+  private lastGame: GameScene | null = null;
+  /** The piece playing now and when it ends, so a stage that reconnects picks it up. */
+  private lastMusic: { track: MusicTrack; endsAt: number } | null = null;
   private lastStats: { viewers: number; likes: number } | undefined;
   private statsSentAt = 0;
   private statsTimer: ReturnType<typeof setTimeout> | undefined;
@@ -90,6 +97,9 @@ export class StageHub implements SpeechOutput, StageNotifier {
     });
     if (this.lastSegment) this.sendTo(peer, { t: "segment", title: this.lastSegment.title });
     if (this.lastStats) this.sendTo(peer, { t: "stats", ...this.lastStats });
+    if (this.lastGame) this.sendTo(peer, { t: "game", scene: this.lastGame });
+    // A piece that's nearly over isn't worth restarting from the top.
+    if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
     this.options.log?.debug(`${role} stage connected`);
   }
 
@@ -199,7 +209,15 @@ export class StageHub implements SpeechOutput, StageNotifier {
    */
   play(cue: SpeechCue, signal: AbortSignal): Promise<void> {
     const audioUrl = this.audioUrlFor(cue);
-    this.broadcast({ t: "speak", id: cue.id, text: cue.text, emotion: cue.emotion, audioUrl, durationMs: cue.durationMs });
+    this.broadcast({
+      t: "speak",
+      id: cue.id,
+      text: cue.text,
+      emotion: cue.emotion,
+      audioUrl,
+      durationMs: cue.durationMs,
+      ...(cue.fx?.length ? { fx: cue.fx } : {}),
+    });
     this.cueListener?.(cue, this.now());
 
     const onAir = [...this.peers].filter(([, entry]) => entry.role !== "preview").map(([id]) => id);
@@ -253,6 +271,26 @@ export class StageHub implements SpeechOutput, StageNotifier {
     } else if (event.kind === "follow" || event.kind === "share") {
       this.broadcast({ t: "alert", kind: event.kind, name });
     }
+  }
+
+  /** A minigame's scene, or null to return to the normal stage. */
+  game(scene: GameScene | null): void {
+    this.lastGame = scene;
+    this.broadcast({ t: "game", scene });
+  }
+
+  fx(fx: Effect, intensity?: number): void {
+    this.broadcast({ t: "fx", fx, ...(intensity !== undefined ? { intensity } : {}) });
+  }
+
+  /** Starts a piece of music (replacing any playing one), or stops it with null. */
+  music(track: MusicTrack | null, endsAt = 0): void {
+    this.lastMusic = track ? { track, endsAt } : null;
+    this.broadcast({ t: "music", track });
+  }
+
+  sfx(sound: Sound): void {
+    this.broadcast({ t: "sfx", sound });
   }
 
   segment(segment: Segment): void {

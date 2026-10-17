@@ -152,6 +152,22 @@
   .minutes {
     width: 110px;
   }
+  .gameRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    align-items: flex-start;
+  }
+  .gameKind {
+    flex: 1 1 200px;
+    max-width: 280px;
+  }
+  .rounds {
+    width: 90px;
+  }
+  .gameRow .grow {
+    min-width: 180px;
+  }
   .segmentActions {
     display: flex;
     gap: var(--s-1);

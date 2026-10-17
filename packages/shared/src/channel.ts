@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { personaSchema, type Persona } from "./persona";
+import { personaSchema, timeZoneSchema, type Persona } from "./persona";
 
 export const CHANNEL_SOURCES = ["tiktok", "simulator"] as const;
 export type ChannelSource = (typeof CHANNEL_SOURCES)[number];
@@ -58,6 +58,8 @@ export const channelCreateSchema = z.object({
   name: z.string().trim().min(1).max(60),
   tiktokUsername: tiktokHandleSchema.nullable().optional(),
   presetId: z.string().max(40).optional(),
+  /** The creator's time zone (from their browser), so the host knows the local time. */
+  timezone: timeZoneSchema.optional(),
 });
 export type ChannelCreateInput = z.infer<typeof channelCreateSchema>;
 

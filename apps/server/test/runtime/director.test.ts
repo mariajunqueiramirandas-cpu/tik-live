@@ -5,6 +5,7 @@ import { ViewerMemory } from "../../src/runtime/brain/memory";
 import type { TurnRequest } from "../../src/runtime/brain/prompt";
 import type { Utterance } from "../../src/runtime/brain/sentences";
 import { Triage } from "../../src/runtime/brain/triage";
+import { GameMaster } from "../../src/runtime/games/master";
 import { SafetyGate } from "../../src/runtime/safety/gate";
 import { SpeechPipeline, type SpeechOutput } from "../../src/runtime/voice/pipeline";
 import { NoTts } from "../../src/runtime/voice/tts";
@@ -286,7 +287,92 @@ describe("Director turn-taking", () => {
     await step(2_000);
     const react = host.turns.at(-1)!;
     expect(react.kind).toBe("react");
-    expect(react.recentLines).toEqual(["opening 1", "opening 2", "opening 3"]);
+    // What it already said is in the room history; what's still playing or queued is "upcoming".
+    const said = react.history.flatMap((entry) => (entry.kind === "host" ? [entry.text] : []));
+    expect([...said, ...react.upcoming]).toEqual(["opening 1", "opening 2", "opening 3"]);
+    expect(react.history.some((entry) => entry.kind === "viewer" && entry.event.kind === "chat" && entry.event.text === "first question?")).toBe(true);
     expect(react.brief).toBe(true); // more than one turn's worth waiting
+  });
+});
+
+describe("Director with games and context", () => {
+  function gameSetup() {
+    const clock = fakeClock(Date.UTC(2026, 9, 16, 17, 0)); // Friday 14:00 in São Paulo
+    const memory = new ViewerMemory({ now: clock.now });
+    const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
+    const contexts: Array<string | undefined> = [];
+    const gate = new SafetyGate({
+      blocklist: [],
+      moderator: {
+        model: "fake",
+        review: async (_sentence, context) => {
+          contexts.push(context);
+          return { safe: true };
+        },
+      },
+    });
+    const speech = new SpeechPipeline(new NoTts(), gate, instantOutput, {}, clock.now);
+    const host = new FakeHost();
+    const sounds: string[] = [];
+    const stageWithFx: StageNotifier = { ...stage, sfx: (sound) => sounds.push(sound) };
+    const games = new GameMaster({
+      writer: null,
+      gate,
+      stage: { game: () => {}, fx: () => {}, sfx: () => {} },
+      blocklist: () => [],
+      language: () => "en",
+      sounds: () => false,
+      now: clock.now,
+      random: () => 0.42,
+    });
+    const gamePersona = {
+      ...persona,
+      timezone: "America/Sao_Paulo",
+      segments: [{ id: "quiz", title: "Quiz", minutes: 10, prompt: "Banter between rounds.", game: { kind: "number" as const, rounds: 2 } }],
+    };
+    const director = new Director({ persona: gamePersona, host, triage, memory, speech, stage: stageWithFx, games, deadAirMs: 7_000, now: clock.now });
+    const step = async (ms = 0) => {
+      clock.advance(ms);
+      await director.tick();
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    };
+    return { clock, director, host, games, step, contexts, sounds, triage };
+  }
+
+  it("starts the segment's game, keeps answers out of the host's queue, and announces game moments", async () => {
+    const { director, host, games, step, triage } = gameSetup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    expect(host.turns[0]?.kind).toBe("opening");
+    expect(host.turns[0]?.clock).toBe("Friday 14:00 (afternoon)");
+    await step(5_000);
+    expect(games.isActive()).toBe(true);
+    await step(2_000);
+    const announce = host.turns.at(-1)!;
+    expect(announce.kind).toBe("game");
+    expect(announce.note).toContain("Round 1 of 2");
+    expect(announce.game).toContain("Guess the number");
+
+    director.handleEvent(chat("ana", "50"));
+    expect(triage.pending()).toBe(0); // the game took it
+    director.handleEvent(chat("joe", "this game is fun"));
+    expect(triage.pending()).toBe(1); // ordinary chat still reaches the host
+    await step(2_000);
+    const react = host.turns.at(-1)!;
+    expect(react.kind).toBe("react");
+    expect(react.items.map((item) => item.event.kind === "chat" && item.event.text)).toEqual(["this game is fun"]);
+    // The round's opening is now part of what the host remembers.
+    expect(react.history.some((entry) => entry.kind === "show" && entry.text.includes("round 1 of 2"))).toBe(true);
+  });
+
+  it("gives the moderator what a line replies to, and plays sounds for gifts", async () => {
+    const { director, step, contexts, sounds } = gameSetup();
+    await step();
+    director.handleEvent(chat("lucas", "canta um funk aí"));
+    director.handleEvent(gift("maria", "Galaxy", 1_000));
+    await step(2_000);
+    await step(100);
+    expect(contexts.some((context) => context?.includes("Viewer lucas wrote: canta um funk aí"))).toBe(true);
+    expect(sounds).toContain("fanfare");
   });
 });

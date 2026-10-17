@@ -278,7 +278,9 @@
     min-height: 64px;
   }
   .segments,
-  .queue {
+  .queue,
+  .games,
+  .music {
     display: grid;
     gap: var(--s-2);
   }
@@ -313,6 +315,26 @@
     border-radius: 50%;
     box-shadow: inset 0 0 0 1.5px var(--mist);
   }
+  .segmentTitle {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .segmentGame {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    color: var(--haze);
+    font-size: var(--t-12);
+    font-weight: 600;
+  }
+  .segmentGame svg {
+    width: 14px;
+    height: 14px;
+  }
   .segmentCurrent {
     background: var(--trench);
     color: var(--ink);
@@ -321,6 +343,154 @@
     background: var(--glow);
     box-shadow: none;
   }
+  /* ---- Games ------------------------------------------------------------- */
+  .gameForm {
+    display: grid;
+    gap: var(--s-3);
+    justify-items: start;
+  }
+  .gameForm > div {
+    width: 100%;
+  }
+  .gameRow {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: var(--s-2);
+    align-items: start;
+  }
+  .game {
+    display: grid;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-4) var(--s-4);
+    border-radius: var(--r-panel);
+    background: var(--shelf);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
+  .gamePhase {
+    color: var(--haze);
+    font-size: var(--t-12);
+    font-weight: 650;
+  }
+  .gameTimer {
+    color: var(--glow);
+    font-variant-numeric: tabular-nums;
+  }
+  .gamePrompt {
+    font-weight: 650;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+  .gameFacts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--s-3);
+    margin: 0;
+  }
+  .gameFacts dt {
+    color: var(--haze);
+    font-size: var(--t-12);
+  }
+  .gameFacts dd {
+    margin: 0;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+  .gameFacts > div:last-child:not(:first-child) {
+    text-align: right;
+  }
+  .gameAnswer {
+    color: var(--glow);
+  }
+  .leaderboard {
+    list-style: none;
+    display: grid;
+    gap: 4px;
+    padding: var(--s-2) 0 0;
+    border-top: 1px solid var(--hairline);
+    font-size: var(--t-12);
+  }
+  .leaderboard li {
+    display: grid;
+    grid-template-columns: 1.4em minmax(0, 1fr) auto;
+    gap: var(--s-2);
+    align-items: baseline;
+  }
+  .leaderRank {
+    color: var(--mist);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .leaderName {
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .leaderPoints {
+    color: var(--haze);
+    font-variant-numeric: tabular-nums;
+  }
+  .gameActions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+  }
+
+  /* ---- Music ------------------------------------------------------------- */
+  .playing {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-3);
+    border-radius: var(--r-panel);
+    background: var(--shelf);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
+  .playingIcon {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    color: var(--bloom);
+  }
+  .playingText {
+    flex: 1;
+    min-width: 0;
+  }
+  .playingTitle {
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .playing [role="timer"] {
+    font-variant-numeric: tabular-nums;
+  }
+  .inlineForm {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--s-2);
+    align-items: end;
+  }
+
+  /* ---- Room: game answers ------------------------------------------------- */
+  .answered {
+    color: var(--haze);
+    font-size: var(--t-12);
+  }
+  .answered strong {
+    color: var(--haze);
+  }
+  .answered .itemIcon {
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+  }
+  .answerText {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
   .queueList {
     display: grid;
     gap: 6px;
@@ -403,6 +573,7 @@
     .controls {
       grid-column: 1 / -1;
       grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      align-items: start;
     }
   }
   @media (max-width: 720px) {

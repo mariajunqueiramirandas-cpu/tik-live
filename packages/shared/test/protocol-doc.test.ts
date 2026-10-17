@@ -21,7 +21,7 @@ function section(title: string): string {
 }
 
 function documented(text: string, level: string): string[] {
-  return [...text.matchAll(new RegExp(`^${level} \`([a-z-]+)\`$`, "gm"))].map((match) => match[1] as string);
+  return [...text.matchAll(new RegExp(`^${level} \`([a-z_-]+)\`$`, "gm"))].map((match) => match[1] as string);
 }
 
 const discriminators = (schema: { options: readonly { shape: object }[] }, key: "t" | "kind") =>

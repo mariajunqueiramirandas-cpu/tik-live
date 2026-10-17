@@ -1,4 +1,4 @@
-import type { ChannelDto, ChannelListItem, ChannelUpdateInput } from "@tik-live/shared";
+import type { ChannelCreateInput, ChannelDto, ChannelListItem, ChannelUpdateInput } from "@tik-live/shared";
 import { QueryClient, useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { api, ApiError, call } from "./api";
 import { toast } from "../ui/toast-store";
@@ -111,8 +111,16 @@ export function useUpdateChannel(id: string) {
 
 export function useCreateChannel() {
   return useMutation({
-    mutationFn: async (input: { name: string; tiktokUsername?: string | null; presetId?: string }) =>
-      (await call(api.api.channels.$post({ json: input }))).channel as ChannelDto,
+    mutationFn: async (input: ChannelCreateInput) => {
+      try {
+        return (await call(api.api.channels.$post({ json: input }))).channel as ChannelDto;
+      } catch (error) {
+        // The browser's time zone is a nicety: if this server doesn't know it, create the host without one.
+        if (!(input.timezone && error instanceof ApiError && error.status === 400)) throw error;
+        const { timezone: _unknown, ...rest } = input;
+        return (await call(api.api.channels.$post({ json: rest }))).channel as ChannelDto;
+      }
+    },
     onSuccess: (channel) => {
       queryClient.setQueryData(keys.channel(channel.id), channel);
       void queryClient.invalidateQueries({ queryKey: keys.channels, exact: true });

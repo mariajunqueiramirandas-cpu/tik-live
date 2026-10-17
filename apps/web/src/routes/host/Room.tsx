@@ -1,11 +1,14 @@
 import type { LiveEventSummary, TranscriptLine } from "@tik-live/shared";
-import { ArrowDown, Ban, Gift, Heart, Share2, UserPlus } from "lucide-react";
+import { ArrowDown, Ban, Gamepad2, Gift, Heart, Share2, UserPlus } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { count, time } from "../../lib/format";
 import { useStudio, type RoomItem, type StudioStore } from "../../lib/studio";
 import { Button } from "../../ui/Button";
 import { cx } from "../../ui/cx";
 import s from "./studio.module.css";
+
+/** Chat the minigame took as an answer: not skipped, just not for the host to reply to. */
+const GAME_ANSWER = "game answer";
 
 const FILTER_REASONS: Record<string, string> = {
   flooding: "sending messages too fast",
@@ -53,6 +56,16 @@ function EventRow({ event }: { event: LiveEventSummary }) {
         </div>
       );
     default:
+      if (event.filtered === GAME_ANSWER) {
+        return (
+          <div className={cx(s.item, s.answered)}>
+            <Gamepad2 aria-hidden className={s.itemIcon} />
+            <p>
+              <strong>{event.who}</strong> answered <span className={s.answerText}>{event.text}</span>
+            </p>
+          </div>
+        );
+      }
       return (
         <div className={cx(s.item, s.chat, event.filtered && s.filtered, event.kind === "question" && s.question)}>
           <p>

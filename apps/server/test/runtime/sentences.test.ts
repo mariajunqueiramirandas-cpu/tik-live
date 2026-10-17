@@ -58,3 +58,22 @@ describe("toUtterance", () => {
     expect(toUtterance("[happy] 🎉🎉")).toBeUndefined();
   });
 });
+
+describe("effect tags", () => {
+  it("reads effects anywhere in a line and keeps trailing ones with their sentence", () => {
+    expect(toUtterance("[excited] Ten roses! [confetti] Thank you [hearts] [spin]")).toEqual({
+      text: "Ten roses! Thank you",
+      emotion: "excited",
+      fx: ["confetti", "hearts"],
+    });
+    const splitter = new SentenceSplitter();
+    const out = [
+      ...splitter.push("What a gift! [confe"),
+      ...splitter.push("tti] [happy] And welcome, Ana. "),
+      ...splitter.push("[thinking] Hmm."),
+      ...splitter.flush(),
+    ];
+    // The effect stays with its sentence; the emotion starts the next one.
+    expect(out).toEqual(["What a gift! [confetti]", "[happy] And welcome, Ana.", "[thinking] Hmm."]);
+  });
+});

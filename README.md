@@ -4,7 +4,8 @@ A fully autonomous AI host for TikTok LIVE, run as a service. A creator
 designs a character (or picks a voice-only host with no character at all),
 connects their TikTok account, and the host runs the stream: it reads chat,
 answers questions, thanks gifts and follows, remembers regulars, runs show
-segments, and fills quiet moments. Nobody needs to be at the keyboard.
+segments and chat minigames, composes little beats on request, and fills
+quiet moments. Nobody needs to be at the keyboard.
 
 "Lantern" is a working name ([decisions needed](docs/decisions-needed.md)).
 
@@ -41,7 +42,20 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   keeps animating through disconnects and reconnects on its own.
 - **Runtime**: one supervised runtime per live host, with audience-aware
   pacing, per-plan AI budgets and daily spend caps, viewer memory, and
-  graceful restarts that don't drop OBS.
+  graceful restarts that don't drop OBS. Each turn the host sees the recent
+  conversation, its local time and a running summary of the show
+  ([ADR-0025](docs/adr/0025-host-context-and-memory.md)).
+- **Minigames**: trivia, this-or-that, word scramble, guess the number,
+  true or false, quick math, riddles and fastest finger. Viewers answer in
+  chat, the game keeps score, and each game has its own scene on stage
+  ([ADR-0023](docs/adr/0023-chat-minigames.md)). Run them from a segment or
+  start one from the studio.
+- **Reactions and music**: confetti, fireworks, hearts and character moves
+  the host can cue, gift effects that scale with the gift, sound effects, and
+  short original music the host writes as a score and the stage synthesizes
+  ([ADR-0024](docs/adr/0024-music-as-code.md)).
+- **Presets**: nine ready-made hosts, from a cozy radio voice to a Brazilian
+  party MC, a gaming caster and a study buddy.
 - **Cloud broadcast** (Pro): renders the stage in headless Chromium and
   streams it to TikTok's RTMP ingest, so no PC has to stay on.
 - **Billing** with Mercado Pago subscriptions; with billing off, every

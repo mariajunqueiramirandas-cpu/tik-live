@@ -76,6 +76,10 @@ animate the mouth from the text when it's `null`, which is captions-only
 mode). When playback starts the stage replies with [`started`](#started),
 and when it ends with [`spoken`](#spoken), both with the same `id`.
 
+Optional `fx` (up to three of `EFFECTS` in `packages/shared/src/persona.ts`,
+e.g. `["confetti"]`) plays reactions when the line starts. The host cues
+them with tags like `[confetti]` in its text.
+
 A `speak` that arrives while another line is playing **waits** for that line
 to end; it never cuts it off. Only [`stop`](#stop) cuts a line. If more than
 three lines are waiting (the stage fell far behind), the stage skips the
@@ -132,6 +136,61 @@ queued.
 
 The persona's name or look changed in the dashboard. The stage morphs to it
 without reloading.
+
+#### `fx`
+
+```json
+{ "v": 1, "t": "fx", "fx": "fireworks", "intensity": 2 }
+```
+
+A reaction on its own, not tied to a line: a game win, the end of a game, a
+like milestone. `fx` is one of `EFFECTS` (particle bursts like `confetti`,
+`hearts`, `fireworks`, `notes`, and character moves like `spin`, `jump`,
+`shake`). Optional `intensity`, 0.25 to 3 (default 1), scales it. Gifts,
+follows, shares and likes don't need this: the stage plays their effects
+from [`alert`](#alert) and [`stats`](#stats) on its own.
+
+#### `game`
+
+```json
+{ "v": 1, "t": "game", "scene": { "kind": "trivia", "round": 1, "rounds": 5, "phase": "open", "remainingMs": 25000, "durationMs": 25000, "question": "Which planet is the largest?", "options": ["Saturn", "Jupiter", "Neptune", "Earth"], "answers": 0, "tally": null, "correct": null, "winners": [] } }
+```
+
+A chat minigame's scene ([ADR-0023](adr/0023-chat-minigames.md)), or
+`"scene": null` to return to the show's normal stage. Each game kind has its
+own scene (`gameSceneSchema` in `packages/shared/src/game.ts`): `trivia`,
+`poll`, `scramble`, `number`, `truefalse`, `math`, `riddle`, `fastest`, and
+`scoreboard` at the end of a game. The full scene is re-sent on every change
+(live counts at most four times a second), so the stage updates in place.
+`remainingMs` and `durationMs` are relative to when the message arrives;
+answers are never in the scene before `phase` is `reveal`. A stage that
+connects mid-game gets the current scene right after `hello`.
+
+#### `music`
+
+```json
+{ "v": 1, "t": "music", "track": { "title": "Batidão", "bpm": 130, "bars": 2, "repeat": 4, "swing": 0, "parts": [{ "instrument": "kick", "pattern": "x . . x . . x . . . x . . . . .", "volume": 0.9 }] } }
+```
+
+Play a piece of music, synthesized on the stage from its score
+([ADR-0024](adr/0024-music-as-code.md); `musicTrackSchema` and the step
+language in `packages/shared/src/music.ts`), replacing any piece already
+playing; `"track": null` stops it. Music goes through the stage's audio
+output (so OBS and the cloud broadcast carry it), ducks under speech, and
+never moves the character's mouth. The whole piece lasts at most 45 s. A
+stage that connects while a piece still has more than 8 s to go gets it
+after `hello`, from the top.
+
+#### `sfx`
+
+```json
+{ "v": 1, "t": "sfx", "sound": "win" }
+```
+
+A short synthesized sound for a show moment (`SOUNDS` in
+`packages/shared/src/music.ts`): gifts, follows and shares, game rounds
+opening and revealing, wins, the end of a game. Not sent when the creator
+turned sound effects off.
 
 #### `hold`
 
@@ -326,3 +385,26 @@ a test audience event (`chat`, `gift`, `follow` or `share`;
 `injectEventSchema` in `packages/shared/src/events.ts`). It goes through
 the same triage as real events, so it's the way to rehearse without going
 live.
+
+##### `game_start`
+
+`{ "kind": "game_start", "game": { "kind": "trivia", "rounds": 5, "topic": "space" } }`:
+start a chat minigame (`gameConfigSchema` in `packages/shared/src/game.ts`;
+`rounds` 1–10, `topic` optional). Rejected while another game is running.
+Its state shows up in the snapshot's `game` field.
+
+##### `game_stop`
+
+End the running game now; the stage returns to the normal show.
+
+##### `music_play`
+
+`{ "kind": "music_play", "library": "lofi-night" }` plays a piece from
+`MUSIC_LIBRARY`; `{ "kind": "music_play", "prompt": "funk carioca, 130 bpm" }`
+asks the host to compose one in that style on its next turn and introduce it.
+Rejected when the creator turned music off. The snapshot's `music` field says
+what's playing.
+
+##### `music_stop`
+
+Stop the music on stage.

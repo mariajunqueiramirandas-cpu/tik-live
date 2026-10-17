@@ -1,35 +1,25 @@
-import { disclosureText, type Emotion, type Look, type StageServerPayload } from "@tik-live/shared";
+import { disclosureText, type Effect, type Emotion, type Look, type StageServerPayload } from "@tik-live/shared";
 import { QualityGovernor } from "./anim/governor";
 import { createRandom } from "./anim/random";
 import { Spring, SpringVector, SPRINGS } from "./anim/spring";
 import { AudioEngine, type PlaybackHandle } from "./audio/audio";
+import type { MusicPlayer } from "./audio/music";
 import { FrameCapture, type CaptureOptions, type CaptureStats } from "./capture";
-import type { MouthShape } from "./audio/envelope";
-import { FaceController } from "./character/face";
-import { hexToRgb, type Rgb } from "./color";
+import { hexToRgb } from "./color";
+import type { GameLayer } from "./game/scene";
 import { Gl, ShaderError, type Program, type QuadGeometry, type RenderTarget } from "./gl/gl";
-import {
-  ATMOSPHERE_FRAGMENT,
-  FULLSCREEN_VERTEX,
-  GLOW_DOT_FRAGMENT,
-  MOTES_VERTEX,
-  OFFERINGS_VERTEX,
-  ORB_FRAGMENT,
-  RECT_VERTEX,
-  SPRITE_FRAGMENT,
-  SPRITE_SINGLE_FRAGMENT,
-  UPSCALE_FRAGMENT,
-  VOICE_LINE_FRAGMENT,
-  YUV_CHROMA_FRAGMENT,
-  YUV_LUMA_FRAGMENT,
-} from "./gl/shaders";
-import { Alerts, Caption, Chrome, FONT_FAMILY, type TextSprite } from "./text/sprites";
+import { FULLSCREEN_VERTEX, RECT_VERTEX, SPRITE_FRAGMENT, SPRITE_SINGLE_FRAGMENT, YUV_CHROMA_FRAGMENT, YUV_LUMA_FRAGMENT } from "./gl/shaders";
+import { AtmosphereLayer, STAGE_HEIGHT, STAGE_WIDTH } from "./stage/atmosphere";
+import { CharacterLayer } from "./stage/character";
+import type { FxLayer } from "./stage/fx";
+import { Frame, type Layer, type StageContext } from "./stage/layer";
+import { TextLayer } from "./stage/text";
+import { FONT_FAMILY, type TextSprite } from "./text/sprites";
 
-export const ENGINE_VERSION = "1.1.0";
+export const ENGINE_VERSION = "1.2.0";
 /** Cloud broadcast audio rate; the broadcaster's encoder reads PCM at this rate. */
 export const BROADCAST_SAMPLE_RATE = 48_000;
-export const STAGE_WIDTH = 1080;
-export const STAGE_HEIGHT = 1920;
+export { STAGE_HEIGHT, STAGE_WIDTH };
 
 export type EngineMode = "program" | "preview" | "broadcast" | "demo";
 export type QualitySetting = "auto" | "high" | "balanced" | "low";
@@ -88,21 +78,9 @@ export interface StageEngine {
 }
 
 const QUALITY_LEVEL: Record<Exclude<QualitySetting, "auto">, number> = { high: 0, balanced: 1, low: 2 };
-
-// extent: the orb quad's half-size in body radii. The body (wobble and squash
-// included) stays inside 1.2; the halo around it is drawn with the atmosphere.
-const ORB = { x: 540, y: 720, r: 165, extent: 1.25 };
-/**
- * The atmosphere renders at 1/4 of the output size in each direction (1/16
- * of the pixels): it's all soft gradients, light and slow caustics, and
- * comparisons against full resolution stay above 46 dB PSNR.
- */
-const ATMOSPHERE_DOWNSCALE = 4;
-const MOTES = 96;
-const OFFERING_SLOTS = 192;
-const GOLD: Rgb = hexToRgb("#FFD15C");
-const INK_DARK: Rgb = hexToRgb("#0B0420");
 const DEFAULT_LOOK: Look = { character: "orb", primary: "#7CF5FF", secondary: "#FF5FD2", background: "#0B0420" };
+/** How far the atmosphere moves toward a game's palette (the rest stays the host's). */
+const GAME_TINT = 0.85;
 
 /** One line to perform, as the server sent it. */
 export interface Line {
@@ -111,6 +89,8 @@ export interface Line {
   emotion: Emotion;
   audioUrl: string | null;
   durationMs: number;
+  /** Reactions to play when the line starts. */
+  fx?: Effect[];
 }
 
 interface Cue {
@@ -259,9 +239,14 @@ export class Speaker {
 }
 
 /**
- * The stage engine (ADR-0009). One WebGL2 canvas renders the atmosphere,
- * motes, gift offerings, the character and the text sprites; everything
- * animates on one clock with springs.
+ * The stage engine (ADR-0009): a coordinator over a stack of layers. It owns
+ * the GPU context, the clock, the quality governor and capture, applies
+ * protocol messages, and updates and draws the layers in order:
+ * atmosphere, effects behind, character, game board, effects ahead, text.
+ *
+ * Effects, game scenes and music load in later chunks right after
+ * start-up, so the first frame doesn't wait for them; messages that need
+ * them queue until they arrive (a few milliseconds).
  */
 export class Engine implements StageEngine {
   readonly audio: AudioEngine;
@@ -269,34 +254,31 @@ export class Engine implements StageEngine {
   private readonly gl: Gl;
   private readonly governor: QualityGovernor;
   private readonly random: () => number;
-  private readonly face: FaceController;
   private readonly events = new Emitter();
   private readonly speaker: Speaker;
+  private readonly frame = new Frame();
+  private readonly ctx: StageContext;
 
-  private atmosphere: Program | null = null;
-  private motes: Program | null = null;
-  private offerings: Program | null = null;
-  private orb: Program | null = null;
-  private voiceLine: Program | null = null;
   private sprite: Program | null = null;
   private spriteSingle: Program | null = null;
-  private upscale: Program | null = null;
-  /** The atmosphere renders here at reduced resolution, then UPSCALE_FRAGMENT draws it full size. */
-  private atmosphereTarget!: RenderTarget;
   /** Where frames go: the canvas (null) or an offscreen target (cloud broadcast capture). */
   private output: RenderTarget | null = null;
   private capture: FrameCapture | null = null;
   private quad!: QuadGeometry;
-  private moteQuad!: QuadGeometry;
-  private offeringQuad!: QuadGeometry;
-  private readonly offeringA = new Float32Array(OFFERING_SLOTS * 4);
-  private readonly offeringB = new Float32Array(OFFERING_SLOTS * 4);
-  private offeringCursor = 0;
-  private readonly arrivals: Array<{ at: number; big: boolean }> = [];
 
-  private readonly caption: Caption;
-  private readonly alerts: Alerts;
-  private readonly chrome: Chrome;
+  private readonly atmosphere: AtmosphereLayer;
+  private readonly character: CharacterLayer;
+  private readonly text: TextLayer;
+  private fx: FxLayer | null = null;
+  private game: GameLayer | null = null;
+  /** Update order (the character first: others follow where it is). */
+  private updates: Layer[] = [];
+  /** Draw order, back to front. */
+  private layers: Layer[] = [];
+  private extras: Promise<void> | null = null;
+  private waiting: Array<() => void> = [];
+  /** Music and sound effects (ADR-0024); ducks itself under the voice. Loads with the extras. */
+  private music: MusicPlayer | null = null;
 
   private name = "Host";
   private look: Look = DEFAULT_LOOK;
@@ -304,17 +286,9 @@ export class Engine implements StageEngine {
     [...hexToRgb(DEFAULT_LOOK.primary), ...hexToRgb(DEFAULT_LOOK.secondary), ...hexToRgb(DEFAULT_LOOK.background)],
     SPRINGS.gentle,
   );
-  private readonly characterMix = new Spring(1, SPRINGS.gentle); // 1 = orb, 0 = voice line
-  private readonly bounce = new Spring(0, SPRINGS.bouncy);
-  private readonly glow = new Spring(0.6, SPRINGS.gentle);
-  private flash = 0;
-  private emotionUntil = Infinity;
-  private amplitude = 0;
-  private readonly vowel: MouthShape = { round: 0, wide: 0 };
-  // Per-frame scratch, reused so the frame loop never allocates.
-  private readonly primary: Rgb = [0, 0, 0];
-  private readonly secondary: Rgb = [0, 0, 0];
-  private readonly background: Rgb = [0, 0, 0];
+  /** 0 = normal show layout, 1 = game layout. */
+  private readonly gameMix = new Spring(0, { stiffness: 150, damping: 19 });
+  private likes = -1;
 
   private time = 0;
   private lastFrame = 0;
@@ -334,7 +308,6 @@ export class Engine implements StageEngine {
   ) {
     this.mode = options.mode;
     this.random = createRandom(options.seed ?? 0x7a11);
-    this.face = new FaceController(this.random);
     // A broadcast's output size is fixed: never trade resolution for frame rate there.
     const quality = options.quality ?? (options.mode === "broadcast" ? "high" : "auto");
     this.governor = new QualityGovernor(quality === "auto" ? 0 : QUALITY_LEVEL[quality], quality !== "auto");
@@ -360,34 +333,55 @@ export class Engine implements StageEngine {
       ...(options.mode === "broadcast" ? { sampleRate: BROADCAST_SAMPLE_RATE } : {}),
       ...(options.fetch ? { fetch: options.fetch } : {}),
     });
+    this.detectRenderer();
+    this.quad = gl.quad();
+    this.sprite = this.tryProgram("sprite", RECT_VERTEX, SPRITE_FRAGMENT);
+    this.spriteSingle = this.tryProgram("sprite-single", RECT_VERTEX, SPRITE_SINGLE_FRAGMENT);
+    this.ctx = {
+      gl,
+      quad: this.quad,
+      program: (name, vertex, fragment) => this.tryProgram(name, vertex, fragment),
+      drawSprite: this.drawSprite,
+      bindOutput: () => this.bindOutput(),
+    };
+    this.atmosphere = new AtmosphereLayer(this.ctx, this.random);
+    this.character = new CharacterLayer(this.ctx, this.audio, this.random);
+    this.text = new TextLayer(this.ctx);
+    this.stack();
+    if (this.error) queueMicrotask(() => this.events.emit("telemetry", this.telemetry()));
+
     this.speaker = new Speaker(this.audio, this.mode, this.events, {
       begin: (line) => {
-        this.face.setEmotion(line.emotion);
-        this.emotionUntil = Infinity;
-        this.caption.show(line.text);
+        this.character.setEmotion(line.emotion, this.time, null);
+        this.text.caption.show(line.text);
+        for (const effect of line.fx ?? []) this.play(effect, 1);
       },
-      started: (_line, durationS) => this.caption.start(this.time, durationS),
+      started: (_line, durationS) => this.text.caption.start(this.time, durationS),
       finished: () => {
-        this.caption.finish(this.time);
-        this.emotionUntil = this.time + 2.5;
+        this.text.caption.finish(this.time);
+        this.character.relax(this.time);
       },
     });
-    this.detectRenderer();
-    this.build();
-    this.caption = new Caption(this.gl);
-    this.alerts = new Alerts(this.gl);
-    this.chrome = new Chrome(this.gl);
     this.listen();
     this.resize();
-    this.chrome.setBadge(disclosureText(this.name), this.scale);
+    this.text.chrome.setBadge(disclosureText(this.name), this.scale);
     void this.loadFonts();
-    if (!options.manualClock) this.start();
+    if (!options.manualClock) {
+      this.start();
+      // Effects and games: right after the first frames, never before them.
+      setTimeout(() => void this.ready(), 0);
+    }
   }
 
   // ---- public API ---------------------------------------------------------
 
   /** Applies a protocol message from the server (or the demo driver). */
   apply(message: StageServerPayload): void {
+    // `music` and `sfx` go to the music player.
+    if (message.t === "music" || message.t === "sfx") {
+      this.whenLoaded(() => this.music?.handle(message));
+      return;
+    }
     switch (message.t) {
       case "hello":
       case "look":
@@ -403,15 +397,35 @@ export class Engine implements StageEngine {
         break;
       case "stop":
         this.speaker.stop();
-        this.caption.hide();
+        this.text.caption.hide();
         break;
-      case "alert":
-        this.alert(message.kind, message.name, alertDetail(message), message.diamonds ?? 0);
+      case "alert": {
+        const { kind, name } = message;
+        this.text.alerts.push(kind, name, alertDetail(message), this.time, this.scale);
+        if (kind === "gift") this.character.face.lookAt(0.7, -0.4, this.time + 2.2);
+        else this.character.kick(-4);
+        this.whenLoaded(() => this.fx?.alert(kind, name, message.giftName ?? "", message.diamonds ?? 0, this.time));
         break;
+      }
       case "segment":
-        this.chrome.setTitle(message.title, this.scale);
+        this.text.chrome.setTitle(message.title, this.scale);
         break;
-      case "stats":
+      case "stats": {
+        // Likes since the last update float up as hearts (not the backlog on connect).
+        const delta = this.likes < 0 ? 0 : message.likes - this.likes;
+        this.likes = message.likes;
+        if (delta > 0) this.whenLoaded(() => this.fx?.likes(delta, this.time));
+        break;
+      }
+      case "fx":
+        this.play(message.fx, message.intensity ?? 1);
+        break;
+      case "game": {
+        const { scene } = message;
+        this.gameMix.target = scene ? 1 : 0;
+        if (scene || this.game) this.whenLoaded(() => this.game?.set(scene, this.time, this.scale));
+        break;
+      }
       case "hold":
         break;
     }
@@ -422,11 +436,9 @@ export class Engine implements StageEngine {
     this.name = name;
     this.look = look;
     this.colors.setTarget([...hexToRgb(look.primary), ...hexToRgb(look.secondary), ...hexToRgb(look.background)]);
-    this.characterMix.target = look.character === "orb" ? 1 : 0;
-    this.caption.setGlow(look.primary);
-    this.alerts.setGlow(look.primary);
-    this.chrome.setGlow(look.primary, this.scale);
-    if (nameChanged) this.chrome.setBadge(disclosureText(name), this.scale);
+    this.character.style.target = look.character === "orb" ? 1 : 0;
+    this.text.setGlow(look.primary, this.scale);
+    if (nameChanged) this.text.chrome.setBadge(disclosureText(name), this.scale);
   }
 
   /** The current look (for editors that need to diff). */
@@ -436,8 +448,35 @@ export class Engine implements StageEngine {
 
   /** Makes the character react without speaking (editor previews). */
   setEmotion(emotion: Emotion, holdSeconds = 2.5): void {
-    this.face.setEmotion(emotion);
-    this.emotionUntil = this.time + holdSeconds;
+    this.character.setEmotion(emotion, this.time, holdSeconds);
+  }
+
+  /** Plays a reaction: particles, a character move, the spotlight or rain. */
+  play(effect: Effect, intensity = 1): void {
+    this.whenLoaded(() => this.fx?.play(effect, intensity, this.time));
+  }
+
+  /** Resolves once effects and game scenes are loaded (tests render after it). */
+  ready(): Promise<void> {
+    this.extras ??= Promise.all([import("./stage/fx"), import("./game/scene"), import("./audio/music")]).then(
+      ([fx, game, music]) => {
+        if (this.destroyed) return;
+        this.music = new music.MusicPlayer(this.audio);
+        this.fx = new fx.FxLayer(this.ctx, this.character, this.music, this.random);
+        this.game = new game.GameLayer(this.ctx);
+        this.stack();
+        this.fx.repaint(this.scale);
+        const waiting = this.waiting;
+        this.waiting = [];
+        for (const run of waiting) run();
+      },
+      (err: unknown) => {
+        this.error ??= `extras: ${String(err)}`.slice(0, 480);
+        this.waiting = [];
+        this.events.emit("telemetry", this.telemetry());
+      },
+    );
+    return this.extras;
   }
 
   /** Renders one frame at time `t` seconds (manual clock, for tests and thumbnails). */
@@ -508,7 +547,52 @@ export class Engine implements StageEngine {
     }
     this.layout();
     // A resized canvas is cleared; redraw now so there's never a blank frame.
-    if (changed && !this.running && this.caption) this.draw();
+    if (changed && !this.running && this.text) this.draw();
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.stop();
+    for (const off of this.observers) off();
+    this.speaker.stop();
+    this.music?.destroy();
+    this.audio.destroy();
+    this.events.clear();
+  }
+
+  // ---- layers -----------------------------------------------------------------
+
+  private stack(): void {
+    const { atmosphere, character, text, fx, game } = this;
+    this.updates = [character];
+    if (fx) this.updates.push(fx.behind, fx.ahead);
+    if (game) this.updates.push(game);
+    this.updates.push(atmosphere, text);
+    this.layers = [atmosphere];
+    if (fx) this.layers.push(fx.behind);
+    this.layers.push(character);
+    if (game) this.layers.push(game);
+    if (fx) this.layers.push(fx.ahead);
+    this.layers.push(text);
+  }
+
+  /** Runs now if effects and games are loaded, otherwise once they are. */
+  private whenLoaded(run: () => void): void {
+    if (this.fx || this.destroyed) run();
+    else {
+      this.waiting.push(run);
+      void this.ready();
+    }
+  }
+
+  private tryProgram(name: string, vertex: string, fragment: string): Program | null {
+    try {
+      return this.gl.program(name, vertex, fragment);
+    } catch (err) {
+      this.error ??= (err instanceof ShaderError ? err.message : String(err)).slice(0, 480);
+      return null;
+    }
   }
 
   /** The size frames are drawn at: the canvas, or the capture target while capturing. */
@@ -520,13 +604,10 @@ export class Engine implements StageEngine {
     return this.output?.height ?? this.canvas.height;
   }
 
-  /** Sizes what follows the output: the half-resolution atmosphere and the text scale. */
+  /** Sizes what follows the output: the reduced-resolution atmosphere and the text scale. */
   private layout(): void {
     const width = this.outputWidth;
-    this.atmosphereTarget?.resize(
-      Math.max(1, Math.ceil(width / ATMOSPHERE_DOWNSCALE)),
-      Math.max(1, Math.ceil(this.outputHeight / ATMOSPHERE_DOWNSCALE)),
-    );
+    this.atmosphere?.resize(width, this.outputHeight);
     const nextScale = Math.max(0.25, Math.min(2, width / STAGE_WIDTH));
     if (Math.abs(nextScale - this.scale) > 0.01) {
       this.scale = nextScale;
@@ -542,47 +623,6 @@ export class Engine implements StageEngine {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     }
-  }
-
-  destroy(): void {
-    if (this.destroyed) return;
-    this.destroyed = true;
-    this.stop();
-    for (const off of this.observers) off();
-    this.speaker.stop();
-    this.audio.destroy();
-    this.events.clear();
-  }
-
-  private alert(kind: "gift" | "follow" | "share", name: string, detail: string, diamonds: number): void {
-    this.alerts.push(kind, name, detail, this.time, this.scale);
-    if (kind === "gift") {
-      const count = Math.min(36, 4 + Math.round(Math.log10(diamonds + 1) * 7));
-      const big = diamonds >= 1000;
-      for (let i = 0; i < count; i++) this.spawnOffering(i * 0.045, big);
-      this.face.lookAt(0.7, -0.4, this.time + 2.2);
-    } else {
-      this.bounce.impulse(-4);
-    }
-  }
-
-  private spawnOffering(delay: number, big: boolean): void {
-    const slot = this.offeringCursor;
-    this.offeringCursor = (this.offeringCursor + 1) % OFFERING_SLOTS;
-    const start = this.time + delay;
-    const duration = 1.1 + this.random() * 0.6;
-    const a = slot * 4;
-    this.offeringA[a] = 820 + this.random() * 140;
-    this.offeringA[a + 1] = 420 + this.random() * 120;
-    this.offeringA[a + 2] = start;
-    this.offeringA[a + 3] = (this.random() - 0.5) * 260;
-    this.offeringB[a] = big ? 7 : 5;
-    this.offeringB[a + 1] = duration;
-    this.offeringB[a + 2] = big ? 1 : 0;
-    this.offeringB[a + 3] = 0;
-    this.offeringQuad.updateInstances(1, a, 4);
-    this.offeringQuad.updateInstances(2, a, 4);
-    this.arrivals.push({ at: start + duration, big });
   }
 
   // ---- frame loop -----------------------------------------------------------
@@ -621,148 +661,36 @@ export class Engine implements StageEngine {
   }
 
   private update(dt: number): void {
-    const t = this.time;
+    const f = this.frame;
+    f.t = this.time;
+    f.scale = this.scale;
+    f.moteFraction = this.governor.settings.moteFraction;
+    f.speaking = this.speaker.current !== null;
+    f.amplitude += (this.audio.amplitude() - f.amplitude) * Math.min(1, dt * 20);
     this.colors.step(dt);
-    this.characterMix.step(dt);
-    this.bounce.step(dt);
-    this.amplitude += (this.audio.amplitude() - this.amplitude) * Math.min(1, dt * 20);
-    this.audio.mouthShape(this.vowel);
-    this.glow.target = 0.55 + this.amplitude * 0.6;
-    this.glow.step(dt);
-    this.flash = Math.max(0, this.flash - dt * 0.9);
-    while (this.arrivals.length && (this.arrivals[0] as { at: number }).at <= t) {
-      const arrival = this.arrivals.shift()!;
-      this.flash = Math.min(1.4, this.flash + (arrival.big ? 0.25 : 0.12));
-      this.bounce.impulse(arrival.big ? -3 : -1.2);
-      if (this.arrivals.length === 0 && !this.speaker.current) this.setEmotion("excited", 1.8);
+    this.gameMix.step(dt);
+    f.game = Math.max(0, Math.min(1, this.gameMix.value));
+    // The character keeps the host's colors; the water takes on the game's.
+    const game = this.game;
+    const tint = game ? f.game * GAME_TINT : 0;
+    for (let i = 0; i < 3; i++) {
+      const p = this.colors.get(i);
+      const s = this.colors.get(3 + i);
+      const b = this.colors.get(6 + i);
+      f.hostPrimary[i] = p;
+      f.hostSecondary[i] = s;
+      f.primary[i] = game ? p + (game.colors.get(i) - p) * tint : p;
+      f.secondary[i] = game ? s + (game.colors.get(3 + i) - s) * tint : s;
+      f.background[i] = game ? b + (game.colors.get(6 + i) - b) * tint : b;
     }
-    const speaking = this.speaker.current !== null;
-    if (!speaking && t > this.emotionUntil && this.face.current !== "neutral") this.face.setEmotion("neutral");
-    this.face.update(dt, t, speaking ? this.amplitude : 0, this.vowel);
-    this.caption.update(dt, t, this.scale);
-    this.alerts.update(dt, t);
-    this.chrome.update(dt, t);
+    const updates = this.updates;
+    for (let i = 0; i < updates.length; i++) (updates[i] as Layer).update(dt, f);
   }
 
   private draw(): void {
-    if (this.gl.lost || !this.atmosphere) return;
-    const gl = this.gl.gl;
-    const t = this.time;
-    const { primary, secondary, background } = this;
-    for (let i = 0; i < 3; i++) {
-      primary[i] = this.colors.get(i);
-      secondary[i] = this.colors.get(3 + i);
-      background[i] = this.colors.get(6 + i);
-    }
-    const orbY = ORB.y + Math.sin(t * 1.3) * 14 + this.bounce.value * 6;
-    const mix = this.characterMix.value;
-    const orbAlpha = mix > 0.01 ? Math.min(1, mix) : 0;
-    const orbR = ORB.r * (1 + this.amplitude * 0.05 + this.flash * 0.04) * (0.6 + 0.4 * orbAlpha);
-    const squash = Math.max(-0.08, Math.min(0.08, this.bounce.velocity * 0.012));
-
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
-
-    // The atmosphere is soft everywhere: render it small (its cost was half of
-    // every frame in software rendering), then scale it up with dithering.
-    // Without the upscale program, draw it directly.
-    const halfRes = this.upscale !== null;
-    if (halfRes) this.atmosphereTarget.bindForDrawing();
-    else this.bindOutput();
-    this.atmosphere
-      .use()
-      .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
-      .v4("u_rect", 0, 0, STAGE_WIDTH, STAGE_HEIGHT)
-      .f("u_time", t)
-      .rgb("u_bg", background)
-      .rgb("u_primary", primary)
-      .rgb("u_secondary", secondary)
-      .rgb("u_gold", GOLD)
-      .v2("u_orb", ORB.x, orbY)
-      .f("u_glow", this.glow.value)
-      .f("u_flash", this.flash)
-      .v4("u_halo", orbR, squash, this.amplitude, orbAlpha)
-      .f("u_haloAa", 2.4 / (orbR * this.scale));
-    this.quad.draw();
-    if (this.upscale) {
-      this.bindOutput();
-      this.atmosphereTarget.bind(0);
-      this.upscale.use().v2("u_res", STAGE_WIDTH, STAGE_HEIGHT).v4("u_rect", 0, 0, STAGE_WIDTH, STAGE_HEIGHT).i("u_tex", 0);
-      this.quad.draw();
-    }
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
-    if (this.motes) {
-      this.motes
-        .use()
-        .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
-        .f("u_time", t)
-        .v2("u_orb", ORB.x, orbY)
-        .f("u_amp", this.amplitude)
-        .rgb("u_color", primary);
-      this.moteQuad.draw(Math.round(MOTES * this.governor.settings.moteFraction));
-    }
-    if (this.offerings) {
-      this.offerings.use().v2("u_res", STAGE_WIDTH, STAGE_HEIGHT).f("u_time", t).v2("u_orb", ORB.x, orbY).rgb("u_color", GOLD);
-      this.offeringQuad.draw(OFFERING_SLOTS);
-    }
-
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    if (orbAlpha > 0) this.drawOrb(t, orbY, orbR, squash, primary, secondary, orbAlpha);
-    if (mix < 0.99) this.drawVoiceLine(t, primary, secondary, Math.min(1, 1 - mix));
-
-    this.drawSprite(this.chrome.title);
-    this.drawSprite(this.chrome.badge);
-    this.alerts.forEachSprite(this.drawSprite);
-    this.drawSprite(this.caption.sprite);
-  }
-
-  private drawOrb(t: number, orbY: number, r: number, squash: number, primary: Rgb, secondary: Rgb, alpha: number): void {
-    if (!this.orb) return;
-    const face = this.face.state;
-    const half = r * ORB.extent;
-    this.orb
-      .use()
-      .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
-      .v4("u_rect", ORB.x - half, orbY - half, half * 2, half * 2)
-      .f("u_time", t)
-      .f("u_amp", this.amplitude)
-      .rgb("u_primary", primary)
-      .rgb("u_secondary", secondary)
-      .rgb("u_ink", INK_DARK)
-      .rgb("u_gold", GOLD)
-      .f("u_desat", face.desat)
-      .f("u_flash", this.flash)
-      .f("u_squash", squash)
-      .f("u_extent", ORB.extent)
-      .f("u_px", 1 / (r * this.scale))
-      .v4("u_eye", face.eye[0], face.eye[1], face.eye[2], face.eye[3])
-      .v4("u_eye2", face.eye2[0], face.eye2[1], face.eye2[2], face.eye2[3])
-      .v2("u_gaze", face.gaze[0], face.gaze[1])
-      .v4("u_mouth", face.mouth[0], face.mouth[1], face.mouth[2], face.mouth[3])
-      .v2("u_vowel", face.vowel[0], face.vowel[1])
-      .f("u_blush", face.blush)
-      .f("u_alpha", alpha);
-    this.quad.draw();
-  }
-
-  private drawVoiceLine(t: number, primary: Rgb, secondary: Rgb, alpha: number): void {
-    if (!this.voiceLine) return;
-    const height = 400;
-    this.voiceLine
-      .use()
-      .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
-      .v4("u_rect", 0, ORB.y - height / 2, STAGE_WIDTH, height)
-      .f("u_time", t)
-      .f("u_amp", this.amplitude * alpha)
-      .rgb("u_primary", primary)
-      .rgb("u_secondary", secondary)
-      .rgb("u_gold", GOLD)
-      .f("u_flash", this.flash)
-      .f("u_px", 1 / this.scale)
-      .f("u_alpha", alpha);
-    this.quad.draw();
+    if (this.gl.lost || !this.atmosphere.ready) return;
+    const layers = this.layers;
+    for (let i = 0; i < layers.length; i++) (layers[i] as Layer).draw(this.frame);
   }
 
   private readonly drawSprite = (sprite: TextSprite): void => {
@@ -795,44 +723,6 @@ export class Engine implements StageEngine {
   };
 
   // ---- setup ------------------------------------------------------------------
-
-  /**
-   * Compiles every program on its own: if the character's shader fails on
-   * some driver, the stage still shows the atmosphere and captions, and the
-   * error goes to the studio through telemetry.
-   */
-  private build(): void {
-    const tryProgram = (name: string, vertex: string, fragment: string): Program | null => {
-      try {
-        return this.gl.program(name, vertex, fragment);
-      } catch (err) {
-        this.error ??= (err instanceof ShaderError ? err.message : String(err)).slice(0, 480);
-        return null;
-      }
-    };
-    this.atmosphere = tryProgram("atmosphere", RECT_VERTEX, ATMOSPHERE_FRAGMENT);
-    this.upscale = tryProgram("upscale", RECT_VERTEX, UPSCALE_FRAGMENT);
-    this.sprite = tryProgram("sprite", RECT_VERTEX, SPRITE_FRAGMENT);
-    this.spriteSingle = tryProgram("sprite-single", RECT_VERTEX, SPRITE_SINGLE_FRAGMENT);
-    this.motes = tryProgram("motes", MOTES_VERTEX, GLOW_DOT_FRAGMENT);
-    this.offerings = tryProgram("offerings", OFFERINGS_VERTEX, GLOW_DOT_FRAGMENT);
-    this.orb = tryProgram("orb", RECT_VERTEX, ORB_FRAGMENT);
-    this.voiceLine = tryProgram("voice-line", RECT_VERTEX, VOICE_LINE_FRAGMENT);
-    if (this.error) queueMicrotask(() => this.events.emit("telemetry", this.telemetry()));
-
-    this.atmosphereTarget = this.gl.target("high");
-    this.quad = this.gl.quad();
-    this.moteQuad = this.gl.quad();
-    const seeds = new Float32Array(MOTES * 4);
-    for (let i = 0; i < seeds.length; i++) seeds[i] = this.random();
-    this.moteQuad.attachInstances(1, 4, seeds);
-    this.offeringQuad = this.gl.quad();
-    this.offeringA.fill(0);
-    for (let i = 0; i < OFFERING_SLOTS; i++) this.offeringA[i * 4 + 2] = -1000;
-    this.offeringB.fill(1);
-    this.offeringQuad.attachInstances(1, 4, this.offeringA);
-    this.offeringQuad.attachInstances(2, 4, this.offeringB);
-  }
 
   private detectRenderer(): void {
     const gl = this.gl.gl;
@@ -900,11 +790,10 @@ export class Engine implements StageEngine {
     if (!this.destroyed) this.repaintText();
   }
 
+  /** Text is rasterized once per content and scale; context loss and new fonts need it again. */
   private repaintText(): void {
-    if (!this.caption) return;
-    this.caption.invalidate();
-    this.alerts.repaint(this.scale);
-    this.chrome.repaint(this.scale);
+    const layers = this.layers;
+    for (let i = 0; i < layers.length; i++) layers[i]?.repaint?.(this.scale);
   }
 }
 
