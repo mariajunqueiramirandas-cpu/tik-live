@@ -22,6 +22,7 @@
     "@workos-inc/node": "11.0.0",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
+    "https-proxy-agent": "^7.0.6",
     "tiktok-live-connector": "^2.5.0",
     "zod": "^4.6.7"
   },

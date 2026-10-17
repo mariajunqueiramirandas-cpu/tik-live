@@ -2,9 +2,22 @@ import { createApi } from "./api";
 import { BrowserBackend } from "./browser-backend";
 import { loadConfig } from "./config";
 import { createLogger } from "./log";
+import { describeProxy, oxylabsProvider, parseProxy, type ProxyProvider } from "./proxy";
 
 const config = loadConfig();
 const log = createLogger({ level: config.LOG_LEVEL, json: config.isProduction, base: { service: "signer" } });
+const proxy: ProxyProvider | undefined =
+  config.OXYLABS_USERNAME && config.OXYLABS_PASSWORD
+    ? oxylabsProvider({
+        username: config.OXYLABS_USERNAME,
+        password: config.OXYLABS_PASSWORD,
+        endpoint: config.OXYLABS_ENDPOINT,
+        sessionMinutes: config.oxylabsSessionMinutes,
+        ...(config.OXYLABS_COUNTRY ? { country: config.OXYLABS_COUNTRY } : {}),
+      })
+    : config.SIGNER_PROXY_URL
+      ? () => parseProxy(config.SIGNER_PROXY_URL!)
+      : undefined;
 const backend = new BrowserBackend({
   log,
   locale: config.SIGNER_LOCALE,
@@ -19,13 +32,15 @@ const backend = new BrowserBackend({
   readyTimeoutMs: 45_000,
   sandbox: !config.SIGNER_NO_SANDBOX,
   ...(config.CHROMIUM_PATH ? { chromiumPath: config.CHROMIUM_PATH } : {}),
-  ...(config.SIGNER_PROXY_URL ? { proxyUrl: config.SIGNER_PROXY_URL } : {}),
+  refusalRetries: config.SIGNER_REFUSAL_RETRIES,
+  ...(proxy ? { proxy } : {}),
 });
 const app = createApi(backend, config.SIGNER_TOKEN, log);
 const server = Bun.serve({ hostname: config.HOST, port: config.PORT, fetch: app.fetch });
 log.info(`signer listening on http://${config.HOST}:${server.port}`, {
   maxConcurrent: config.SIGNER_MAX_CONCURRENT,
-  proxy: config.SIGNER_PROXY_URL ? "yes" : "no",
+  proxy: proxy ? describeProxy(proxy()) : "none",
+  ...(config.OXYLABS_COUNTRY ? { country: config.OXYLABS_COUNTRY.toUpperCase() } : {}),
   locale: config.SIGNER_LOCALE,
   timezone: config.SIGNER_TIMEZONE,
 });

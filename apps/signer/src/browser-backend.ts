@@ -11,12 +11,15 @@ import {
   webcastFetchUrl,
   type BrowserIdentity,
 } from "./params";
+import { describeProxy, type ProxyProvider } from "./proxy";
 
 export interface BrowserBackendOptions {
   log: Logger;
   chromiumPath?: string;
-  /** Proxy for the browser's traffic, e.g. http://user:pass@host:port. */
-  proxyUrl?: string;
+  /** Where the browser's traffic leaves from; asked again for every new session. */
+  proxy?: ProxyProvider;
+  /** How many times a refused join is retried from a new session, which needs a proxy that can hand out another address. */
+  refusalRetries?: number;
   locale: string;
   timezone: string;
   /** A TikTok page whose own script signs XHR requests. */
@@ -65,17 +68,7 @@ interface Session {
 /** Cookies the room's websocket needs, copied from the browser's jar when the response doesn't set them. */
 const WEBSOCKET_COOKIES = ["ttwid"];
 const START_BACKOFF_MS = 5_000;
-const NETWORK_HINT = "Route the signer through a residential proxy (SIGNER_PROXY_URL) or run it from another network.";
 const BLOCKED_RESOURCES = new Set(["image", "media", "font"]);
-
-export function parseProxy(url: string): { server: string; username?: string; password?: string } {
-  const parsed = new URL(url);
-  return {
-    server: `${parsed.protocol}//${parsed.host}`,
-    ...(parsed.username ? { username: decodeURIComponent(parsed.username) } : {}),
-    ...(parsed.password ? { password: decodeURIComponent(parsed.password) } : {}),
-  };
-}
 
 /** TikTok's script adds `X-Bogus` (and friends) to the request it sends; its absence means nothing signed it. */
 export function isSigned(url: string): boolean {
@@ -151,11 +144,26 @@ export class BrowserBackend implements SignerBackend {
     const key = `${request.roomId}:${request.cursor}`;
     const existing = this.inflightFetches.get(key);
     if (existing) return existing;
-    const job = this.limiter
-      .run(() => this.use((session) => this.signedFetch(session, request)))
-      .finally(() => this.inflightFetches.delete(key));
+    const job = this.limiter.run(() => this.join(request)).finally(() => this.inflightFetches.delete(key));
     this.inflightFetches.set(key, job);
     return job;
+  }
+
+  /**
+   * One join, with new tries from a new browser session when TikTok refuses
+   * the exit address: with a residential proxy each session gets its own
+   * address, and addresses differ in how TikTok treats them.
+   */
+  private async join(request: { roomId: string; cursor: string }): Promise<WebcastFetchResult> {
+    const retries = this.options.proxy ? (this.options.refusalRetries ?? 0) : 0;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.use((session) => this.signedFetch(session, request));
+      } catch (err) {
+        if (!(err instanceof SignerError) || !err.refused || attempt >= retries) throw err;
+        this.options.log.info("TikTok refused this exit address; trying another", { attempt: attempt + 1, of: retries });
+      }
+    }
   }
 
   async lookupRoom(uniqueId: string): Promise<SignerRoomResponse> {
@@ -206,14 +214,15 @@ export class BrowserBackend implements SignerBackend {
     }
 
     if (result.status !== 200) {
-      const refused = result.status === 403 ? ` It does that when it won't let this network join a room anonymously. ${NETWORK_HINT}` : "";
-      throw new SignerError(502, "upstream", `TikTok answered the room join request with HTTP ${result.status}.${refused}`);
+      const refused = result.status === 403 ? ` It does that when it won't let this network join a room anonymously. ${this.networkHint()}` : "";
+      throw new SignerError(502, "upstream", `TikTok answered the room join request with HTTP ${result.status}.${refused}`, result.status === 403);
     }
     if (result.body.length === 0) {
       throw new SignerError(
         502,
         "empty_response",
-        `TikTok accepted the signed request but returned nothing. It does that when it won't let this network join a room anonymously (a login wall). ${NETWORK_HINT}`,
+        `TikTok accepted the signed request but returned nothing. It does that when it won't let this network join a room anonymously (a login wall). ${this.networkHint()}`,
+        true,
       );
     }
     const cookies = [...result.setCookies];
@@ -223,6 +232,12 @@ export class BrowserBackend implements SignerBackend {
       if (stored) cookies.push(`${stored.name}=${stored.value}`);
     }
     return { roomId: result.roomId ?? request.roomId, cookies, body: result.body };
+  }
+
+  private networkHint(): string {
+    return this.options.proxy
+      ? "The signer already uses a proxy; try another country (OXYLABS_COUNTRY), a mobile proxy, or another network."
+      : "Route the signer through a residential proxy (OXYLABS_USERNAME and OXYLABS_PASSWORD, or SIGNER_PROXY_URL) or run it from another network.";
   }
 
   /** The route handler for `webcast/im/fetch`: the page's script has signed it; we send it. */
@@ -268,6 +283,8 @@ export class BrowserBackend implements SignerBackend {
       const error = this.classify(err);
       session.failures += 1;
       if (error.code === "unsigned" || error.code === "unavailable" || session.failures >= 3) session.bad = true;
+      // A refused exit address: drop the session so the next one starts on a new address.
+      if (error.refused && this.options.proxy) session.bad = true;
       throw error;
     } finally {
       session.users -= 1;
@@ -332,12 +349,13 @@ export class BrowserBackend implements SignerBackend {
   private async startSession(): Promise<Session> {
     const { options } = this;
     const started = this.now();
+    const proxy = options.proxy?.();
     const browser = await chromium.launch({
       headless: true,
       chromiumSandbox: options.sandbox,
       args: ["--disable-dev-shm-usage"],
       ...(options.chromiumPath ? { executablePath: options.chromiumPath } : {}),
-      ...(options.proxyUrl ? { proxy: parseProxy(options.proxyUrl) } : {}),
+      ...(proxy ? { proxy } : {}),
     });
     try {
       const major = browser.version().split(".")[0] ?? "131";
@@ -382,7 +400,7 @@ export class BrowserBackend implements SignerBackend {
         screenWidth: screen.width,
         screenHeight: screen.height,
       }));
-      options.log.info("signer session ready", { ms: this.now() - started, ownRequestSeen: session.ownRequest !== null });
+      options.log.info("signer session ready", { ms: this.now() - started, ownRequestSeen: session.ownRequest !== null, ...(proxy ? { proxy: describeProxy(proxy) } : {}) });
       return session;
     } catch (err) {
       await browser.close().catch(() => undefined);

@@ -7,6 +7,8 @@ export class SignerError extends Error {
     readonly status: ContentfulStatusCode,
     readonly code: SignerErrorCode,
     message: string,
+    /** TikTok refused this network; another exit address might not be refused. */
+    readonly refused = false,
   ) {
     super(message);
   }

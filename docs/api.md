@@ -245,5 +245,5 @@ Errors use the same `{ error: { code, message } }` shape as the app:
 queue is full), `503 unavailable` (the browser isn't ready, or TikTok's page
 didn't start signing), `502 unsigned` (TikTok's script didn't sign the
 request), `502 empty_response` and `502 upstream` (TikTok refused the join,
-which usually means it won't let that network join anonymously: see
-`SIGNER_PROXY_URL`), `504 timeout`.
+which usually means it won't let that network join anonymously: see the
+`OXYLABS_*` settings), `504 timeout`.

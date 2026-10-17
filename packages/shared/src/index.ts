@@ -2,6 +2,7 @@ export * from "./brand";
 export * from "./broadcast";
 export * from "./channel";
 export * from "./events";
+export * from "./oxylabs";
 export * from "./persona";
 export * from "./plans";
 export * from "./presets";

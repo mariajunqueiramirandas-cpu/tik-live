@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { createServer, type IncomingMessage, type Server } from "node:http";
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { BrowserBackend, type BrowserBackendOptions } from "../apps/signer/src/browser-backend";
 import { createLogger } from "../apps/signer/src/log";
+import { oxylabsProvider } from "../apps/signer/src/proxy";
 
 /**
  * The signer's browser backend against a local stand-in for TikTok (ADR-0023):
@@ -45,8 +46,21 @@ if (delay !== null) setTimeout(() => {
 
 let server: Server;
 let origin: string;
+let port: number;
 let seen: Seen[] = [];
 let pageLoads = 0;
+/** Which exit addresses (proxy sessions) TikTok's stand-in refuses to let join a room. */
+let refuse: "none" | "first" | "all" = "none";
+const refusedExits = new Set<string>();
+
+interface ProxySeen {
+  user: string;
+  password: string;
+  path: string;
+}
+let proxyServer: Server;
+let proxyPort: number;
+let proxySeen: ProxySeen[] = [];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -69,8 +83,10 @@ async function handle(req: IncomingMessage, res: import("node:http").ServerRespo
   if (url.pathname === "/webcast/im/fetch/") {
     const signed = Boolean(query["X-Bogus"]);
     const room = query.room_id ?? "";
+    const exit = String(req.headers["x-exit"] ?? "");
+    if (exit && (refuse === "all" || (refuse === "first" && refusedExits.size === 0))) refusedExits.add(exit);
     // TikTok rejects an unsigned request with an empty 200, and so does a login wall.
-    if (!signed || room === "7000000000000000003") {
+    if (!signed || room === "7000000000000000003" || refusedExits.has(exit)) {
       res.writeHead(200, { "content-type": "application/json" });
       res.end();
     } else if (room === "7000000000000000004") {
@@ -89,16 +105,72 @@ async function handle(req: IncomingMessage, res: import("node:http").ServerRespo
 test.beforeAll(async () => {
   server = createServer((req, res) => void handle(req, res));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  port = (server.address() as AddressInfo).port;
+  origin = `http://127.0.0.1:${port}`;
+
+  // A stand-in for an Oxylabs entry node: an HTTP proxy that wants credentials and forwards to the
+  // stand-in TikTok, telling it which session (exit address) each request left from. The page's own
+  // requests arrive as plain forwards; the join Playwright sends on its behalf arrives in a CONNECT
+  // tunnel, as HTTPS traffic to the real TikTok will.
+  const credentials = (header: string | undefined) => {
+    if (!header) return null;
+    const decoded = Buffer.from(header.replace(/^Basic /i, ""), "base64").toString();
+    const colon = decoded.indexOf(":");
+    return { user: decoded.slice(0, colon), password: decoded.slice(colon + 1) };
+  };
+  const forward = (req: IncomingMessage, res: ServerResponse, who: { user: string; password: string }) => {
+    const target = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    proxySeen.push({ ...who, path: target.pathname });
+    const headers: Record<string, string | string[] | undefined> = { ...req.headers, host: target.host, "x-exit": who.user.match(/-sessid-([a-z0-9]+)-/)?.[1] ?? "" };
+    delete headers["proxy-authorization"];
+    delete headers["proxy-connection"];
+    const upstream = httpRequest({ host: "127.0.0.1", port, path: target.pathname + target.search, method: req.method, headers }, (up) => {
+      res.writeHead(up.statusCode ?? 502, up.headers);
+      up.pipe(res);
+    });
+    upstream.on("error", () => {
+      res.writeHead(502);
+      res.end();
+    });
+    req.pipe(upstream);
+  };
+  const challenge = 'Proxy-Authenticate: Basic realm="stand-in"';
+  const tunneled = new WeakMap<object, { user: string; password: string }>();
+  const tunnelServer = createServer((req, res) => forward(req, res, tunneled.get(req.socket)!));
+  proxyServer = createServer((req, res) => {
+    const who = credentials(req.headers["proxy-authorization"] as string | undefined);
+    if (!who) {
+      res.writeHead(407, { "proxy-authenticate": 'Basic realm="stand-in"' });
+      res.end();
+      return;
+    }
+    forward(req, res, who);
+  });
+  proxyServer.on("connect", (req, socket) => {
+    const who = credentials(req.headers["proxy-authorization"] as string | undefined);
+    if (!who) {
+      socket.end(`HTTP/1.1 407 Proxy Authentication Required\r\n${challenge}\r\n\r\n`);
+      return;
+    }
+    tunneled.set(socket, who);
+    socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    tunnelServer.emit("connection", socket);
+  });
+  await new Promise<void>((resolve) => proxyServer.listen(0, "127.0.0.1", resolve));
+  proxyPort = (proxyServer.address() as AddressInfo).port;
 });
 
 test.afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
+  await new Promise<void>((resolve) => proxyServer.close(() => resolve()));
 });
 
 test.beforeEach(() => {
   seen = [];
   pageLoads = 0;
+  proxySeen = [];
+  refuse = "none";
+  refusedExits.clear();
 });
 
 const backends: BrowserBackend[] = [];
@@ -236,4 +308,63 @@ test("reloads an idle session once it is stale", async () => {
   clock += 5_000;
   await signer.lookupRoom("live_user");
   expect(pageLoads).toBe(2);
+});
+
+// A host that isn't loopback, so Chromium sends it through the proxy (it never proxies 127.0.0.1).
+const viaProxy = (overrides: Partial<BrowserBackendOptions> = {}) =>
+  backend({
+    warmupUrl: `http://tiktok.test:${port}/live`,
+    webcastOrigin: `http://tiktok.test:${port}`,
+    siteOrigin: `http://tiktok.test:${port}`,
+    proxy: oxylabsProvider({ username: "resi_user", password: "p+w~:x/y", country: "br", endpoint: `127.0.0.1:${proxyPort}`, sessionMinutes: 40 }),
+    ...overrides,
+  });
+const sessions = () => new Set(proxySeen.map((p) => p.user.match(/-sessid-([a-z0-9]+)-/)?.[1]));
+
+test("Oxylabs: the page, the lookup and the signed join all leave through the proxy, on one sticky session", async () => {
+  const signer = viaProxy();
+  await signer.warmUp();
+  expect(await signer.lookupRoom("live_user")).toMatchObject({ isLive: true });
+  const joined = await signer.fetchWebcast({ roomId: "7000000000000000001", cursor: "" });
+  expect(joined.body.length).toBeGreaterThan(0);
+
+  const paths = new Set(proxySeen.map((p) => p.path));
+  // The page itself, and the join that Playwright sends on the page's behalf.
+  expect(paths).toContain("/live");
+  expect(paths).toContain("/webcast/im/fetch/");
+  // Every request carried the same credentials, with the session in the user name...
+  expect(new Set(proxySeen.map((p) => p.user)).size).toBe(1);
+  expect(proxySeen[0]?.user).toMatch(/^customer-resi_user-cc-BR-sessid-[a-z0-9]{12}-sesstime-40$/);
+  // ...and the password arrived exactly as given, whatever characters it has.
+  expect(new Set(proxySeen.map((p) => p.password))).toEqual(new Set(["p+w~:x/y"]));
+  expect(sessions().size).toBe(1);
+});
+
+test("Oxylabs: a refused exit address is retried from a new session", async () => {
+  refuse = "first";
+  const signer = viaProxy({ refusalRetries: 1 });
+  const joined = await signer.fetchWebcast({ roomId: "7000000000000000001", cursor: "" });
+  expect(joined.body.length).toBeGreaterThan(0);
+  // Two sessions, so two exit addresses: the refused one and the one that got in.
+  expect(sessions().size).toBe(2);
+  expect(refusedExits.size).toBe(1);
+  expect(pageLoads).toBe(2);
+});
+
+test("Oxylabs: gives up after its retries and says so", async () => {
+  refuse = "all";
+  const signer = viaProxy({ refusalRetries: 1 });
+  await expect(signer.fetchWebcast({ roomId: "7000000000000000001", cursor: "" })).rejects.toMatchObject({
+    code: "empty_response",
+    // Already on a proxy: the advice is about the proxy, not "use a proxy".
+    message: expect.stringContaining("OXYLABS_COUNTRY"),
+  });
+  expect(sessions().size).toBe(2);
+});
+
+test("without a proxy a refusal isn't retried: the address would be the same", async () => {
+  refuse = "all";
+  const signer = backend({ refusalRetries: 3 });
+  await expect(signer.fetchWebcast({ roomId: "7000000000000000003", cursor: "" })).rejects.toMatchObject({ code: "empty_response" });
+  expect(pageLoads).toBe(1);
 });

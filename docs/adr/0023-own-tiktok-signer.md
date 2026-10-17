@@ -67,9 +67,22 @@ on a TikTok page and lets TikTok's own script sign the requests we need.
   the connector's provider route for the signed join is replaced, per
   connection, so connections that still use Euler (`EULER_API_KEY`) work
   beside it. The signer wins when both are set.
-- **Network:** `SIGNER_PROXY_URL` sends the browser's traffic through a
-  residential or mobile proxy, because TikTok decides per network whether
-  anonymous viewers may join.
+- **Network:** TikTok decides per network whether anonymous viewers may
+  join, so the signer can send the browser's traffic through
+  [Oxylabs](https://oxylabs.io) residential proxies (`OXYLABS_USERNAME`,
+  `OXYLABS_PASSWORD`, optionally `OXYLABS_COUNTRY`). Oxylabs takes its options
+  in the proxy user name, so each browser session gets a **sticky session id**
+  (one exit address for the session's life); a refused join is retried once
+  from a new session, hence a new address. Any other proxy works through
+  `SIGNER_PROXY_URL`. The join request Playwright sends on the page's behalf
+  uses the browser's proxy too (checked in Playwright's source and by a test
+  with a stand-in proxy), so nothing leaves from the server's own address.
+- **Websocket:** by default the app's websocket to TikTok connects directly,
+  as Euler Stream's customers' do. `TIKTOK_WS_VIA_PROXY=true` sends it through
+  the same Oxylabs account, one sticky address per channel, for the case where
+  TikTok refuses the websocket from the server's address. It is off by
+  default because residential proxies bill by traffic and a websocket streams
+  for hours.
 
 ## Options Considered
 
@@ -108,8 +121,11 @@ turn a change there into a clear failure instead of silent empty responses.
 
 The unproven part is not the signing but the network. If TikTok refuses
 anonymous joins from the VPS's addresses, code can't fix that, and Euler's
-price probably includes clean addresses. `SIGNER_PROXY_URL` is the answer, and
-the proxy then is the new recurring cost to compare with Euler's.
+price probably includes clean addresses. Oxylabs residential proxies are the
+answer, and the proxy then is the new recurring cost to compare with Euler's.
+The signer's own traffic (one page, no images, video or fonts) should be a
+small part of it; the websocket would be the large part, which is why it stays
+direct unless TikTok refuses it. None of that is measured yet.
 
 ## Consequences
 
@@ -131,5 +147,6 @@ the proxy then is the new recurring cost to compare with Euler's.
 4. [x] App side: `HttpSignerClient`, per-connection route override, `TikTokSource` room lookup; tested with the real connector against stand-ins.
 5. [x] Deployment: image, both compose files, env examples, CI image build.
 6. [ ] Run `scripts/verify-signer.ts` from the deployment network on a live account: confirms the join and the events.
-7. [ ] If TikTok refuses anonymous joins there, pick a proxy provider and set `SIGNER_PROXY_URL`; compare its cost with Euler's.
-8. [ ] Decide whether to drop `EULER_API_KEY` once item 6 passes.
+7. [x] Oxylabs support: sticky sessions, retry on a new address, optional websocket through the proxy; tested with stand-in proxies (the signer in Chromium, the websocket under Bun).
+8. [ ] Try it against the real Oxylabs and a live account (`scripts/verify-signer.ts`), then read Oxylabs' usage page to see what the signer's traffic costs.
+9. [ ] Decide whether to drop `EULER_API_KEY` once item 6 passes.

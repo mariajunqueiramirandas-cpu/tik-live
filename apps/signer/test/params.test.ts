@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { SignerError } from "../src/backend";
 import { baselineFromIdentity, baselineFromOwnRequest, parseRoomLookup, roomLookupUrl, webcastFetchUrl } from "../src/params";
-import { isSigned, parseProxy } from "../src/browser-backend";
+import { isSigned } from "../src/browser-backend";
 
 const identity = {
   userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -97,10 +97,5 @@ describe("browser backend helpers", () => {
     expect(isSigned("https://x.test/webcast/im/fetch/?X-Bogus=abc&a=1")).toBe(true);
     expect(isSigned("https://x.test/webcast/im/fetch/?a=1&msToken=abc")).toBe(false);
     expect(isSigned("https://x.test/webcast/im/fetch/?a=1")).toBe(false);
-  });
-
-  test("proxy URLs split into server and credentials", () => {
-    expect(parseProxy("http://user:p%40ss@proxy.example.com:8080")).toEqual({ server: "http://proxy.example.com:8080", username: "user", password: "p@ss" });
-    expect(parseProxy("socks5://proxy.example.com:1080")).toEqual({ server: "socks5://proxy.example.com:1080" });
   });
 });

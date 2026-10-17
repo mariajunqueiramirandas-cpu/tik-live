@@ -527,6 +527,16 @@ export class ChannelRuntime {
         username: channel.tiktokUsername,
         log: this.log,
         ...(this.options.ctx.signer ? { signer: this.options.ctx.signer } : {}),
+        ...(this.options.ctx.config.wsProxyEnabled
+          ? {
+              wsProxy: {
+                username: this.options.ctx.config.OXYLABS_USERNAME!,
+                password: this.options.ctx.config.OXYLABS_PASSWORD!,
+                country: this.options.ctx.config.OXYLABS_COUNTRY,
+                endpoint: this.options.ctx.config.OXYLABS_ENDPOINT,
+              },
+            }
+          : {}),
         ...(this.options.ctx.config.EULER_API_KEY ? { signApiKey: this.options.ctx.config.EULER_API_KEY } : {}),
       });
     }

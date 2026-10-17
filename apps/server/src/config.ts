@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { OXYLABS_DEFAULT_ENDPOINT } from "@tik-live/shared";
 
 const bool = z
   .enum(["true", "false", "1", "0", "yes", "no", "on", "off"])
@@ -61,6 +62,26 @@ const envSchema = z.object({
   /** Self-hosted TikTok signer (apps/signer, ADR-0023). On when both are set; replaces Euler Stream. */
   SIGNER_URL: z.string().url().optional(),
   SIGNER_TOKEN: z.string().min(24).optional(),
+  /**
+   * Oxylabs residential proxies (ADR-0023). The signer reads the same names for its own traffic;
+   * the app only uses them to send each channel's TikTok websocket through the proxy, when asked.
+   */
+  OXYLABS_USERNAME: z.string().min(1).max(128).optional(),
+  OXYLABS_PASSWORD: z.string().min(1).max(256).optional(),
+  OXYLABS_COUNTRY: z
+    .string()
+    .regex(/^[A-Za-z]{2}$/, "OXYLABS_COUNTRY is a two-letter country code, like BR")
+    .optional(),
+  OXYLABS_ENDPOINT: z
+    .string()
+    .regex(/^[A-Za-z0-9.-]+:\d{2,5}$/, "OXYLABS_ENDPOINT is host:port, like pr.oxylabs.io:7777")
+    .default(OXYLABS_DEFAULT_ENDPOINT),
+  /**
+   * Send every channel's TikTok websocket through the proxy too, one sticky address per channel. Off by
+   * default: the signed join is a few kilobytes, but a room's websocket streams for hours and residential
+   * proxies bill by traffic. Turn it on if TikTok refuses the websocket from the server's own address.
+   */
+  TIKTOK_WS_VIA_PROXY: bool.default(false),
 
   MP_ACCESS_TOKEN: z.string().optional(),
   /** Alias for MP_ACCESS_TOKEN (the name used in this project's environment settings). */
@@ -90,6 +111,8 @@ export interface AppConfig extends Env {
   ttsEnabled: boolean;
   pocketEnabled: boolean;
   signerEnabled: boolean;
+  /** The websocket goes through Oxylabs (TIKTOK_WS_VIA_PROXY, with credentials). */
+  wsProxyEnabled: boolean;
 }
 
 export class ConfigError extends Error {}
@@ -137,6 +160,12 @@ export function loadConfig(source: Record<string, string | undefined> = process.
   if (Boolean(env.SIGNER_URL) !== Boolean(env.SIGNER_TOKEN)) {
     throw new ConfigError("Set both SIGNER_URL and SIGNER_TOKEN to use the self-hosted signer, or neither");
   }
+  if (Boolean(env.OXYLABS_USERNAME) !== Boolean(env.OXYLABS_PASSWORD)) {
+    throw new ConfigError("Set both OXYLABS_USERNAME and OXYLABS_PASSWORD to use the Oxylabs proxy, or neither");
+  }
+  if (env.TIKTOK_WS_VIA_PROXY && !env.OXYLABS_USERNAME) {
+    throw new ConfigError("TIKTOK_WS_VIA_PROXY requires OXYLABS_USERNAME and OXYLABS_PASSWORD");
+  }
 
   const pocketEnabled = Boolean(env.POCKET_TTS_URL && env.POCKET_TTS_SECRET);
   return {
@@ -148,6 +177,7 @@ export function loadConfig(source: Record<string, string | undefined> = process.
     ttsEnabled: Boolean(env.ELEVENLABS_API_KEY) || pocketEnabled,
     pocketEnabled,
     signerEnabled: Boolean(env.SIGNER_URL && env.SIGNER_TOKEN),
+    wsProxyEnabled: Boolean(env.TIKTOK_WS_VIA_PROXY && env.OXYLABS_USERNAME && env.OXYLABS_PASSWORD),
   };
 }
 

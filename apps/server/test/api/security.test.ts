@@ -35,6 +35,15 @@ describe("configuration guards", () => {
     expect(() => loadConfig({ ...base, SIGNER_URL: "http://lantern-signer:8091", SIGNER_TOKEN: "short" })).toThrow(/SIGNER_TOKEN/);
     expect(loadConfig({ ...base, SIGNER_URL: "http://lantern-signer:8091", SIGNER_TOKEN: token }).signerEnabled).toBe(true);
   });
+
+  it("sends the websocket through Oxylabs only when asked, and only with its credentials", () => {
+    const oxylabs = { OXYLABS_USERNAME: "resi_user", OXYLABS_PASSWORD: "p+w~:x/y" };
+    expect(loadConfig({ ...base, ...oxylabs }).wsProxyEnabled).toBe(false); // credentials alone are for the signer
+    expect(loadConfig({ ...base, ...oxylabs, TIKTOK_WS_VIA_PROXY: "true" })).toMatchObject({ wsProxyEnabled: true, OXYLABS_ENDPOINT: "pr.oxylabs.io:7777" });
+    expect(() => loadConfig({ ...base, TIKTOK_WS_VIA_PROXY: "true" })).toThrow(/OXYLABS_USERNAME/);
+    expect(() => loadConfig({ ...base, OXYLABS_USERNAME: "resi_user" })).toThrow(/OXYLABS_PASSWORD/);
+    expect(() => loadConfig({ ...base, ...oxylabs, OXYLABS_COUNTRY: "BRA" })).toThrow(/OXYLABS_COUNTRY/);
+  });
 });
 
 describe("secrets at rest", () => {

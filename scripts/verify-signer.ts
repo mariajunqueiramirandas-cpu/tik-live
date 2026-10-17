@@ -3,7 +3,11 @@
  * can't do. Run it from the network the signer will run on, with the account
  * that's live: that's yours, or one whose owner agreed.
  *
- *   bun scripts/verify-signer.ts <handle> --url http://127.0.0.1:8091 --token <SIGNER_TOKEN> [--seconds 30]
+ *   bun scripts/verify-signer.ts <handle> --url http://127.0.0.1:8091 --token <SIGNER_TOKEN> [--seconds 30] [--ws-via-proxy]
+ *
+ * With --ws-via-proxy the websocket goes through Oxylabs too, as TIKTOK_WS_VIA_PROXY does in the app;
+ * the credentials come from OXYLABS_USERNAME and OXYLABS_PASSWORD in the environment (and
+ * OXYLABS_COUNTRY, OXYLABS_ENDPOINT if set), never from arguments, so they stay out of shell history.
  *
  * It asks the running signer whether the account is live, then connects the
  * app's real TikTok source through the signer and counts the events that
@@ -12,6 +16,7 @@
  */
 import { parseArgs } from "node:util";
 import type { LiveEvent } from "../packages/shared/src/events";
+import { OXYLABS_DEFAULT_ENDPOINT } from "../packages/shared/src/oxylabs";
 import { createLogger } from "../apps/server/src/log";
 import { HttpSignerClient, SignerClientError } from "../apps/server/src/runtime/sources/signer-client";
 import { TikTokSource } from "../apps/server/src/runtime/sources/tiktok";
@@ -22,6 +27,7 @@ const { values, positionals } = parseArgs({
     url: { type: "string", default: "http://127.0.0.1:8091" },
     token: { type: "string", default: process.env.SIGNER_TOKEN },
     seconds: { type: "string", default: "30" },
+    "ws-via-proxy": { type: "boolean", default: false },
   },
 });
 
@@ -33,6 +39,18 @@ if (!handle || !values.token) {
 const base = values.url!.replace(/\/$/, "");
 const seconds = Math.max(5, Number(values.seconds));
 const signer = new HttpSignerClient(base, values.token);
+const wsProxy = values["ws-via-proxy"]
+  ? {
+      username: process.env.OXYLABS_USERNAME ?? "",
+      password: process.env.OXYLABS_PASSWORD ?? "",
+      country: process.env.OXYLABS_COUNTRY,
+      endpoint: process.env.OXYLABS_ENDPOINT ?? OXYLABS_DEFAULT_ENDPOINT,
+    }
+  : undefined;
+if (wsProxy && !(wsProxy.username && wsProxy.password)) {
+  console.error("--ws-via-proxy needs OXYLABS_USERNAME and OXYLABS_PASSWORD in the environment.");
+  process.exit(2);
+}
 
 function explain(err: unknown): string {
   return err instanceof SignerClientError ? `${err.code}: ${err.message}` : err instanceof Error ? err.message : String(err);
@@ -63,11 +81,12 @@ try {
   process.exit(1);
 }
 
-console.log(`3. Joining the room through the signer, then listening for ${seconds} s`);
+console.log(`3. Joining the room through the signer${wsProxy ? ", with the websocket through Oxylabs" : ""}, then listening for ${seconds} s`);
 const counts = new Map<string, number>();
 const source = new TikTokSource({
   username: handle,
   signer,
+  ...(wsProxy ? { wsProxy } : {}),
   log: createLogger("verify"),
   offlineRetryMs: 5_000,
 });

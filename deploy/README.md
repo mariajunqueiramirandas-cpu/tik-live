@@ -166,14 +166,43 @@ account that's live:
 bun scripts/verify-signer.ts <handle> --url http://127.0.0.1:8091 --token <SIGNER_TOKEN>
 ```
 
-If the signer reports 403 or an empty answer, set `SIGNER_PROXY_URL` in `.env`
-to a residential or mobile proxy (`http://user:pass@host:port`; use a sticky
-session if the provider offers one) and run `docker compose up -d signer`.
-The signer holds one page open and downloads no images, video or fonts, so a
-proxy billed by traffic sees a few megabytes at start and little after.
-`SIGNER_WEBCAST_ORIGIN=https://webcast.us.tiktok.com` is the other host worth
-trying. The signer's port is published on the server's loopback only, and every
-request needs the token.
+### Oxylabs residential proxy
+
+If the signer reports 403 or an empty answer, TikTok doesn't like the
+server's address. Send the signer's traffic through
+[Oxylabs](https://oxylabs.io) residential proxies: create a proxy user in
+their dashboard (its own name and password, not your account login) and set,
+in `.env`:
+
+```sh
+OXYLABS_USERNAME=<proxy user name>
+OXYLABS_PASSWORD=<proxy user password>
+OXYLABS_COUNTRY=BR              # optional: the country the exit address is in
+```
+
+then `docker compose up -d signer`. The signer starts each browser session on
+its own sticky Oxylabs session, so TikTok sees one visitor with one address
+for the life of that session (`OXYLABS_SESSION_MINUTES`, default a little more
+than `SIGNER_RECYCLE_MINUTES`). If TikTok still refuses an address, the signer
+retries the join once from a new session, which is a new address
+(`SIGNER_REFUSAL_RETRIES`).
+
+By default only the signer uses the proxy: the signed join and the page that
+signs it. Each channel's websocket then connects from the server's own
+address, which is how Euler Stream's customers connect too. If TikTok refuses
+that, set `TIKTOK_WS_VIA_PROXY=true` and every channel's websocket goes
+through Oxylabs as well, on one sticky address per channel. **That costs
+traffic:** a room's websocket streams for hours, and residential proxies bill
+by the gigabyte. The signer's own traffic should be small (it keeps one page
+open and downloads no images, video or fonts), but that hasn't been measured
+on a real account: watch Oxylabs' usage page for the first days.
+
+Never put the credentials anywhere but `.env`; they are not logged, and the
+signer reports only which proxy host it uses. `SIGNER_PROXY_URL` takes any
+other proxy (`http://user:pass@host:port`) in place of the `OXYLABS_*`
+variables. `SIGNER_WEBCAST_ORIGIN=https://webcast.us.tiktok.com` is the other
+host worth trying. The signer's port is published on the server's loopback
+only, and every request needs the token.
 
 ## 6. Cloud broadcast
 

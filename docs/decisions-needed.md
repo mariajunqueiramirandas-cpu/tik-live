@@ -179,9 +179,12 @@ covers the steps ([ADR-0019](adr/0019-dokploy.md)). Owner-only parts:
   backups stay on the VPS disk, which doesn't survive losing the VPS.
 - **TikTok request signing:** either our own signer (`apps/signer`,
   [ADR-0023](adr/0023-own-tiktok-signer.md): `SIGNER_URL` and `SIGNER_TOKEN`,
-  with `SIGNER_PROXY_URL` if TikTok refuses the server's addresses; a
-  residential proxy is billed by traffic, and the signer keeps one page open
-  and blocks images, video and fonts to keep that small) or the hosted Euler
+  with Oxylabs residential proxies, `OXYLABS_USERNAME` and
+  `OXYLABS_PASSWORD`, if TikTok refuses the server's addresses; they bill by
+  traffic. The signer's own traffic should stay small (one page, no images,
+  video or fonts) but is unmeasured. `TIKTOK_WS_VIA_PROXY=true` also routes
+  every channel's websocket through the proxy, which is the expensive part,
+  so it's off until TikTok shows it needs it) or the hosted Euler
   Stream key (`EULER_API_KEY`, optional: higher rate limits). Some of the
   connector's features need a paid Euler plan (the room gift list needs
   Business), so the connector leaves them off. The signer wins when both are
@@ -216,7 +219,8 @@ bun scripts/verify-signer.ts <handle> --url http://127.0.0.1:8091 --token <SIGNE
 It looks the room up through the signer, joins it, and counts the events that
 arrive by kind (nothing from the stream is printed). If TikTok answers 403 or
 an empty body, it won't let that network join anonymously: set
-`SIGNER_PROXY_URL` to a residential proxy, or try
+`OXYLABS_USERNAME` and `OXYLABS_PASSWORD` (the signer then runs through
+Oxylabs residential proxies), or try
 `SIGNER_WEBCAST_ORIGIN=https://webcast.us.tiktok.com`. From the development
 network used to build the signer, the room lookup worked and the join was
 refused; whether a residential address fixes that is what this step settles.

@@ -179,8 +179,14 @@ SIGNER_CPUS=1
 Then redeploy and look for `signer session ready` in the `signer` service's
 logs. It uses about 500 MB of RAM. TikTok may refuse to let a data-center
 address join a room anonymously; if the app's host status shows "TikTok
-answered ... 403" or "returned nothing", set `SIGNER_PROXY_URL` to a
-residential proxy (`http://user:pass@host:port`) and redeploy.
+answered ... 403" or "returned nothing", send the signer through Oxylabs
+residential proxies: add the proxy user's `OXYLABS_USERNAME` and
+`OXYLABS_PASSWORD` (and optionally `OXYLABS_COUNTRY=BR`) and redeploy. The
+signer gives each browser session its own sticky address and retries a refused
+join once from a new one. `TIKTOK_WS_VIA_PROXY=true` also sends every
+channel's websocket through the proxy, which costs traffic (residential
+proxies bill by the gigabyte); leave it off unless TikTok refuses the
+websocket from the server's own address.
 To check it against a live account (yours, or one whose owner agreed), start a
 host on that handle and watch its status in the studio; the signer's logs say
 why a join is refused. `scripts/verify-signer.ts` does the same check from a

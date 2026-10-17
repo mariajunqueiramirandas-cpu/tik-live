@@ -168,6 +168,13 @@ services:
       SIGNER_TOKEN: ${SIGNER_TOKEN:-}
       # Where the browser's traffic leaves from: TikTok may show a login wall to data-center addresses.
       SIGNER_PROXY_URL: ${SIGNER_PROXY_URL:-}
+      # Oxylabs residential proxy (instead of SIGNER_PROXY_URL): the proxy user's name and password.
+      OXYLABS_USERNAME: ${OXYLABS_USERNAME:-}
+      OXYLABS_PASSWORD: ${OXYLABS_PASSWORD:-}
+      OXYLABS_COUNTRY: ${OXYLABS_COUNTRY:-}
+      OXYLABS_ENDPOINT: ${OXYLABS_ENDPOINT:-pr.oxylabs.io:7777}
+      OXYLABS_SESSION_MINUTES: ${OXYLABS_SESSION_MINUTES:-}
+      SIGNER_REFUSAL_RETRIES: ${SIGNER_REFUSAL_RETRIES:-1}
       SIGNER_LOCALE: ${SIGNER_LOCALE:-en-US}
       SIGNER_TIMEZONE: ${SIGNER_TIMEZONE:-America/New_York}
       SIGNER_MAX_CONCURRENT: ${SIGNER_MAX_CONCURRENT:-4}

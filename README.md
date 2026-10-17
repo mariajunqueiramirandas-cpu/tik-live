@@ -142,6 +142,7 @@ both are built in). Until then a production server refuses to start without
   (`apps/signer`, [ADR-0023](docs/adr/0023-own-tiktok-signer.md): a headless
   browser on TikTok's own page; set `SIGNER_URL` and `SIGNER_TOKEN`) or the
   hosted Euler Stream sign server (`EULER_API_KEY`). TikTok may refuse
-  anonymous joins from some networks; the signer can route through a proxy.
+  anonymous joins from some networks; the signer can route through Oxylabs
+  residential proxies (`OXYLABS_USERNAME`, `OXYLABS_PASSWORD`).
   `scripts/verify-signer.ts` checks the whole chain against a real LIVE.
 - Check TikTok's current LIVE guidelines before running a host unattended.

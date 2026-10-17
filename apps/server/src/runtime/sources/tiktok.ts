@@ -16,6 +16,7 @@ import {
 } from "./normalize";
 import type { SignerClient } from "./signer-client";
 import { useSigner } from "./signer-routes";
+import { oxylabsWsAgent, type OxylabsWsProxy } from "./ws-proxy";
 import type { EventListener, EventSource, SourceStatus } from "./types";
 
 export interface TikTokSourceOptions {
@@ -27,6 +28,11 @@ export interface TikTokSourceOptions {
    * whether the account is live, and signs the request that joins its room.
    */
   signer?: SignerClient;
+  /**
+   * Send this connection's websocket through an Oxylabs residential proxy, on one sticky address
+   * for the life of this source (a reconnect keeps it). Costs traffic: see TIKTOK_WS_VIA_PROXY.
+   */
+  wsProxy?: OxylabsWsProxy;
   /** How long to wait between checks while the account is offline. */
   offlineRetryMs?: number;
   log: Logger;
@@ -49,8 +55,12 @@ export class TikTokSource implements EventSource {
   private detail = "idle";
   private retryTimer: NodeJS.Timeout | undefined;
   private failures = 0;
+  /** One agent for the life of the source, so every reconnect leaves from the same address. */
+  private readonly wsAgent: ReturnType<typeof oxylabsWsAgent> | undefined;
 
-  constructor(private readonly options: TikTokSourceOptions) {}
+  constructor(private readonly options: TikTokSourceOptions) {
+    this.wsAgent = options.wsProxy ? oxylabsWsAgent(options.wsProxy) : undefined;
+  }
 
   async start(emit: EventListener): Promise<void> {
     this.emit = emit;
@@ -128,6 +138,7 @@ export class TikTokSource implements EventSource {
       processInitialData: false,
       // Our signer has just said the room is live; no need for the connector's own room-info call.
       ...(signer ? { fetchRoomInfoOnConnect: false } : {}),
+      ...(this.wsAgent ? { wsClientOptions: { agent: this.wsAgent } } : {}),
       // No extended gift info: fetching the room's gift list on connect needs a
       // request signed by Euler Stream's Business plan, and its failure aborts
       // the whole connect. Gift events already carry their diamond count.
