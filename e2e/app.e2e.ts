@@ -41,6 +41,7 @@ test("create a host, go live in practice mode, pause, resume and stop", async ({
 
   await page.getByRole("button", { name: "Go live" }).first().click();
   await expect(page.getByText("Live", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Games" })).toBeVisible();
   // The scripted host speaks; its lines show up in the room.
   const room = page.getByRole("log");
   await expect(room.getByText("E2E Pip", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
@@ -76,8 +77,21 @@ test("the character editor autosaves and the change sticks", async ({ page }) =>
   await page.getByRole("button", { name: "Ember" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
 
+  await page.getByRole("tab", { name: "Show" }).click();
+  const segment = page.getByRole("listitem").filter({ has: page.getByLabel("Minigame") }).first();
+  await segment.getByLabel("Minigame").selectOption("riddle");
+  await segment.getByLabel("Rounds", { exact: true }).fill("3");
+  await segment.getByLabel("Topic").fill("space");
+  await expect(segment.getByLabel("Between rounds, the host…")).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+
   await page.goto(`${url}/character`);
   await expect(page.getByLabel("In one line")).toHaveValue("a very careful test orb");
+  await page.getByRole("tab", { name: "Show" }).click();
+  const saved = page.getByRole("listitem").filter({ has: page.getByLabel("Minigame") }).first();
+  await expect(saved.getByLabel("Minigame")).toHaveValue("riddle");
+  await expect(saved.getByLabel("Rounds", { exact: true })).toHaveValue("3");
+  await expect(saved.getByLabel("Topic")).toHaveValue("space");
 });
 
 test("the stage page renders and connects", async ({ page, request }) => {

@@ -1,21 +1,23 @@
-import { EMOTIONS, personaSchema, type Emotion, type Look, type Persona, type Segment, type VoiceSettings } from "@tik-live/shared";
+import { EMOTIONS, GAME_KINDS, GAME_LABELS, personaSchema, type Emotion, type GameConfig, type GameKind, type Look, type Persona, type Segment, type VoiceSettings } from "@tik-live/shared";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Tabs } from "radix-ui";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { CharacterPreview, type PreviewLine } from "../../components/CharacterPreview";
 import { SaveIndicator } from "../../components/SaveIndicator";
+import { GAME_HOW, TOPIC_PLACEHOLDER } from "../../lib/games";
 import { useUpdateChannel, useVoices } from "../../lib/query";
+import { browserTimeZone, timeIn, timeZoneLabel, timeZoneOptions } from "../../lib/timezone";
 import { useAutosave } from "../../lib/use-autosave";
 import { Button, ButtonLink } from "../../ui/Button";
 import { Banner, Panel, Skeleton } from "../../ui/Display";
-import { Chips, ColorField, Field, Input, Segmented, Select, Slider, TextArea } from "../../ui/Field";
+import { Chips, ColorField, Field, Input, Segmented, Select, Slider, Switch, TextArea } from "../../ui/Field";
 import { useHost } from "./context";
 import s from "./character.module.css";
 
 const TABS = [
   { id: "identity", label: "Identity" },
-  { id: "voice", label: "Voice" },
+  { id: "voice", label: "Voice and sound" },
   { id: "look", label: "Look" },
   { id: "show", label: "Show" },
   { id: "rules", label: "Rules" },
@@ -32,6 +34,11 @@ const EMOTION_LABEL: Record<Emotion, string> = {
   sad: "Sad",
   love: "Loving",
   mischief: "Mischief",
+  confused: "Confused",
+  shy: "Shy",
+  sleepy: "Sleepy",
+  proud: "Proud",
+  pout: "Pouting",
 };
 
 function sampleLine(persona: Persona, emotion: Emotion): string {
@@ -45,6 +52,11 @@ function sampleLine(persona: Persona, emotion: Emotion): string {
     sad: "Aw, you're leaving already? Come back soon, okay?",
     love: "You all make this stream feel like home.",
     mischief: "I have a theory, and you're not going to like it.",
+    confused: "Wait, what? I don't get it. Explain it to me like I'm an orb.",
+    shy: "Oh, stop it. You're making me blush.",
+    sleepy: "Mmm. Is it late already? I could nap right here.",
+    proud: "Did you see that? I nailed it.",
+    pout: "Hmph. Nobody laughed at my joke.",
   };
   return persona.catchphrases[0] && emotion === "neutral" ? `${lines.neutral} ${persona.catchphrases[0]}` : lines[emotion];
 }
@@ -79,6 +91,21 @@ function issuesByPath(persona: Persona): Record<string, string> {
 
 function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; onChange: (s: Segment[]) => void; errors: Record<string, string> }) {
   const update = (i: number, patch: Partial<Segment>) => onChange(segments.map((seg, j) => (j === i ? { ...seg, ...patch } : seg)));
+  const setGame = (i: number, game: GameConfig | null) =>
+    onChange(
+      segments.map((seg, j) => {
+        if (j !== i) return seg;
+        const { game: _old, ...rest } = seg;
+        return game ? { ...rest, game } : rest;
+      }),
+    );
+  const patchGame = (i: number, patch: Partial<GameConfig>) => {
+    const current = segments[i]?.game;
+    if (!current) return;
+    const next: GameConfig = { ...current, ...patch };
+    if (!next.topic) delete next.topic;
+    setGame(i, next);
+  };
   const move = (i: number, by: number) => {
     const next = segments.slice();
     const [item] = next.splice(i, 1);
@@ -99,7 +126,41 @@ function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; on
                 {(props) => <Input {...props} type="number" min={1} max={120} value={segment.minutes} onChange={(e) => update(i, { minutes: Number(e.target.value) })} />}
               </Field>
             </div>
-            <Field label="When chat is quiet, the host…" hint="What to talk about or ask during this segment." error={errors[`segments.${i}.prompt`]} count={{ value: segment.prompt.length, max: 600 }}>
+            <div className={s.gameRow}>
+              <Field label="Minigame" optional hint={segment.game ? GAME_HOW[segment.game.kind] : "The host can run a chat game while this segment is on."} className={s.gameKind}>
+                {(props) => (
+                  <Select
+                    {...props}
+                    value={segment.game?.kind ?? ""}
+                    onChange={(e) => {
+                      const kind = e.target.value as GameKind | "";
+                      setGame(i, kind ? { ...(segment.game ?? { rounds: 5 }), kind } : null);
+                    }}
+                  >
+                    <option value="">None</option>
+                    {GAME_KINDS.map((kind) => (
+                      <option key={kind} value={kind}>
+                        {GAME_LABELS[kind]}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              {segment.game && (
+                <>
+                  <Field label="Rounds" error={errors[`segments.${i}.game.rounds`] ? "1 to 10" : null} className={s.rounds}>
+                    {(props) => <Input {...props} type="number" min={1} max={10} value={Number.isNaN(segment.game?.rounds) ? "" : segment.game?.rounds} onChange={(e) => patchGame(i, { rounds: e.target.valueAsNumber })} />}
+                  </Field>
+                  <Field label="Topic" optional error={errors[`segments.${i}.game.topic`]} className={s.grow}>
+                    {(props) => <Input {...props} value={segment.game?.topic ?? ""} maxLength={80} placeholder={TOPIC_PLACEHOLDER} onChange={(e) => patchGame(i, { topic: e.target.value })} />}
+                  </Field>
+                </>
+              )}
+            </div>
+            <Field
+              label={segment.game ? "Between rounds, the host…" : "When chat is quiet, the host…"}
+              hint={segment.game ? "With a minigame on, this is what the host does between rounds: who to cheer, what to tease." : "What to talk about or ask during this segment."}
+              error={errors[`segments.${i}.prompt`]} count={{ value: segment.prompt.length, max: 600 }}>
               {(props) => <TextArea {...props} value={segment.prompt} maxLength={600} onChange={(e) => update(i, { prompt: e.target.value })} />}
             </Field>
             <div className={s.segmentActions}>
@@ -127,6 +188,58 @@ function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; on
         Add a segment
       </Button>
     </div>
+  );
+}
+
+/** The current time in `zone`, refreshed every 15 seconds. */
+function useTimeIn(zone: string | undefined): string {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+  return zone ? timeIn(zone, now) : "";
+}
+
+function TimeZoneField({ name, value, onChange }: { name: string; value: string | undefined; onChange: (zone: string | undefined) => void }) {
+  const browser = useMemo(() => browserTimeZone(), []);
+  const options = useMemo(() => {
+    const now = new Date();
+    return timeZoneOptions([value, browser]).map((zone) => ({ zone, label: timeZoneLabel(zone, now) }));
+  }, [value, browser]);
+  const now = useTimeIn(value);
+  const suggest = !value && browser;
+  return (
+    <Field
+      label="Time zone"
+      hint={
+        value ? (
+          <>
+            So {name} knows the local time and says “good morning” at the right hour. It's {now} there now.
+          </>
+        ) : (
+          <>Not set yet, so {name} doesn't know what time it is.{browser ? ` Your browser is on ${browser.replaceAll("_", " ")}.` : ""}</>
+        )
+      }
+    >
+      {(props) => (
+        <div className={s.voiceRow}>
+          <Select {...props} value={value ?? ""} onChange={(e) => onChange(e.target.value || undefined)}>
+            <option value="">Not set</option>
+            {options.map((option) => (
+              <option key={option.zone} value={option.zone}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+          {suggest && (
+            <Button onClick={() => onChange(browser)} aria-describedby={props["aria-describedby"]}>
+              Use my time zone
+            </Button>
+          )}
+        </div>
+      )}
+    </Field>
   );
 }
 
@@ -247,6 +360,7 @@ export default function Character() {
             <Field label="Catchphrases" optional hint="Things it says now and then. Press Enter after each one.">
               {(props) => <Chips {...props} values={persona.catchphrases} onChange={(v) => set("catchphrases", v)} max={8} maxLength={80} placeholder="Blip blip!" />}
             </Field>
+            <TimeZoneField name={persona.name || channel.name} value={persona.timezone} onChange={(timezone) => setPersona(({ timezone: _old, ...rest }) => (timezone ? { ...rest, timezone } : rest))} />
             <Field label={`Longest reply: ${persona.maxSentences} ${persona.maxSentences === 1 ? "sentence" : "sentences"}`} hint="Short replies keep the stream snappy and let more viewers get answered.">
               {() => <Slider label="Longest reply in sentences" value={persona.maxSentences} min={1} max={6} onChange={(v) => set("maxSentences", v)} />}
             </Field>
@@ -254,6 +368,21 @@ export default function Character() {
 
           <Tabs.Content value="voice" className={s.panel}>
             <VoiceTab voice={voice} onChange={setVoice} />
+            <div className={s.stack}>
+              <p className={s.subhead}>Sound on stage</p>
+              <Switch
+                label={`Let ${persona.name || channel.name} compose and play short music`}
+                hint="Original beats written on the spot, played under the voice. You can also start one from the studio."
+                checked={persona.sound?.music ?? true}
+                onChange={(music) => set("sound", { music, effects: persona.sound?.effects ?? true })}
+              />
+              <Switch
+                label="Sound effects for gifts, follows and games"
+                hint="Short chimes and fanfares, made on the stage. No recordings."
+                checked={persona.sound?.effects ?? true}
+                onChange={(effects) => set("sound", { music: persona.sound?.music ?? true, effects })}
+              />
+            </div>
           </Tabs.Content>
 
           <Tabs.Content value="look" className={s.panel}>
@@ -304,7 +433,9 @@ export default function Character() {
           </Tabs.Content>
 
           <Tabs.Content value="show" className={s.panel}>
-            <p className={s.note}>Segments shape the show when chat is quiet. The host moves to the next one when its time is up, and you can switch any time from the studio.</p>
+            <p className={s.note}>
+              Segments shape the show when chat is quiet. The host moves to the next one when its time is up, and you can switch any time from the studio. A segment with a minigame runs it while it's on: viewers answer in chat.
+            </p>
             <SegmentEditor segments={persona.segments} onChange={(segments) => set("segments", segments)} errors={errors} />
           </Tabs.Content>
 

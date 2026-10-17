@@ -5,6 +5,7 @@ import { CharacterPreview, type PreviewLine } from "../components/CharacterPrevi
 import { HostSwatch } from "../components/Brand";
 import { ApiError } from "../lib/api";
 import { useCreateChannel } from "../lib/query";
+import { browserTimeZone } from "../lib/timezone";
 import { Button, ButtonLink } from "../ui/Button";
 import { Banner } from "../ui/Display";
 import { Field, Input, PrefixedInput, Segmented } from "../ui/Field";
@@ -47,7 +48,8 @@ export default function NewHost() {
       tiktokUsername = parsed.data;
     }
     try {
-      const channel = await create.mutateAsync({ name: name.trim(), tiktokUsername, presetId: preset.id });
+      const timezone = browserTimeZone();
+      const channel = await create.mutateAsync({ name: name.trim(), tiktokUsername, presetId: preset.id, ...(timezone ? { timezone } : {}) });
       toast.success(`${channel.name} is ready`, where === "practice" ? "Press Go live to try it in practice mode." : "Set up OBS next, then go live.");
       void navigate(where === "practice" ? `/app/hosts/${channel.id}` : `/app/hosts/${channel.id}/setup`, { viewTransition: true });
     } catch (err) {

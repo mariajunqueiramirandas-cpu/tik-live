@@ -1,6 +1,9 @@
-import type { RuntimeSnapshot, StudioCommand } from "@tik-live/shared";
-import { Pause, Play, Send, SkipForward } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { GAME_KINDS, GAME_LABELS, MUSIC_LIBRARY, type GameKind, type GameStatus, type RuntimeSnapshot, type StudioCommand } from "@tik-live/shared";
+import { Gamepad2, Music, Pause, Play, Send, SkipForward, Sparkles, Square } from "lucide-react";
+import { Link } from "react-router";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { clock, plural } from "../../lib/format";
+import { ANSWER_WORD, GAME_HOW, gamePhase } from "../../lib/games";
 import { useHotkeys } from "../../lib/hotkeys";
 import { useStudio, type StudioStore } from "../../lib/studio";
 import { Button } from "../../ui/Button";
@@ -8,6 +11,7 @@ import { Field, Input, Select, TextArea } from "../../ui/Field";
 import { Tooltip } from "../../ui/Overlay";
 import { cx } from "../../ui/cx";
 import { toast } from "../../ui/toast-store";
+import { useHost } from "./context";
 import s from "./studio.module.css";
 
 async function send(store: StudioStore, command: StudioCommand, optimistic?: Partial<RuntimeSnapshot>, failTitle = "The host didn't do that"): Promise<boolean> {
@@ -113,8 +117,248 @@ function TestEvents({ store, disabled }: { store: StudioStore; disabled: boolean
   );
 }
 
+/**
+ * Seconds left on a server countdown, ticking down smoothly between
+ * snapshot patches (the server sends a fresh value a few times a second at
+ * most). `key` resets the base when the thing being timed changes.
+ */
+function useCountdown(sec: number, key: string, running: boolean): number {
+  const fullKey = `${key}:${sec}`;
+  const [base, setBase] = useState(() => ({ key: fullKey, sec, at: performance.now() }));
+  if (base.key !== fullKey) setBase({ key: fullKey, sec, at: performance.now() });
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => tick((n) => n + 1), 250);
+    return () => clearInterval(timer);
+  }, [running]);
+  return Math.max(0, base.sec - (performance.now() - base.at) / 1000);
+}
+
+function GameRunning({ game, store, disabled }: { game: GameStatus; store: StudioStore; disabled: boolean }) {
+  const left = useCountdown(game.remainingSec, `${game.round}:${game.phase}`, game.phase === "open");
+  const [stopping, setStopping] = useState(false);
+  const stop = async () => {
+    setStopping(true);
+    await send(store, { kind: "game_stop" }, { game: null }, "Couldn't stop the game");
+    setStopping(false);
+  };
+  const live = game.phase === "open" || game.phase === "reveal";
+  const top = game.leaderboard.slice(0, 5);
+  return (
+    <div className={s.game}>
+      <p className={s.gamePhase}>
+        {game.phase === "reveal" ? `Round ${game.round} of ${game.rounds} · ` : ""}
+        {gamePhase(game)}
+        {game.phase === "open" && (
+          <>
+            {" · "}
+            <span role="timer" className={s.gameTimer}>
+              {Math.ceil(left)} s left
+            </span>
+          </>
+        )}
+      </p>
+      {live && game.prompt && <p className={s.gamePrompt}>{game.prompt}</p>}
+      {live && (
+        <dl className={s.gameFacts}>
+          {game.answer !== null && (
+            <div>
+              <dt>Answer (only you see this)</dt>
+              <dd className={s.gameAnswer}>{game.answer}</dd>
+            </div>
+          )}
+          <div>
+            <dt>In chat</dt>
+            <dd>{plural(game.answers, ...ANSWER_WORD[game.kind])}</dd>
+          </div>
+        </dl>
+      )}
+      {top.length > 0 && (
+        <ol className={s.leaderboard} aria-label="Leaderboard">
+          {top.map((row, i) => (
+            <li key={`${row.name}-${i}`}>
+              <span className={s.leaderRank} aria-hidden>
+                {i + 1}
+              </span>
+              <span className={s.leaderName}>{row.name}</span>
+              <span className={s.leaderPoints}>{plural(row.points, "pt", "pts")}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className={s.gameActions}>
+        <Button size="sm" variant="quietDanger" icon={<Square aria-hidden />} busy={stopping} disabled={disabled} onClick={() => void stop()}>
+          Stop game
+        </Button>
+        {game.source === "segment" && <span className={s.paneHint}>Started by the segment</span>}
+      </div>
+    </div>
+  );
+}
+
+function GameSetup({ store, disabled }: { store: StudioStore; disabled: boolean }) {
+  const [kind, setKind] = useState<GameKind>("trivia");
+  const [rounds, setRounds] = useState(5);
+  const [topic, setTopic] = useState("");
+  const [busy, setBusy] = useState(false);
+  const validRounds = Number.isInteger(rounds) && rounds >= 1 && rounds <= 10;
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!validRounds || busy) return;
+    const trimmed = topic.trim();
+    setBusy(true);
+    const preparing: GameStatus = { kind, topic: trimmed || null, phase: "preparing", round: 0, rounds, prompt: "", answer: null, remainingSec: 0, answers: 0, leaderboard: [], source: "studio" };
+    await send(store, { kind: "game_start", game: { kind, rounds, ...(trimmed ? { topic: trimmed } : {}) } }, { game: preparing }, "Couldn't start the game");
+    setBusy(false);
+  };
+  return (
+    <form className={s.gameForm} onSubmit={submit}>
+      <Field label="Game" hint={GAME_HOW[kind]}>
+        {(props) => (
+          <Select {...props} value={kind} disabled={disabled} onChange={(e) => setKind(e.target.value as GameKind)}>
+            {GAME_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {GAME_LABELS[k]}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
+      <div className={s.gameRow}>
+        <Field label="Rounds" error={validRounds ? null : "1 to 10"}>
+          {(props) => <Input {...props} type="number" min={1} max={10} value={Number.isNaN(rounds) ? "" : rounds} disabled={disabled} onChange={(e) => setRounds(e.target.valueAsNumber)} />}
+        </Field>
+        <Field label="Topic" optional>
+          {(props) => <Input {...props} value={topic} maxLength={80} disabled={disabled} placeholder="e.g. 90s cartoons" onChange={(e) => setTopic(e.target.value)} />}
+        </Field>
+      </div>
+      <Button type="submit" size="sm" variant="primary" icon={<Gamepad2 aria-hidden />} busy={busy} disabled={disabled || !validRounds}>
+        Start game
+      </Button>
+    </form>
+  );
+}
+
+function Games({ store, game, disabled }: { store: StudioStore; game: GameStatus | null; disabled: boolean }) {
+  return (
+    <section className={s.games} aria-labelledby="games-heading">
+      <div className={s.paneHead}>
+        <h2 id="games-heading">Games</h2>
+        {game && (
+          <span className={s.paneHint}>
+            {GAME_LABELS[game.kind]}
+            {game.topic ? `: ${game.topic}` : ""}
+          </span>
+        )}
+      </div>
+      {game ? <GameRunning game={game} store={store} disabled={disabled} /> : <GameSetup store={store} disabled={disabled} />}
+    </section>
+  );
+}
+
+const LIBRARY = Object.entries(MUSIC_LIBRARY).map(([id, track]) => ({ id, title: track.title }));
+
+function NowPlaying({ music, store, disabled, host }: { music: NonNullable<RuntimeSnapshot["music"]>; store: StudioStore; disabled: boolean; host: string }) {
+  const left = useCountdown(music.endsInSec, music.title, true);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className={s.playing}>
+      <Music aria-hidden className={s.playingIcon} />
+      <div className={s.playingText}>
+        <p className={s.playingTitle}>{music.title}</p>
+        <p className={s.paneHint}>
+          {music.byHost ? `By ${host}` : "From the library"} · <span role="timer">{clock(left)} left</span>
+        </p>
+      </div>
+      <Button
+        size="sm"
+        variant="quietDanger"
+        icon={<Square aria-hidden />}
+        busy={busy}
+        disabled={disabled}
+        onClick={async () => {
+          setBusy(true);
+          await send(store, { kind: "music_stop" }, { music: null }, "Couldn't stop the music");
+          setBusy(false);
+        }}
+      >
+        Stop
+      </Button>
+    </div>
+  );
+}
+
+function MusicPane({ store, music, disabled, host, musicOff, characterUrl }: { store: StudioStore; music: RuntimeSnapshot["music"]; disabled: boolean; host: string; musicOff: boolean; characterUrl: string }) {
+  const [prompt, setPrompt] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [piece, setPiece] = useState(LIBRARY[0]?.id ?? "");
+  const [playing, setPlaying] = useState(false);
+  const ask = async (event: FormEvent) => {
+    event.preventDefault();
+    const text = prompt.trim();
+    if (!text || asking) return;
+    setAsking(true);
+    const ok = await send(store, { kind: "music_play", prompt: text }, undefined, "Couldn't ask for that beat");
+    setAsking(false);
+    if (ok) {
+      setPrompt("");
+      toast.success(`${host} is on it`, "The beat plays on stage once it's written.");
+    }
+  };
+  const play = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!piece || playing) return;
+    setPlaying(true);
+    await send(store, { kind: "music_play", library: piece }, undefined, "Couldn't play that");
+    setPlaying(false);
+  };
+  return (
+    <section className={s.music} aria-labelledby="music-heading">
+      <div className={s.paneHead}>
+        <h2 id="music-heading">Music</h2>
+        {!music && <span className={s.paneHint}>Plays on stage, under the voice</span>}
+      </div>
+      {music && <NowPlaying music={music} store={store} disabled={disabled} host={host} />}
+      {musicOff && (
+        <p className={s.paneHint}>
+          {host} doesn't play music on its own. <Link to={characterUrl}>Change that in Character</Link>
+        </p>
+      )}
+      <form className={s.inlineForm} onSubmit={ask}>
+        <Field label="Ask for a beat">
+          {(props) => <Input {...props} value={prompt} maxLength={120} disabled={disabled} placeholder="funk carioca, 130 bpm" onChange={(e) => setPrompt(e.target.value)} />}
+        </Field>
+        <Button type="submit" icon={<Sparkles aria-hidden />} busy={asking} disabled={disabled || !prompt.trim()}>
+          Ask
+        </Button>
+      </form>
+      {LIBRARY.length > 0 && (
+        <form className={s.inlineForm} onSubmit={play}>
+          <Field label="From the library">
+            {(props) => (
+              <Select {...props} value={piece} disabled={disabled} onChange={(e) => setPiece(e.target.value)}>
+                {LIBRARY.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Button type="submit" icon={<Play aria-hidden />} busy={playing} disabled={disabled || !piece}>
+            Play
+          </Button>
+        </form>
+      )}
+    </section>
+  );
+}
+
 export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean }) {
   const snapshot = useStudio(store, (st) => st.snapshot);
+  const { channel } = useHost();
+  const segmentGames = new Map(channel.persona.segments.flatMap((seg) => (seg.game ? [[seg.id, seg.game.kind] as const] : [])));
   const connected = useStudio(store, (st) => st.connection === "open");
   const sayRef = useRef<HTMLTextAreaElement>(null);
   const paused = snapshot?.paused ?? false;
@@ -161,6 +405,19 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
 
       <SayBox store={store} disabled={!usable} inputRef={sayRef} />
 
+      {snapshot && <Games store={store} game={snapshot.game ?? null} disabled={!usable} />}
+
+      {snapshot && (
+        <MusicPane
+          store={store}
+          music={snapshot.music ?? null}
+          disabled={!usable}
+          host={channel.name}
+          musicOff={channel.persona.sound?.music === false}
+          characterUrl={`/app/hosts/${channel.id}/character?tab=voice`}
+        />
+      )}
+
       {snapshot && snapshot.segments.length > 0 && (
         <div className={s.segments}>
           <div className={s.paneHead}>
@@ -170,6 +427,7 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
           <ul role="list" aria-labelledby="segment-heading" className={s.segmentList}>
             {snapshot.segments.map((segment) => {
               const current = segment.id === snapshot.segment.id;
+              const game = segmentGames.get(segment.id);
               return (
                 <li key={segment.id}>
                   <button
@@ -180,7 +438,14 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
                     onClick={() => void send(store, { kind: "segment", id: segment.id }, { segment: { ...snapshot.segment, id: segment.id, title: segment.title } })}
                   >
                     <span className={s.segmentDot} aria-hidden />
-                    {segment.title}
+                    <span className={s.segmentTitle}>{segment.title}</span>
+                    {game && (
+                      <span className={s.segmentGame}>
+                        <Gamepad2 aria-hidden />
+                        <span className="visually-hidden">, game: </span>
+                        {GAME_LABELS[game]}
+                      </span>
+                    )}
                   </button>
                 </li>
               );
