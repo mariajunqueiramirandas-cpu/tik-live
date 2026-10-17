@@ -60,7 +60,7 @@ describe("TurnEngine", () => {
       { text: "So good to see you.", emotion: "happy" },
       { text: "What a party!", emotion: "excited", fx: ["confetti"] },
     ]);
-    expect(await engine.run(plan({ kind: "opening" }))).toEqual({ ok: true, lines: 3 });
+    expect(await engine.run(plan({ kind: "opening" }))).toEqual({ ok: true, lines: 3, scrolledBy: [] });
     expect(speech.upcoming()).toEqual(["Hello everyone!", "So good to see you.", "What a party!"]);
     await engine.run(plan());
     const history = host.requests[1]?.context.history ?? [];
@@ -154,6 +154,29 @@ describe("TurnEngine", () => {
     const context = host.requests.at(-1)!.context;
     expect(context.head).toBe("<earlier>\nAna asked about cats; the host promised a song.\n</earlier>");
     expect(context.history).toHaveLength(2);
+  });
+
+  it("backs off when the chronicler fails instead of retrying every tick", async () => {
+    let calls = 0;
+    const chronicler: Chronicler = {
+      update: async () => {
+        calls += 1;
+        throw new Error("api down");
+      },
+    };
+    const { engine, host, plan, clock } = setup({ chronicler, budget: { softTokens: 10, hardTokens: 1_000_000, keepTurns: 1 } });
+    host.replies.push([{ text: "A line long enough to go over a tiny budget.", emotion: "neutral" }]);
+    await engine.run(plan());
+    for (let i = 0; i < 25; i++) {
+      engine.maintain(clock.now(), true);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      clock.advance(200);
+    }
+    expect(calls).toBe(1); // 5 s of ticks
+    clock.advance(30_000);
+    engine.maintain(clock.now(), true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toBe(2);
   });
 
   it("drops the oldest turns past the hard limit when there's no chronicler", async () => {

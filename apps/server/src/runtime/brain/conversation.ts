@@ -19,6 +19,8 @@ export type RoomEntry =
 export interface Exchange {
   id: number;
   at: number;
+  /** Ids of the room entries this turn showed. */
+  ids: number[];
   /** The room entries the room block covered, for the chronicler. */
   entries: RoomEntry[];
   /** Rendered once and never again, so the cached prefix stays byte-identical. */
@@ -43,6 +45,10 @@ export interface Draft {
   entries: RoomEntry[];
   /** Pending entries up to this id are covered (shown, or counted as scrolled by). */
   throughId: number;
+  /** Ids this room shows. */
+  shown: ReadonlySet<number>;
+  /** Viewer events this room counted as scrolled by: the host never sees them. */
+  scrolledBy: LiveEvent[];
   /** Viewer descriptions this room showed, remembered once the turn commits. */
   described: Map<string, string>;
   generation: number;
@@ -91,6 +97,10 @@ export class Conversation {
   private generation = 0;
   /** The newest entry a draft has rendered; entries after it can still change. */
   private draftedThrough = 0;
+  /** Ids shown in the conversation's rooms, so a brief only ever points at something the model can read. */
+  private seen = new Set<number>();
+  /** The original events folded into a pending gift-combo entry. */
+  private readonly merged = new Map<number, LiveEvent[]>();
 
   constructor(private readonly options: ConversationOptions) {}
 
@@ -109,6 +119,8 @@ export class Conversation {
       );
       if (same?.entry.kind === "support" && same.entry.event.kind === "gift") {
         const combined = { ...same.entry.event, count: same.entry.event.count + gift.count, diamonds: same.entry.event.diamonds + gift.diamonds };
+        if (!this.merged.has(same.id)) this.merged.set(same.id, [same.entry.event]);
+        this.merged.get(same.id)?.push(gift);
         same.entry = { ...same.entry, event: combined };
         this.ids.set(combined, same.id);
         this.ids.set(gift, same.id);
@@ -120,15 +132,20 @@ export class Conversation {
     this.pending.push({ id, entry });
     if (this.pending.length > MAX_PENDING) {
       const chat = this.pending.findIndex((item) => item.entry.kind === "viewer");
-      this.pending.splice(chat === -1 ? 0 : chat, 1);
+      const [removed] = this.pending.splice(chat === -1 ? 0 : chat, 1);
+      if (removed) this.merged.delete(removed.id);
     }
     return id;
   }
 
-  /** How a turn's brief refers to a live event: "e12". */
-  ref(event: LiveEvent): string | undefined {
+  /**
+   * How a turn's brief refers to a live event: "e12". Only for events the
+   * model can read: in a room still in the conversation, or in `draft`.
+   */
+  ref(event: LiveEvent, draft?: Draft): string | undefined {
     const id = this.ids.get(event);
-    return id === undefined ? undefined : `e${id}`;
+    if (id === undefined || !(this.seen.has(id) || draft?.shown.has(id))) return undefined;
+    return `e${id}`;
   }
 
   /** Moments waiting for the next turn. */
@@ -153,9 +170,10 @@ export class Conversation {
     const shown = new Set<number>();
     const chat = pending.filter((item) => item.entry.kind === "viewer");
     const support = pending.filter((item) => item.entry.kind === "support");
+    // By id: a gift combo's entry holds a merged event, not the ones the turn was given.
+    const focusIds = new Set([...focus].map((event) => this.ids.get(event)));
     for (const item of pending) {
-      if (item.entry.kind === "show" || item.entry.kind === "unsaid") shown.add(item.id);
-      else if (focus.has(item.entry.event)) shown.add(item.id);
+      if (item.entry.kind === "show" || item.entry.kind === "unsaid" || focusIds.has(item.id)) shown.add(item.id);
     }
     for (const item of chat.slice(-ROOM_MAX_CHAT)) shown.add(item.id);
     const diamonds = (item: (typeof pending)[number]) =>
@@ -175,8 +193,14 @@ export class Conversation {
     if (hiddenChat || hiddenSupport) {
       lines.push(`<scrolled_by chat="${hiddenChat}" gifts_and_follows="${hiddenSupport}"/>`);
     }
+    const scrolledBy: LiveEvent[] = [];
+    for (const item of [...chat, ...support]) {
+      if (shown.has(item.id) || !("event" in item.entry)) continue;
+      // Every event that maps to this entry (a combo's taps included).
+      scrolledBy.push(item.entry.event, ...(this.merged.get(item.id) ?? []));
+    }
     const room = `<room>\n${lines.length ? lines.join("\n") : "(nothing new: chat is quiet)"}\n</room>`;
-    return { room, entries, throughId, described, generation: this.generation };
+    return { room, entries, throughId, shown, scrolledBy, described, generation: this.generation };
   }
 
   /** The conversation so far plus this turn's room and brief, as the model will see it. */
@@ -191,10 +215,12 @@ export class Conversation {
    */
   commit(draft: Draft, brief: string, reply: string, at: number): boolean {
     if (draft.generation !== this.generation || !reply.trim()) return false;
+    for (const item of this.pending) if (item.id <= draft.throughId) this.merged.delete(item.id);
     this.pending = this.pending.filter((item) => item.id > draft.throughId);
     for (const [viewerId, about] of draft.described) this.described.set(viewerId, about);
     if (this.described.size > 5_000) this.described.clear();
-    this.exchanges.push({ id: this.nextExchangeId++, at, entries: draft.entries, room: draft.room, brief, reply: reply.trim() });
+    for (const id of draft.shown) this.seen.add(id);
+    this.exchanges.push({ id: this.nextExchangeId++, at, ids: [...draft.shown], entries: draft.entries, room: draft.room, brief, reply: reply.trim() });
     return true;
   }
 
@@ -226,7 +252,7 @@ export class Conversation {
     let drop = 0;
     while (drop < limit && (this.exchanges[drop] as Exchange).id <= throughId) drop++;
     if (drop === 0) return 0;
-    this.exchanges.splice(0, drop);
+    for (const exchange of this.exchanges.splice(0, drop)) for (const id of exchange.ids) this.seen.delete(id);
     if (head !== null) this.head = head;
     // The turns that introduced these viewers are gone: introduce them again.
     this.described.clear();
@@ -239,6 +265,8 @@ export class Conversation {
     this.pending = [];
     this.exchanges = [];
     this.described.clear();
+    this.seen.clear();
+    this.merged.clear();
     this.draftedThrough = 0;
     this.head = head;
   }

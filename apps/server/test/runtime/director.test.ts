@@ -447,3 +447,36 @@ describe("Director ordering", () => {
     expect(kinds()).toEqual(["opening"]);
   });
 });
+
+describe("Director references", () => {
+  /** Every id a brief or note names must be in a room the model can read. */
+  function visible(turn: TurnRequest): void {
+    const rooms = [turn.context.head, ...turn.context.history.map((exchange) => exchange.room), turn.context.room].join("\n");
+    for (const ref of `${turn.context.brief}\n${turn.note ?? ""}`.match(/\be\d+\b/g) ?? []) {
+      expect(rooms).toContain(`id="${ref}"`);
+    }
+  }
+
+  it("never points the host at a message that scrolled by on a busy stretch", async () => {
+    const { director, step, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    for (let i = 0; i < 30; i++) director.handleEvent({ ...chat(`v${i}`, i % 3 === 2 ? `question number ${i}?` : `message number ${i}`), at: 1_000 + i });
+    for (let i = 0; i < 6; i++) await step(2_000);
+    await step(10_000); // a quiet moment: owed questions come back
+    expect(host.turns.length).toBeGreaterThan(2);
+    for (const turn of host.turns) visible(turn);
+  });
+
+  it("forgets what was waiting when the stream ends", async () => {
+    const { director, step, host, kinds } = setup({ startInStandby: true });
+    director.handleEvent(chat("ana", "hello?"));
+    await step();
+    director.handleEvent(chat("joe", "late message"));
+    director.handleEvent({ kind: "stream_end", at: 0, reason: "ended" });
+    director.handleEvent({ kind: "viewers", at: 0, count: 3 }); // back live
+    await step(2_000);
+    expect(kinds()).toEqual(["opening", "opening"]);
+    expect(host.turns[1]?.items).toEqual([]);
+  });
+});

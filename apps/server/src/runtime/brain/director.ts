@@ -205,8 +205,8 @@ export class Director {
   private skipGap = false;
   /** Something the creator asked the host to do, from the studio. */
   private pendingRequest: string | undefined;
-  /** Questions passed over on a busy stretch, by their room id. */
-  private owed: Array<{ ref: string; at: number }> = [];
+  /** Questions passed over on a busy stretch. */
+  private owed: Array<{ event: LiveEvent; at: number }> = [];
   private fillerBeat = 0;
   private recentChat: string[] = [];
   private music: { title: string; endsAt: number } | null = null;
@@ -294,6 +294,8 @@ export class Director {
       this.setStandby(true);
       this.opened = false;
       this.owed = [];
+      // What was waiting belongs to the stream that ended.
+      this.options.triage.clear();
       this.options.games?.stop();
       this.options.hooks?.onEvent?.(event, null);
       return;
@@ -627,9 +629,7 @@ export class Director {
   private owe(item: QueueItem): void {
     const event = item.event;
     if (event.kind !== "question" && !(event.kind === "chat" && event.text.includes("?"))) return;
-    const ref = this.engine.conversation.ref(event);
-    if (!ref) return;
-    this.owed = [...this.owed, { ref, at: this.now() }].slice(-OWED_MAX);
+    this.owed = [...this.owed, { event, at: this.now() }].slice(-OWED_MAX);
   }
 
   private takeMilestone(): string | undefined {
@@ -657,8 +657,11 @@ export class Director {
     const games = this.options.games?.fillerNote();
     if (games) return games;
     this.owed = this.owed.filter((owed) => now - owed.at < OWED_TTL_MS);
-    const owed = this.owed.shift();
-    if (owed) return `You didn't get to ${owed.ref} earlier. Answer it now, saying who asked, then carry on.`;
+    // Only a question the host actually saw in a room (not one that scrolled by).
+    while (this.owed.length) {
+      const ref = this.engine.conversation.ref((this.owed.shift() as (typeof this.owed)[number]).event);
+      if (ref) return `You didn't get to ${ref} earlier. Answer it now, saying who asked, then carry on.`;
+    }
     const segment = this.segment();
     const chat = this.engine.conversation.hasViewerChat();
     let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
@@ -691,6 +694,11 @@ export class Director {
     this.lastTurnAt = this.now();
     this.skipGap = false;
     const result = await this.engine.run(plan);
+    if (result.scrolledBy.length) {
+      // The host never saw these, so no later turn may ask it to answer them.
+      const gone = new Set(result.scrolledBy);
+      this.options.triage.discard((item) => item.events.every((event) => gone.has(event)));
+    }
     if (result.ok) {
       this.failures = 0;
       return;

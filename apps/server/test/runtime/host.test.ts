@@ -38,8 +38,9 @@ function fakeClient(
                   return;
                 }
                 yield { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } };
-                yield { type: "message_delta", usage: { output_tokens: 2 } };
               }
+              // Like the API: output usage arrives once, when the message ends.
+              yield { type: "message_delta", usage: { output_tokens: usage.output_tokens } };
             },
             finalMessage: async () => ({
               model: params.model,
@@ -196,7 +197,8 @@ describe("ClaudeHost", () => {
     });
     const out = await collect(host);
     expect(out).toHaveLength(persona.maxSentences + 1);
-    expect(usage).toEqual([{ kind: "turn", model: "claude-haiku-5-5", inputTokens: 40, cacheReadTokens: 2_000, cacheWriteTokens: 300, outputTokens: 2 }]);
+    // Cut off before the API reported output: estimated from the 4 sentences streamed (108 characters).
+    expect(usage).toEqual([{ kind: "turn", model: "claude-haiku-5-5", inputTokens: 40, cacheReadTokens: 2_000, cacheWriteTokens: 300, outputTokens: 36 }]);
     expect(host.contextStats()).toEqual({ tokens: 2_340, cachedPct: 85 });
   });
 

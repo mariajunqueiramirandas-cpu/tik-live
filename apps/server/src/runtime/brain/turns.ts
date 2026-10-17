@@ -4,7 +4,7 @@ import { escapeForPrompt } from "../safety/gate";
 import { containsBlockedTerm } from "../safety/rules";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
-import { Conversation, type UnsaidReason } from "./conversation";
+import { Conversation, type Draft, type UnsaidReason } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
 import type { ViewerMemory } from "./memory";
 import { buildBrief, type BriefRefs, type TurnKind, type TurnPlan, type TurnRequest } from "./prompt";
@@ -23,6 +23,8 @@ const CHRONICLE_EVERY_MS = 4 * 60_000;
 const CHRONICLE_MIN_TURNS = 6;
 /** The most turns one chronicle reads. */
 const CHRONICLE_MAX_TURNS = 40;
+/** After a chronicle fails (or doesn't shrink the conversation), wait this long before the next. */
+const CHRONICLE_RETRY_MS = 30_000;
 /** A line the host already said this recently is dropped as a repeat. */
 const REPEAT_WINDOW_MS = 10 * 60_000;
 const REPEAT_MEMORY = 120;
@@ -47,7 +49,10 @@ export interface TurnEngineOptions {
   now?: () => number;
 }
 
-export type TurnResult = { ok: true; lines: number } | { ok: false; error: unknown };
+export type TurnResult = ({ ok: true; lines: number } | { ok: false; error: unknown }) & {
+  /** Viewer events the turn's room counted as scrolled by: the host never saw them, so nothing should ask it to answer them. */
+  scrolledBy: LiveEvent[];
+};
 
 /**
  * Runs the host's turns (ADR-0026). Each turn: render the room since the
@@ -68,6 +73,7 @@ export class TurnEngine {
   private chronicledThrough = 0;
   private chronicledAt: number;
   private chronicling: AbortController | null = null;
+  private chronicleRetryAt = 0;
   private readonly budget: { softTokens: number; hardTokens: number; keepTurns: number };
   private readonly now: () => number;
 
@@ -106,7 +112,7 @@ export class TurnEngine {
 
     const focus = new Set<LiveEvent>(plan.items.flatMap((item) => item.events));
     const draft = this.conversation.draft(focus);
-    const brief = buildBrief(plan, this.refs(plan.items), {
+    const brief = buildBrief(plan, this.refs(plan.items, draft), {
       maxSentences: persona.maxSentences,
       stillSpeaking: speech.upcoming().length > 0,
       lastStream: plan.kind === "opening" && this.lastStream !== "",
@@ -147,8 +153,9 @@ export class TurnEngine {
     const at = this.now();
     if (repeats.length) this.conversation.add({ at, kind: "unsaid", why: "repeat", lines: repeats });
     // Even a failed or interrupted turn commits what it got out: those lines are on their way to air.
-    this.conversation.commit(draft, brief, reply.join("\n"), at);
-    return error === undefined ? { ok: true, lines: said.length } : { ok: false, error };
+    const committed = this.conversation.commit(draft, brief, reply.join("\n"), at);
+    const scrolledBy = committed ? draft.scrolledBy : [];
+    return error === undefined ? { ok: true, lines: said.length, scrolledBy } : { ok: false, error, scrolledBy };
   }
 
   /** The host's own lines that never aired go into the next room, so it doesn't build on them. */
@@ -174,7 +181,7 @@ export class TurnEngine {
     const tokens = this.conversation.tokens();
     const over = tokens > this.budget.softTokens;
     const due = routine && now - this.chronicledAt >= CHRONICLE_EVERY_MS && fresh.length >= CHRONICLE_MIN_TURNS;
-    if (!chronicler || !fresh.length || !(over || due)) {
+    if (!chronicler || !fresh.length || !(over || due) || now < this.chronicleRetryAt) {
       if (tokens > this.budget.hardTokens) this.dropOldTurns();
       return;
     }
@@ -196,14 +203,20 @@ export class TurnEngine {
           if (!containsBlockedTerm(note.note, blocklist)) this.options.memory.addNote(note.viewerId, note.note);
         }
         this.chronicledThrough = through;
-        if (this.summary && this.conversation.tokens() > this.budget.softTokens) {
-          const dropped = this.conversation.roll(`<earlier>\n${escapeForPrompt(this.summary)}\n</earlier>`, through, this.budget.keepTurns);
-          if (dropped) this.options.log?.debug(`folded ${dropped} old turns into the show summary`);
+        if (this.conversation.tokens() > this.budget.softTokens) {
+          const dropped = this.summary ? this.conversation.roll(`<earlier>\n${escapeForPrompt(this.summary)}\n</earlier>`, through, this.budget.keepTurns) : 0;
+          if (dropped) {
+            this.options.log?.debug(`folded ${dropped} old turns into the show summary`);
+          } else {
+            // Still over budget (no usable summary, or nothing old enough to fold): don't chronicle again every turn.
+            this.chronicleRetryAt = this.now() + CHRONICLE_RETRY_MS;
+          }
         }
       })
       .catch((err: unknown) => {
         if (abort.signal.aborted) return;
         this.options.log?.warn("couldn't update the show summary", err);
+        this.chronicleRetryAt = this.now() + CHRONICLE_RETRY_MS;
         if (this.conversation.tokens() > this.budget.hardTokens) this.dropOldTurns();
       })
       .finally(() => {
@@ -220,6 +233,7 @@ export class TurnEngine {
     this.said = [];
     this.chronicledThrough = 0;
     this.chronicledAt = this.now();
+    this.chronicleRetryAt = 0;
     this.conversation.reset(this.lastStreamHead());
   }
 
@@ -245,11 +259,11 @@ export class TurnEngine {
     if (dropped) this.options.log?.debug(`dropped ${dropped} old turns from the conversation`);
   }
 
-  /** The brief's references for a turn's events: support first, then chat, each oldest first. */
-  private refs(items: QueueItem[]): BriefRefs {
+  /** The brief's references for a turn's events, in the plan's order; only events the model can read. */
+  private refs(items: QueueItem[], draft: Draft): BriefRefs {
     const refs: BriefRefs = { support: [], chat: [] };
     for (const item of items) {
-      const ref = this.conversation.ref(item.events.at(-1) ?? item.event);
+      const ref = [...item.events].reverse().map((event) => this.conversation.ref(event, draft)).find(Boolean);
       if (!ref) continue;
       const kind = item.event.kind;
       if (kind === "chat" || kind === "question") refs.chat.push(`${ref} (${kind})`);

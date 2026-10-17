@@ -100,6 +100,35 @@ describe("Conversation", () => {
     expect(room).toContain('<scrolled_by chat="14" gifts_and_follows="0"/>');
   });
 
+  it("always shows a gift combo the turn thanks, even among bigger gifts", () => {
+    const { conversation, see } = setup();
+    const r1 = gift("ana", "Rose", 1);
+    const r2 = gift("ana", "Rose", 1);
+    see(r1);
+    see(r2);
+    for (let i = 0; i < 11; i++) see(gift(`fan${i}`, "Lion", 500));
+    const draft = conversation.draft(new Set([r1, r2]));
+    expect(draft.room).toContain('<gift id="e1" from="ana"');
+    expect(conversation.ref(r2, draft)).toBe("e1");
+    expect(draft.room).toContain('<scrolled_by chat="0" gifts_and_follows="1"/>');
+    expect(draft.scrolledBy).toHaveLength(1);
+  });
+
+  it("only hands out ids the model can read", () => {
+    const { conversation, see } = setup();
+    const events = Array.from({ length: 20 }, (_, i) => chat(`v${i}`, `message ${i}`));
+    for (const event of events) see(event);
+    const draft = conversation.draft();
+    // The four oldest scrolled by: no id for them, now or later.
+    expect(draft.scrolledBy).toEqual(events.slice(0, 4));
+    expect(conversation.ref(events[0]!, draft)).toBeUndefined();
+    expect(conversation.ref(events[19]!, draft)).toBe("e20");
+    expect(conversation.ref(events[19]!)).toBeUndefined(); // not committed yet
+    conversation.commit(draft, "brief", "Hi all!", 0);
+    expect(conversation.ref(events[0]!)).toBeUndefined();
+    expect(conversation.ref(events[19]!)).toBe("e20");
+  });
+
   it("folds a gift combo into one line", () => {
     const { conversation, see } = setup();
     const a = gift("leo", "Rose", 1);
@@ -107,8 +136,9 @@ describe("Conversation", () => {
     const idA = see(a);
     const idB = see(b);
     expect(idB).toBe(idA);
-    expect(conversation.ref(b)).toBe("e1");
-    expect(conversation.draft().room).toContain('gift="Rose" count="2" diamonds="2"');
+    const draft = conversation.draft();
+    expect(conversation.ref(b, draft)).toBe("e1");
+    expect(draft.room).toContain('gift="Rose" count="2" diamonds="2"');
   });
 
   it("folds old turns into a summary, keeping the newest word for word", () => {

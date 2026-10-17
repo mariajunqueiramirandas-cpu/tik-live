@@ -51,6 +51,8 @@ const SYSTEM_MESSAGE_MODELS = new Set([
 
 /** Turns the cache hit rate is averaged over. */
 const CACHE_WINDOW = 20;
+/** Rough characters per output token, to meter a reply cut off before the API reported its usage. */
+const CHARS_PER_TOKEN = 3;
 
 export interface ClaudeHostOptions {
   client: Anthropic;
@@ -179,12 +181,16 @@ export class ClaudeHost implements HostBrain {
     const maxUtterances = turn.brief ? BRIEF_SENTENCES : persona.maxSentences + (turn.kind === "game" ? 3 : 1);
     let emotion: Emotion = "neutral";
     let produced = 0;
-    // Metered from the stream itself, so a reply cut off mid-way is still counted.
+    // Metered from the stream itself, so a reply cut off mid-way is still counted. The API reports
+    // input usage when the message starts but output only when it ends: until then, estimate it.
     let usage: { model: string; input: number; cacheRead: number; cacheWrite: number; output: number } | null = null;
+    let streamed = 0;
+    let finished = false;
     let reported = false;
     const report = () => {
       if (!usage || reported) return;
       reported = true;
+      if (!finished) usage.output = Math.max(usage.output, Math.ceil(streamed / CHARS_PER_TOKEN));
       this.recent.push({ total: usage.input + usage.cacheRead + usage.cacheWrite, cached: usage.cacheRead });
       if (this.recent.length > CACHE_WINDOW) this.recent.shift();
       this.options.onUsage?.({
@@ -229,7 +235,12 @@ export class ClaudeHost implements HostBrain {
           };
         } else if (event.type === "message_delta" && usage) {
           usage.output = event.usage.output_tokens;
+        } else if (event.type === "content_block_delta" && event.delta.type === "thinking_delta") {
+          streamed += event.delta.thinking.length;
+        } else if (event.type === "content_block_delta" && event.delta.type === "input_json_delta") {
+          streamed += event.delta.partial_json.length;
         } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          streamed += event.delta.text.length;
           yield* take(splitter.push(event.delta.text));
           if (produced >= maxUtterances) {
             local.abort(); // the model is rambling; cut it off
@@ -240,6 +251,7 @@ export class ClaudeHost implements HostBrain {
       yield* take(splitter.flush());
 
       const final = await stream.finalMessage();
+      finished = true;
       usage = {
         model: final.model ?? model,
         input: final.usage.input_tokens,

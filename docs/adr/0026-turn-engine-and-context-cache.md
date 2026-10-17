@@ -96,7 +96,8 @@ check.
 
 The chronicler (ADR-0025) now reads committed turns. It runs every ~4
 minutes with 6 or more new turns (for viewer notes and the summary), and at
-once when the conversation passes **14k tokens**. When it returns, turns it
+once when the conversation passes **14k tokens**; after a failure it waits
+30 s before trying again. When it returns, turns it
 covered leave the conversation, except the newest 6, and its summary
 becomes the head (`<earlier>`). That rewrites the cache once per fold; at
 ~600 tokens a turn that's every ~15 busy turns. Without a chronicler, or if
@@ -118,9 +119,14 @@ the brief, stream the reply into speech, commit. It also:
   (same words, or 90% the same with 6+ words) is dropped before it reaches
   the voice, and the host is told; catchphrases and game turns are exempt;
 - **never speaks an id:** `e12` is stripped from speech;
-- **meters cut-off replies:** usage is read from the stream's
-  `message_start` / `message_delta` events, so a reply cut for rambling or
-  barge-in still counts toward budgets.
+- **meters cut-off replies:** input usage is read from the stream's
+  `message_start` event, and output (which the API reports only when a
+  message ends) is estimated from the characters streamed, so a reply cut
+  for rambling or barge-in still counts toward budgets;
+- **only points at what the model can read:** a brief or an owed-question
+  note names an id only if it's in a room still in the conversation, and
+  messages that scrolled by on a busy stretch leave the queue with the turn
+  that hid them.
 
 ### The director's order of business
 
