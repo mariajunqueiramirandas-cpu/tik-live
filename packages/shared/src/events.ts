@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt-br";
 
 /** A person in the LIVE audience, normalized across event sources. */
 export interface Viewer {

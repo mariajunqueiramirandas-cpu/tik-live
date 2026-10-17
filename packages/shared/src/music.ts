@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt-br";
 
 /**
  * Music as code (ADR-0024). The host writes short original pieces in a tiny

@@ -1,5 +1,8 @@
 import { z } from "zod";
 import { gameConfigSchema } from "./game";
+// Installs the pt-BR messages wherever schemas are used. A bare import kept here, not in
+// index.ts: bundlers skip the barrel and go straight to the module that defines a symbol.
+import "./zod-pt-br";
 
 export const EMOTIONS = [
   "neutral",

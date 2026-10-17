@@ -1,4 +1,3 @@
-import "./zod-pt-br";
 export * from "./brand";
 export * from "./broadcast";
 export * from "./channel";

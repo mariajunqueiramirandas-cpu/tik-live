@@ -1,4 +1,5 @@
 import { z } from "zod";
+import "./zod-pt-br";
 
 /**
  * Chat minigames (ADR-0023). The host runs a game, viewers answer in chat,

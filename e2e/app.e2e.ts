@@ -85,6 +85,15 @@ test("the character editor autosaves and the change sticks", async ({ page }) =>
   await expect(segment.getByLabel("Entre as rodadas, o apresentador…")).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: /^Salvo$/ })).toBeVisible();
 
+  // Validation messages come from the shared pt-BR error map for zod. The production bundle
+  // once dropped that module (it's only a side effect), and forms fell back to English.
+  const minutes = segment.getByLabel("Minutos");
+  const before = await minutes.inputValue();
+  await minutes.fill("500");
+  await expect(segment.getByText("Use um número até 120.")).toBeVisible();
+  await minutes.fill(before);
+  await expect(segment.getByText("Use um número até 120.")).toHaveCount(0);
+
   await page.goto(`${url}/character`);
   await expect(page.getByLabel("Em uma frase")).toHaveValue("uma bolinha de teste bem cuidadosa");
   await page.getByRole("tab", { name: "Roteiro" }).click();
