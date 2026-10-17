@@ -110,7 +110,7 @@ export type Sound = (typeof SOUNDS)[number];
 /** Ready-made pieces: the studio can play them, and they show what the language looks like. */
 export const MUSIC_LIBRARY: Record<string, MusicTrackInput> = {
   "lofi-night": {
-    title: "Lo-fi for the night shift",
+    title: "Lo-fi da madrugada",
     bpm: 78,
     bars: 4,
     repeat: 2,
@@ -137,7 +137,7 @@ export const MUSIC_LIBRARY: Record<string, MusicTrackInput> = {
     ],
   },
   "synthwave-drive": {
-    title: "Neon drive",
+    title: "Neon na estrada",
     bpm: 110,
     bars: 4,
     repeat: 2,
@@ -150,7 +150,7 @@ export const MUSIC_LIBRARY: Record<string, MusicTrackInput> = {
     ],
   },
   "game-show": {
-    title: "Contestants, ready",
+    title: "Participantes, preparados",
     bpm: 140,
     bars: 2,
     repeat: 2,
@@ -162,7 +162,7 @@ export const MUSIC_LIBRARY: Record<string, MusicTrackInput> = {
     ],
   },
   "music-box": {
-    title: "Little music box",
+    title: "Caixinha de música",
     bpm: 96,
     bars: 2,
     repeat: 2,

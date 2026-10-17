@@ -204,7 +204,7 @@ export const studioCommandSchema = z.discriminatedUnion("kind", [
   /** Plays a piece from the library, or asks the host to compose one from a prompt. */
   z.object({
     kind: z.literal("music_play"),
-    library: z.string().refine((id) => id in MUSIC_LIBRARY, "Unknown piece").optional(),
+    library: z.string().refine((id) => id in MUSIC_LIBRARY, "Música desconhecida").optional(),
     prompt: z.string().trim().min(1).max(120).optional(),
   }),
   z.object({ kind: z.literal("music_stop") }),
