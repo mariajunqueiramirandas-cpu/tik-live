@@ -218,7 +218,7 @@ current list with costs, where to change each setting, and recommendations.
 | # | Question | Proposed default |
 |---|---|---|
 | 1 | Product name | **Lantern** (working name, one constant) |
-| 2 | Models per plan, given the [cost table](../adr/0012-ai-and-voice-pipeline.md#cost-model-estimates-to-be-replaced-by-metered-data) (Opus 5.5 host + moderator ≈ $7.55 per live hour; Sonnet 5.5 + Haiku 5.5 ≈ $2.25; Haiku 5.5 for both ≈ $0.20) | Opus 5.5 everywhere until staging measurements are in, then decide per plan ([decision 1](../decisions-needed.md#1-prices-hours-and-ai-models-per-plan)) |
+| 2 | Models per plan, given the [cost table](../adr/0012-ai-and-voice-pipeline.md#cost-model-estimates-to-be-replaced-by-metered-data) (Opus 5.5 host + moderator ≈ $7.55 per live hour; Sonnet 5.5 + Haiku 5.5 ≈ $2.25; Haiku 5.5 for both ≈ $0.20) | **Decided:** Haiku 5.5 for host and moderator on every plan, at the owner's request ([ADR-0026](../adr/0026-turn-engine-and-context-cache.md)); a plan can still move up ([decision 1](../decisions-needed.md#1-prices-hours-and-ai-models-per-plan)) |
 | 3 | Plan names, prices and limits | Free / Creator / Pro as in [ADR-0013](../adr/0013-billing-and-plans.md); placeholder prices R$ 49,90 and R$ 149,90 ([decision 1](../decisions-needed.md#1-prices-hours-and-ai-models-per-plan)) |
 | 4 | Payment provider | **Decided:** Mercado Pago ([ADR-0013](../adr/0013-billing-and-plans.md)) |
 | 5 | Transactional email (billing notices, stream alerts); sign-in emails will come from the identity provider | Resend, added when the first email feature lands |
