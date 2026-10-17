@@ -31,6 +31,8 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private output: GainNode | null = null;
+  /** Voice, music and sound effects together, before volume and mute. */
+  private mix: GainNode | null = null;
   private readonly samples = new Float32Array(1024);
   private readonly spectrum = new Uint8Array(512);
   private source: AudioBufferSourceNode | null = null;
@@ -82,12 +84,22 @@ export class AudioEngine {
   }
 
   /**
-   * The voice as it leaves the engine, before volume and mute: cloud
-   * broadcast capture connects its PCM tap here (ADR-0020).
+   * The stage's sound as it leaves the engine (voice, music and sound
+   * effects), before volume and mute: cloud broadcast capture connects its
+   * PCM tap here (ADR-0020).
    */
   tap(): { context: AudioContext; node: AudioNode } | null {
     const ctx = this.ensure();
-    return ctx && this.analyser ? { context: ctx, node: this.analyser } : null;
+    return ctx && this.mix ? { context: ctx, node: this.mix } : null;
+  }
+
+  /**
+   * Where music and sound effects join the voice (ADR-0024): after the
+   * speech analyser, so they don't move the mouth, and before volume, mute
+   * and the broadcast tap.
+   */
+  mixInput(): { context: AudioContext; node: AudioNode } | null {
+    return this.tap();
   }
 
   /** Starts fetching and decoding a clip so `play` can start it without delay. */
@@ -226,7 +238,8 @@ export class AudioEngine {
     this.analyser.fftSize = 1024;
     this.analyser.smoothingTimeConstant = 0.5;
     this.output = ctx.createGain();
-    this.analyser.connect(this.output).connect(ctx.destination);
+    this.mix = ctx.createGain();
+    this.analyser.connect(this.mix).connect(this.output).connect(ctx.destination);
     ctx.addEventListener("statechange", () => {
       const state: AudioState = ctx.state === "running" ? "running" : "suspended";
       for (const listener of this.stateListeners) listener(state);
