@@ -7,6 +7,7 @@ COPY package.json bun.lock bunfig.toml tsconfig.base.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY apps/broadcaster/package.json apps/broadcaster/
+COPY apps/signer/package.json apps/signer/
 COPY packages/shared/package.json packages/shared/
 COPY packages/engine/package.json packages/engine/
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1

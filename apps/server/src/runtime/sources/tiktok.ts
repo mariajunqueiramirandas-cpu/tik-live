@@ -14,12 +14,25 @@ import {
   normalizeSimple,
   normalizeViewerCount,
 } from "./normalize";
+import type { SignerClient } from "./signer-client";
+import { useSigner } from "./signer-routes";
+import { oxylabsWsAgent, type OxylabsWsProxy } from "./ws-proxy";
 import type { EventListener, EventSource, SourceStatus } from "./types";
 
 export interface TikTokSourceOptions {
   username: string;
   /** Optional Euler Stream key for the sign server (higher rate limits). */
   signApiKey?: string;
+  /**
+   * Our own signer (ADR-0023). When set it replaces Euler Stream: it says
+   * whether the account is live, and signs the request that joins its room.
+   */
+  signer?: SignerClient;
+  /**
+   * Send this connection's websocket through an Oxylabs residential proxy, on one sticky address
+   * for the life of this source (a reconnect keeps it). Costs traffic: see TIKTOK_WS_VIA_PROXY.
+   */
+  wsProxy?: OxylabsWsProxy;
   /** How long to wait between checks while the account is offline. */
   offlineRetryMs?: number;
   log: Logger;
@@ -42,8 +55,12 @@ export class TikTokSource implements EventSource {
   private detail = "idle";
   private retryTimer: NodeJS.Timeout | undefined;
   private failures = 0;
+  /** One agent for the life of the source, so every reconnect leaves from the same address. */
+  private readonly wsAgent: ReturnType<typeof oxylabsWsAgent> | undefined;
 
-  constructor(private readonly options: TikTokSourceOptions) {}
+  constructor(private readonly options: TikTokSourceOptions) {
+    this.wsAgent = options.wsProxy ? oxylabsWsAgent(options.wsProxy) : undefined;
+  }
 
   async start(emit: EventListener): Promise<void> {
     this.emit = emit;
@@ -77,7 +94,7 @@ export class TikTokSource implements EventSource {
     this.connection = connection;
     this.detail = `connecting to @${this.options.username}`;
     try {
-      const state = await connection.connect();
+      const state = await connection.connect(await this.resolveRoom());
       this.connected = true;
       this.live = true;
       this.failures = 0;
@@ -101,15 +118,35 @@ export class TikTokSource implements EventSource {
     }
   }
 
+  /**
+   * With our signer, asks it for the room first: the connector's own lookup
+   * is another of the calls that needs Euler Stream. Without one the
+   * connector finds the room itself, as before.
+   */
+  private async resolveRoom(): Promise<string | undefined> {
+    const { signer, username } = this.options;
+    if (!signer) return undefined;
+    const room = await signer.lookupRoom(username);
+    if (!room.found) throw new Error(`TikTok has no account called @${username}`);
+    if (!room.isLive || !room.roomId) throw new UserOfflineError(`@${username} isn't live`);
+    return room.roomId;
+  }
+
   private createConnection(): TikTokLiveConnection {
+    const { signer } = this.options;
     const connection = new TikTokLiveConnection(this.options.username, {
       processInitialData: false,
+      // Our signer has just said the room is live; no need for the connector's own room-info call.
+      ...(signer ? { fetchRoomInfoOnConnect: false } : {}),
+      ...(this.wsAgent ? { wsClientOptions: { agent: this.wsAgent } } : {}),
       // No extended gift info: fetching the room's gift list on connect needs a
       // request signed by Euler Stream's Business plan, and its failure aborts
       // the whole connect. Gift events already carry their diamond count.
       enableExtendedGiftInfo: false,
       ...(this.options.signApiKey ? { signApiKey: this.options.signApiKey } : {}),
     });
+
+    if (signer) useSigner(connection, signer);
 
     // The connector's typed-emitter typings don't resolve under NodeNext, so
     // listen through the plain EventEmitter interface it implements at runtime.

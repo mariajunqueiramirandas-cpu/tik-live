@@ -15,6 +15,7 @@ optional cloud broadcaster.
 | `backup` | Nightly `pg_dump`, 7 daily and 4 weekly copies, optional S3 upload | No |
 | `broadcaster` | Cloud broadcast: renders the stage and streams to TikTok (profile `broadcast`) | No |
 | `tts` | Self-hosted Brazilian Portuguese voice, Pocket TTS (profile `tts`, [ADR-0021](../docs/adr/0021-self-hosted-tts.md)) | No |
+| `signer` | Our own TikTok signer, a browser that signs the TikTok connector's requests (profile `signer`, [ADR-0023](../docs/adr/0023-own-tiktok-signer.md)) | No |
 
 ## 1. Prepare the server
 
@@ -57,6 +58,7 @@ Fill in `.env`. The essentials:
 | `ANTHROPIC_API_KEY` | Without it, hosts run an offline scripted brain |
 | `ELEVENLABS_API_KEY` | Without it (and without the self-hosted voice), hosts speak in captions only |
 | `POCKET_TTS_SECRET` | The self-hosted voice: `openssl rand -hex 24`, then `docker compose --profile tts up -d --build` |
+| `SIGNER_URL`, `SIGNER_TOKEN` | The self-hosted TikTok signer: `http://lantern-signer:8091` and `openssl rand -hex 24`, then `docker compose --profile signer up -d --build` (see [TikTok signer](#tiktok-signer)). Both or neither |
 | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago; leave both empty to run without billing |
 
 The app checks its configuration at boot and refuses to start with a clear
@@ -137,6 +139,73 @@ docker compose start app
 
 Keep a copy of `.env` (especially `APP_SECRET`) somewhere safe and separate
 from the backups.
+
+## TikTok signer
+
+The TikTok connector needs TikTok's request signing. By default it asks the
+hosted Euler Stream sign server (`EULER_API_KEY` raises its limits). The
+`signer` service replaces that with a headless browser on TikTok's own page
+([ADR-0023](../docs/adr/0023-own-tiktok-signer.md)):
+
+```sh
+# In .env
+SIGNER_URL=http://lantern-signer:8091
+SIGNER_TOKEN=$(openssl rand -hex 24)
+
+docker compose --profile signer up -d --build
+docker compose logs signer        # "signer session ready" once the browser is up
+```
+
+It uses about 500 MB of RAM and a CPU core while it signs; `SIGNER_CPUS` caps
+it. Chromium runs without its own sandbox, as in the broadcaster (Docker's
+default profile doesn't allow the user namespaces it needs), with the signer's
+token and proxy password removed from the browser's environment;
+`SIGNER_SANDBOX=true` turns the sandbox on where the host allows it. **TikTok decides per network whether anonymous viewers may join a room,
+and often refuses data-center addresses.** Check from the server, with an
+account that's live:
+
+```sh
+# On the server, from a checkout of this repository (the signer listens on 127.0.0.1:8091 there):
+bun scripts/verify-signer.ts <handle> --url http://127.0.0.1:8091 --token <SIGNER_TOKEN>
+```
+
+### Oxylabs residential proxy
+
+If the signer reports 403 or an empty answer, TikTok doesn't like the
+server's address. Send the signer's traffic through
+[Oxylabs](https://oxylabs.io) residential proxies: create a proxy user in
+their dashboard (its own name and password, not your account login) and set,
+in `.env`:
+
+```sh
+OXYLABS_USERNAME=<proxy user name>
+OXYLABS_PASSWORD=<proxy user password>
+OXYLABS_COUNTRY=BR              # optional: the country the exit address is in
+```
+
+then `docker compose up -d signer`. The signer starts each browser session on
+its own sticky Oxylabs session, so TikTok sees one visitor with one address
+for the life of that session (`OXYLABS_SESSION_MINUTES`, default a little more
+than `SIGNER_RECYCLE_MINUTES`). If TikTok still refuses an address, the signer
+retries the join once from a new session, which is a new address
+(`SIGNER_REFUSAL_RETRIES`).
+
+By default only the signer uses the proxy: the signed join and the page that
+signs it. Each channel's websocket then connects from the server's own
+address, which is how Euler Stream's customers connect too. If TikTok refuses
+that, set `TIKTOK_WS_VIA_PROXY=true` and every channel's websocket goes
+through Oxylabs as well, on one sticky address per channel. **That costs
+traffic:** a room's websocket streams for hours, and residential proxies bill
+by the gigabyte. The signer's own traffic should be small (it keeps one page
+open and downloads no images, video or fonts), but that hasn't been measured
+on a real account: watch Oxylabs' usage page for the first days.
+
+Never put the credentials anywhere but `.env`; they are not logged, and the
+signer reports only which proxy host it uses. `SIGNER_PROXY_URL` takes any
+other proxy (`http://user:pass@host:port`) in place of the `OXYLABS_*`
+variables. `SIGNER_WEBCAST_ORIGIN=https://webcast.us.tiktok.com` is the other
+host worth trying. The signer's port is published on the server's loopback
+only, and every request needs the token.
 
 ## 6. Cloud broadcast
 

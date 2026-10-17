@@ -27,10 +27,10 @@ jobs:
           POSTGRES_PASSWORD: ci
         run: |
           cp deploy/.env.example deploy/.env
-          docker compose -f deploy/compose.yaml --profile broadcast --profile tts config -q
-          docker compose -f compose.dokploy.yaml --env-file deploy/dokploy.env.example --profile broadcast --profile tts config -q
+          docker compose -f deploy/compose.yaml --profile broadcast --profile tts --profile signer config -q
+          docker compose -f compose.dokploy.yaml --env-file deploy/dokploy.env.example --profile broadcast --profile tts --profile signer config -q
       - run: bun test
-      # Builds the web app (with prerender and bundle budgets), the server and the broadcaster.
+      # Builds the web app (with prerender and bundle budgets), the server, the broadcaster and the signer.
       - run: bun run build
       - uses: actions/upload-artifact@v4
         with:
@@ -99,6 +99,7 @@ jobs:
           owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           echo "app=ghcr.io/${owner}/lantern-app" >> "$GITHUB_OUTPUT"
           echo "broadcaster=ghcr.io/${owner}/lantern-broadcaster" >> "$GITHUB_OUTPUT"
+          echo "signer=ghcr.io/${owner}/lantern-signer" >> "$GITHUB_OUTPUT"
           echo "tts=ghcr.io/${owner}/lantern-tts" >> "$GITHUB_OUTPUT"
           echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
@@ -117,6 +118,14 @@ jobs:
           tags: ${{ steps.meta.outputs.broadcaster }}:${{ steps.meta.outputs.version }},${{ steps.meta.outputs.broadcaster }}:latest
           cache-from: type=gha,scope=broadcaster
           cache-to: type=gha,mode=max,scope=broadcaster
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/signer.Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.signer }}:${{ steps.meta.outputs.version }},${{ steps.meta.outputs.signer }}:latest
+          cache-from: type=gha,scope=signer
+          cache-to: type=gha,mode=max,scope=signer
       - uses: docker/build-push-action@v6
         with:
           context: services/tts

@@ -151,6 +151,48 @@ services:
       default: {}
     logging: *logging
 
+  # Self-hosted TikTok signer (apps/signer, ADR-0023). Off unless COMPOSE_PROFILES includes signer.
+  # Set SIGNER_URL=http://lantern-signer:8091 and SIGNER_TOKEN (24+ characters) for the app too. It replaces Euler Stream.
+  signer:
+    profiles: [signer]
+    image: ${SIGNER_IMAGE:-lantern-signer:local}
+    build:
+      context: .
+      dockerfile: deploy/signer.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8091"
+      # Required by the signer itself (24+ characters); it won't start without it.
+      SIGNER_TOKEN: ${SIGNER_TOKEN:-}
+      # Where the browser's traffic leaves from: TikTok may show a login wall to data-center addresses.
+      SIGNER_PROXY_URL: ${SIGNER_PROXY_URL:-}
+      # Oxylabs residential proxy (instead of SIGNER_PROXY_URL): the proxy user's name and password.
+      OXYLABS_USERNAME: ${OXYLABS_USERNAME:-}
+      OXYLABS_PASSWORD: ${OXYLABS_PASSWORD:-}
+      OXYLABS_COUNTRY: ${OXYLABS_COUNTRY:-}
+      OXYLABS_ENDPOINT: ${OXYLABS_ENDPOINT:-pr.oxylabs.io:7777}
+      OXYLABS_SESSION_MINUTES: ${OXYLABS_SESSION_MINUTES:-}
+      SIGNER_REFUSAL_RETRIES: ${SIGNER_REFUSAL_RETRIES:-1}
+      SIGNER_LOCALE: ${SIGNER_LOCALE:-en-US}
+      SIGNER_TIMEZONE: ${SIGNER_TIMEZONE:-America/New_York}
+      SIGNER_MAX_CONCURRENT: ${SIGNER_MAX_CONCURRENT:-4}
+    init: true
+    shm_size: 512mb
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "${SIGNER_CPUS:-1}"
+          memory: 1g
+    # The internal network for the app; the default network to reach TikTok.
+    networks:
+      internal:
+        aliases: [lantern-signer]
+      default: {}
+    logging: *logging
+
   # Self-hosted pt-BR voice (services/tts, ADR-0021). Off unless COMPOSE_PROFILES includes tts
   # and POCKET_TTS_SECRET is set. The build downloads the model (360 MB) from Hugging Face.
   tts:

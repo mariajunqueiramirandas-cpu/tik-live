@@ -2,6 +2,7 @@
 #   docker compose up -d                      # caddy, app, db, backup
 #   docker compose --profile broadcast up -d  # also the cloud broadcaster
 #   docker compose --profile tts up -d        # also the self-hosted voice
+#   docker compose --profile signer up -d     # also the self-hosted TikTok signer
 name: lantern
 
 x-logging: &logging
@@ -147,6 +148,51 @@ services:
           memory: 3g
     # Internal for the app; egress to reach TikTok's RTMPS ingest.
     networks: [internal, egress]
+    logging: *logging
+
+  # Self-hosted TikTok signer (apps/signer, ADR-0023): docker compose --profile signer up -d, with
+  # SIGNER_URL=http://lantern-signer:8091 and SIGNER_TOKEN (24+ characters) set in .env. It replaces Euler Stream.
+  signer:
+    profiles: [signer]
+    image: ${SIGNER_IMAGE:-lantern-signer:local}
+    build:
+      context: ..
+      dockerfile: deploy/signer.Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "8091"
+      # Required by the signer itself (24+ characters); it won't start without it.
+      SIGNER_TOKEN: ${SIGNER_TOKEN:-}
+      # Where the browser's traffic leaves from: TikTok may show a login wall to data-center addresses.
+      SIGNER_PROXY_URL: ${SIGNER_PROXY_URL:-}
+      # Oxylabs residential proxy (instead of SIGNER_PROXY_URL): the proxy user's name and password.
+      OXYLABS_USERNAME: ${OXYLABS_USERNAME:-}
+      OXYLABS_PASSWORD: ${OXYLABS_PASSWORD:-}
+      OXYLABS_COUNTRY: ${OXYLABS_COUNTRY:-}
+      OXYLABS_ENDPOINT: ${OXYLABS_ENDPOINT:-pr.oxylabs.io:7777}
+      OXYLABS_SESSION_MINUTES: ${OXYLABS_SESSION_MINUTES:-}
+      SIGNER_REFUSAL_RETRIES: ${SIGNER_REFUSAL_RETRIES:-1}
+      SIGNER_LOCALE: ${SIGNER_LOCALE:-en-US}
+      SIGNER_TIMEZONE: ${SIGNER_TIMEZONE:-America/New_York}
+      SIGNER_MAX_CONCURRENT: ${SIGNER_MAX_CONCURRENT:-4}
+    # On the server's loopback only, so scripts/verify-signer.ts can reach it; the bearer token still applies.
+    ports:
+      - "127.0.0.1:8091:8091"
+    init: true
+    shm_size: 512mb
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "${SIGNER_CPUS:-1}"
+          memory: 1g
+    # Internal for the app; egress to reach TikTok.
+    networks:
+      internal:
+        aliases: [lantern-signer]
+      egress: {}
     logging: *logging
 
   # Self-hosted pt-BR voice (services/tts, ADR-0021): docker compose --profile tts up -d,

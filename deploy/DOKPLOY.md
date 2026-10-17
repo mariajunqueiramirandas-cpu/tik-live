@@ -13,6 +13,7 @@ of Caddy. The decision and what was tested are in
 | `backup` | Nightly `pg_dump`, 7 daily and 4 weekly copies, optional S3 upload | No |
 | `broadcaster` | Cloud broadcast (only with `COMPOSE_PROFILES=broadcast`) | No |
 | `tts` | Self-hosted Brazilian Portuguese voice (only with `tts` in `COMPOSE_PROFILES`) | No |
+| `signer` | Our own TikTok signer ([ADR-0023](../docs/adr/0023-own-tiktok-signer.md); only with `signer` in `COMPOSE_PROFILES`) | No |
 
 Everything lives in [`compose.dokploy.yaml`](../compose.dokploy.yaml) at
 the repository root.
@@ -162,6 +163,35 @@ TTS_CPUS=2
 The first build downloads the model (360 MB) from Hugging Face and packs it
 (about 2 minutes). The service uses about 300 MB of RAM. Hosts on this voice
 always speak Portuguese.
+
+### TikTok signer
+
+Our own replacement for the hosted Euler Stream sign server
+([ADR-0023](../docs/adr/0023-own-tiktok-signer.md)). In the Environment tab:
+
+```sh
+COMPOSE_PROFILES=signer         # or broadcast,signer
+SIGNER_URL=http://lantern-signer:8091
+SIGNER_TOKEN=<openssl rand -hex 24>
+SIGNER_CPUS=1
+```
+
+Then redeploy and look for `signer session ready` in the `signer` service's
+logs. It uses about 500 MB of RAM. TikTok may refuse to let a data-center
+address join a room anonymously; if the app's host status shows "TikTok
+answered ... 403" or "returned nothing", send the signer through Oxylabs
+residential proxies: add the proxy user's `OXYLABS_USERNAME` and
+`OXYLABS_PASSWORD` (and optionally `OXYLABS_COUNTRY=BR`) and redeploy. The
+signer gives each browser session its own sticky address and retries a refused
+join once from a new one. `TIKTOK_WS_VIA_PROXY=true` also sends every
+channel's websocket through the proxy, which costs traffic (residential
+proxies bill by the gigabyte); leave it off unless TikTok refuses the
+websocket from the server's own address.
+To check it against a live account (yours, or one whose owner agreed), start a
+host on that handle and watch its status in the studio; the signer's logs say
+why a join is refused. `scripts/verify-signer.ts` does the same check from a
+terminal against a signer you can reach, for example one started locally with
+`bun run --filter @tik-live/signer dev`.
 
 ## 9. Cloudflare
 

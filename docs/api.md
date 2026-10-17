@@ -7,7 +7,7 @@ the API through Hono's typed client (`hc<AppType>`, exported as
 `@tik-live/server/app-type`), so request and response types are checked at
 compile time; this page is the human-readable version.
 
-The internal broadcaster API is at the [end of this page](#broadcaster-internal).
+The internal broadcaster and signer APIs are at the [end of this page](#broadcaster-internal).
 
 ## Conventions
 
@@ -224,3 +224,26 @@ where `state` is `starting`, `live`, `retrying`, `failed` (after 5 failed
 attempts in a row) or `stopped`, and `stats` holds `fps`, `bitrateKbps`,
 `droppedFrames` and `speed` from the encoder. `detail` never contains the
 stream key.
+
+## Signer (internal)
+
+`apps/signer` keeps a headless Chromium on a TikTok page and lets TikTok's own
+script sign the requests the TikTok connector needs
+([ADR-0023](adr/0023-own-tiktok-signer.md)). It replaces the hosted Euler
+Stream sign server. Only the app server calls it, on the internal network.
+Every `/v1` request needs `Authorization: Bearer <SIGNER_TOKEN>`. Schemas
+live in `packages/shared/src/signer.ts`.
+
+| Endpoint | Body | Response |
+|---|---|---|
+| `GET /healthz` | | `{ ok, ready, detail, sessionAgeSeconds, inflight, queued, served, failed }`. Always `200` while the process is up; `ready` says whether the browser is. |
+| `POST /v1/room` | `{ uniqueId }` (a handle without the `@`) | `{ found, roomId, status, isLive }`. `found: false` means TikTok has no such account; `status` is TikTok's room status (2 live, 4 over). |
+| `POST /v1/webcast-fetch` | `{ roomId, cursor? }` | `{ roomId, cookies, body }`: the signed `webcast/im/fetch` answer. `body` is TikTok's protobuf (`ProtoMessageFetchResult`) in base64; `cookies` are its `Set-Cookie` values plus the browser's `ttwid`, which the room's websocket needs. |
+
+Errors use the same `{ error: { code, message } }` shape as the app:
+`401 unauthorized`, `400 invalid_input`, `429 busy` (with `Retry-After`; the
+queue is full), `503 unavailable` (the browser isn't ready, or TikTok's page
+didn't start signing), `502 unsigned` (TikTok's script didn't sign the
+request), `502 empty_response` and `502 upstream` (TikTok refused the join,
+which usually means it won't let that network join anonymously: see the
+`OXYLABS_*` settings), `504 timeout`.

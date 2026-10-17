@@ -58,7 +58,7 @@ describe("compose.dokploy.yaml", () => {
   it("reaches other services only through lantern-* aliases on the internal network", () => {
     expect(dokploy.networks?.internal?.internal).toBe(true);
     const declared = new Set(Object.values(dokploy.services).flatMap((s) => aliases(s, "internal")));
-    expect([...declared].sort()).toEqual(["lantern-app", "lantern-broadcaster", "lantern-db", "lantern-tts"]);
+    expect([...declared].sort()).toEqual(["lantern-app", "lantern-broadcaster", "lantern-db", "lantern-signer", "lantern-tts"]);
     const app = dokploy.services.app?.environment ?? {};
     const hosts = [
       new URL((app.DATABASE_URL as string).replace(/\$\{[^}]+\}/g, "x")).hostname,
