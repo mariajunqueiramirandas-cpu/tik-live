@@ -40,7 +40,22 @@ export interface SpeechOutput {
 
 interface Pending {
   generation: number;
+  text: string;
+  meta: CueMeta | undefined;
+  operator: boolean;
   prepared: Promise<SpeechCue | null>;
+  /** Set once preparation finished (null: blocked or failed). */
+  ready?: SpeechCue | null;
+  /** Cancels synthesis when the line is dropped before it's performed. */
+  abort: AbortController;
+}
+
+export interface EnqueueOptions {
+  /** Skips the safety gate (operator-typed lines only). */
+  trusted?: boolean;
+  meta?: CueMeta;
+  /** Goes ahead of the host's queued lines, right after the current sentence (operator lines). */
+  front?: boolean;
 }
 
 export interface SpeechPipelineEvents {
@@ -57,6 +72,11 @@ export interface SpeechPipelineEvents {
  * arrives and run in parallel (so moderation adds no latency on top of
  * synthesis), but cues are performed strictly in the order they were
  * enqueued, and only if they passed the safety gate.
+ *
+ * The sentence is the unit of speech (ADR-0022): once a sentence is on
+ * stage it plays to the end. The director changes course between sentences
+ * by dropping lines that are still queued (`drop`), which also cancels their
+ * synthesis; only the kill switch (`stop`) cuts a sentence.
  */
 export class SpeechPipeline {
   private queue: Pending[] = [];
@@ -64,6 +84,8 @@ export class SpeechPipeline {
   private generation = 0;
   private playback = new AbortController();
   private current: SpeechCue | undefined;
+  /** Taken off the queue, waiting for its audio before going on stage. */
+  private head: Pending | undefined;
   private lastFinishedAt: number;
 
   constructor(
@@ -85,12 +107,60 @@ export class SpeechPipeline {
     return this.tts.name;
   }
 
-  /** Queue a sentence. `trusted` skips the safety gate (operator-typed lines only). */
-  enqueue(utterance: Utterance, options: { trusted?: boolean; meta?: CueMeta } = {}): void {
-    const generation = this.generation;
-    const prepared = this.prepare(utterance, options.trusted ?? false, options.meta);
-    this.queue.push({ generation, prepared });
+  /** Queue a sentence. */
+  enqueue(utterance: Utterance, options: EnqueueOptions = {}): void {
+    const abort = new AbortController();
+    const operator = options.trusted ?? false;
+    const pending: Pending = {
+      generation: this.generation,
+      text: utterance.text,
+      meta: options.meta,
+      operator,
+      abort,
+      prepared: Promise.resolve(null),
+    };
+    pending.prepared = this.prepare(utterance, operator, options.meta, abort.signal).then((cue) => {
+      pending.ready = cue;
+      return cue;
+    });
+    if (options.front) {
+      // After any operator lines already waiting, so they keep their order.
+      const at = this.queue.findIndex((item) => !item.operator);
+      this.queue.splice(at === -1 ? this.queue.length : at, 0, pending);
+    } else {
+      this.queue.push(pending);
+    }
     void this.drain();
+  }
+
+  /**
+   * Drops queued lines (never the one on stage) that match, and cancels their
+   * synthesis. Returns how many were dropped.
+   */
+  drop(match: (meta: CueMeta | undefined, operator: boolean) => boolean): number {
+    const kept: Pending[] = [];
+    let dropped = 0;
+    for (const item of this.queue) {
+      if (match(item.meta, item.operator)) {
+        item.abort.abort();
+        dropped += 1;
+      } else {
+        kept.push(item);
+      }
+    }
+    this.queue = kept;
+    return dropped;
+  }
+
+  /** What the host is saying and has queued to say next, in order. */
+  upcoming(): string[] {
+    const now = this.current?.text ?? this.head?.text;
+    return [...(now !== undefined ? [now] : []), ...this.queue.map((item) => item.text)];
+  }
+
+  /** The turn the line on stage (or, between lines, the next one) belongs to. */
+  activeMeta(): CueMeta | undefined {
+    return this.current?.meta ?? this.head?.meta ?? this.queue[0]?.meta;
   }
 
   /** Sentences waiting to be performed, not counting the one on stage. */
@@ -118,23 +188,28 @@ export class SpeechPipeline {
   /** Kill switch: drop everything queued and cut off the current sentence. */
   stop(): void {
     this.generation += 1;
+    for (const item of this.queue) item.abort.abort();
+    this.head?.abort.abort();
+    this.head = undefined;
     this.queue = [];
     this.playback.abort();
     this.playback = new AbortController();
     this.output.interrupt();
   }
 
-  private async prepare(utterance: Utterance, trusted: boolean, meta?: CueMeta): Promise<SpeechCue | null> {
+  private async prepare(utterance: Utterance, trusted: boolean, meta: CueMeta | undefined, signal: AbortSignal): Promise<SpeechCue | null> {
     const id = randomUUID();
     const tts = this.tts;
     const [verdict, audio] = await Promise.all([
       trusted ? Promise.resolve({ safe: true as const }) : this.safety.check(utterance.text),
-      tts.synthesize(utterance.text, utterance.emotion).catch((err: unknown) => {
-        this.events.log?.warn("TTS failed; falling back to captions", err);
+      tts.synthesize(utterance.text, utterance.emotion, signal).catch((err: unknown) => {
+        if (!signal.aborted) this.events.log?.warn("TTS failed; falling back to captions", err);
         return null;
       }),
     ]);
     if (audio) this.events.onUsage?.({ kind: "tts", characters: utterance.text.length });
+    // Dropped while preparing: it will never be performed, so it isn't reported either.
+    if (signal.aborted) return null;
     if (!verdict.safe) {
       this.events.log?.warn(`blocked line (${verdict.reason}): ${utterance.text}`);
       this.events.onDropped?.(utterance.text, verdict.reason, utterance.emotion, meta);
@@ -160,9 +235,14 @@ export class SpeechPipeline {
     try {
       while (this.queue.length > 0) {
         const next = this.queue.shift() as Pending;
+        this.head = next;
         const cue = await next.prepared;
-        if (!cue || next.generation !== this.generation) continue;
+        this.head = undefined;
+        if (!cue || next.generation !== this.generation || next.abort.signal.aborted) continue;
         this.current = cue;
+        // The next line is often ready already: let the stage load it now.
+        const upcoming = this.queue[0]?.ready;
+        if (upcoming?.audio) this.output.prefetch?.(upcoming);
         try {
           await this.output.play(cue, this.playback.signal);
         } catch (err) {

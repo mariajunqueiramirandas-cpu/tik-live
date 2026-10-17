@@ -57,6 +57,8 @@ export interface EngineOptions {
 }
 
 export interface EngineEvents {
+  /** A line's audio started; `durationMs` is its real length (program, broadcast and demo modes). */
+  started: (cueId: string, durationMs: number) => void;
   /** A line finished playing (program, broadcast and demo modes). */
   spoken: (cueId: string) => void;
   /** Every 10 s, and immediately on errors. */
@@ -102,14 +104,27 @@ const GOLD: Rgb = hexToRgb("#FFD15C");
 const INK_DARK: Rgb = hexToRgb("#0B0420");
 const DEFAULT_LOOK: Look = { character: "orb", primary: "#7CF5FF", secondary: "#FF5FD2", background: "#0B0420" };
 
-interface Cue {
+/** One line to perform, as the server sent it. */
+export interface Line {
   id: string;
+  text: string;
+  emotion: Emotion;
+  audioUrl: string | null;
+  durationMs: number;
+}
+
+interface Cue {
+  line: Line;
   handle: PlaybackHandle | null;
   cancelled: boolean;
 }
 
-class Emitter {
-  private readonly listeners: { [K in keyof EngineEvents]: Set<EngineEvents[K]> } = { spoken: new Set(), telemetry: new Set() };
+export class Emitter {
+  private readonly listeners: { [K in keyof EngineEvents]: Set<EngineEvents[K]> } = {
+    started: new Set(),
+    spoken: new Set(),
+    telemetry: new Set(),
+  };
 
   on<K extends keyof EngineEvents>(event: K, listener: EngineEvents[K]): () => void {
     const set = this.listeners[event] as Set<EngineEvents[K]>;
@@ -128,6 +143,7 @@ class Emitter {
   }
 
   clear(): void {
+    this.listeners.started.clear();
     this.listeners.spoken.clear();
     this.listeners.telemetry.clear();
   }
@@ -149,52 +165,96 @@ export function createEngine(canvas: HTMLCanvasElement, options: EngineOptions):
   }
 }
 
-/** Plays one line at a time and reports when it finished. */
-class Speaker {
+export interface SpeakerHooks {
+  /** A line takes the stage: show its caption and expression. */
+  begin?(line: Line): void;
+  /** Its audio (or silent envelope) started and lasts `durationS`. */
+  started?(line: Line, durationS: number): void;
+  finished?(line: Line): void;
+}
+
+/** Lines that may wait behind the one playing; past this the oldest waiting line is skipped. */
+const MAX_WAITING_LINES = 3;
+
+/**
+ * Plays lines one after another and reports when each started and finished
+ * (ADR-0022). A line that arrives while another is playing waits for it to
+ * end instead of cutting it off, so a sentence is never chopped because the
+ * server moved on early; only `stop` cuts.
+ */
+export class Speaker {
   private cue: Cue | null = null;
+  private waiting: Line[] = [];
 
   constructor(
     private readonly audio: AudioEngine,
     private readonly mode: EngineMode,
     private readonly events: Emitter,
+    private readonly hooks: SpeakerHooks = {},
   ) {}
 
   get current(): Cue | null {
     return this.cue;
   }
 
-  async speak(
-    id: string,
-    text: string,
-    audioUrl: string | null,
-    durationMs: number,
-    hooks: { started?: (durationS: number) => void; finished?: () => void } = {},
-  ): Promise<void> {
-    this.stop();
-    const cue: Cue = { id, handle: null, cancelled: false };
-    this.cue = cue;
-    const handle = await this.audio.play(text, audioUrl, durationMs);
-    if (cue.cancelled) {
-      handle.stop();
+  /** Lines waiting behind the current one. */
+  get queued(): number {
+    return this.waiting.length;
+  }
+
+  speak(line: Line): void {
+    if (!this.cue) {
+      void this.run(line);
       return;
     }
-    cue.handle = handle;
-    hooks.started?.(handle.duration);
-    await handle.done;
-    if (cue.cancelled || this.cue !== cue) return;
-    this.cue = null;
-    hooks.finished?.();
-    // Previews never pace the host; only on-air stages (and the demo) report.
-    if (this.mode !== "preview") this.events.emit("spoken", id);
+    this.waiting.push(line);
+    if (line.audioUrl) this.audio.prefetch(line.audioUrl);
+    while (this.waiting.length > MAX_WAITING_LINES) {
+      // Far behind (a stalled decode, a throttled tab): skip the stalest line
+      // rather than fall further behind, and release whoever waits on it.
+      const skipped = this.waiting.shift() as Line;
+      this.report("spoken", skipped.id);
+    }
   }
 
   stop(): void {
+    this.waiting = [];
     if (this.cue) {
       this.cue.cancelled = true;
       this.cue.handle?.stop();
       this.cue = null;
     }
     this.audio.stop();
+  }
+
+  private async run(line: Line): Promise<void> {
+    const cue: Cue = { line, handle: null, cancelled: false };
+    this.cue = cue;
+    this.hooks.begin?.(line);
+    const handle = await this.audio.play(line.text, line.audioUrl, line.durationMs);
+    if (cue.cancelled) {
+      handle.stop();
+      return;
+    }
+    cue.handle = handle;
+    this.hooks.started?.(line, handle.duration);
+    this.report("started", line.id, Math.round(handle.duration * 1000));
+    await handle.done;
+    if (cue.cancelled || this.cue !== cue) return;
+    this.cue = null;
+    this.hooks.finished?.(line);
+    this.report("spoken", line.id);
+    const next = this.waiting.shift();
+    if (next) void this.run(next);
+  }
+
+  private report(event: "started", id: string, durationMs: number): void;
+  private report(event: "spoken", id: string): void;
+  private report(event: "started" | "spoken", id: string, durationMs = 0): void {
+    // Previews never pace the host; only on-air stages (and the demo) report.
+    if (this.mode === "preview") return;
+    if (event === "started") this.events.emit("started", id, durationMs);
+    else this.events.emit("spoken", id);
   }
 }
 
@@ -300,7 +360,18 @@ export class Engine implements StageEngine {
       ...(options.mode === "broadcast" ? { sampleRate: BROADCAST_SAMPLE_RATE } : {}),
       ...(options.fetch ? { fetch: options.fetch } : {}),
     });
-    this.speaker = new Speaker(this.audio, this.mode, this.events);
+    this.speaker = new Speaker(this.audio, this.mode, this.events, {
+      begin: (line) => {
+        this.face.setEmotion(line.emotion);
+        this.emotionUntil = Infinity;
+        this.caption.show(line.text);
+      },
+      started: (_line, durationS) => this.caption.start(this.time, durationS),
+      finished: () => {
+        this.caption.finish(this.time);
+        this.emotionUntil = this.time + 2.5;
+      },
+    });
     this.detectRenderer();
     this.build();
     this.caption = new Caption(this.gl);
@@ -322,9 +393,11 @@ export class Engine implements StageEngine {
       case "look":
         this.setLook(message.name, message.look);
         break;
-      case "speak":
-        void this.speak(message.id, message.text, message.emotion, message.audioUrl, message.durationMs);
+      case "speak": {
+        const { t: _t, ...line } = message;
+        this.speaker.speak(line);
         break;
+      }
       case "prefetch":
         this.audio.prefetch(message.audioUrl);
         break;
@@ -479,21 +552,6 @@ export class Engine implements StageEngine {
     this.speaker.stop();
     this.audio.destroy();
     this.events.clear();
-  }
-
-  // ---- speech -------------------------------------------------------------
-
-  private async speak(id: string, text: string, emotion: Emotion, audioUrl: string | null, durationMs: number): Promise<void> {
-    this.face.setEmotion(emotion);
-    this.emotionUntil = Infinity;
-    this.caption.show(text);
-    await this.speaker.speak(id, text, audioUrl, durationMs, {
-      started: (durationS) => this.caption.start(this.time, durationS),
-      finished: () => {
-        this.caption.finish(this.time);
-        this.emotionUntil = this.time + 2.5;
-      },
-    });
   }
 
   private alert(kind: "gift" | "follow" | "share", name: string, detail: string, diamonds: number): void {
@@ -888,7 +946,10 @@ class FallbackEngine implements StageEngine {
   }
 
   apply(message: StageServerPayload): void {
-    if (message.t === "speak") void this.speaker.speak(message.id, message.text, message.audioUrl, message.durationMs);
+    if (message.t === "speak") {
+      const { t: _t, ...line } = message;
+      this.speaker.speak(line);
+    }
     else if (message.t === "prefetch") this.audio.prefetch(message.audioUrl);
     else if (message.t === "stop") this.speaker.stop();
     else if (message.t === "hello" || message.t === "look") this.setLook(message.name);

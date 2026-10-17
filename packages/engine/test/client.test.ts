@@ -71,12 +71,15 @@ describe("connectStage", () => {
     expect(engine.applied).toEqual([]);
   });
 
-  it("reports spoken cues back to the server", async () => {
+  it("reports when cues start and finish", async () => {
     const { socket } = setup();
     socket().open();
     socket().receive({ v: 1, t: "speak", id: "cue-1", text: "Hi", emotion: "happy", audioUrl: null, durationMs: 800 });
     await Promise.resolve();
-    expect(socket().sent.at(-1)).toEqual({ v: PROTOCOL_VERSION, t: "spoken", id: "cue-1" });
+    expect(socket().sent.slice(-2)).toEqual([
+      { v: PROTOCOL_VERSION, t: "started", id: "cue-1", durationMs: 800 },
+      { v: PROTOCOL_VERSION, t: "spoken", id: "cue-1" },
+    ]);
   });
 
   it("reconnects with backoff after losing the connection", () => {
@@ -137,6 +140,7 @@ describe("connectStage", () => {
     connection.close();
     expect(timers.pending).toHaveLength(0);
     expect(engine.listeners.spoken.size).toBe(0);
+    expect(engine.listeners.started.size).toBe(0);
     expect(states.at(-1)).toBe("closed");
   });
 });

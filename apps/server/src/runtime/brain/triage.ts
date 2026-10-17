@@ -64,6 +64,11 @@ export class Triage {
       return this.drop("duplicate of queued message");
     }
 
+    if (event.kind === "gift") {
+      const merged = this.mergeGift(event, ttl);
+      if (merged) return { queued: true, item: merged };
+    }
+
     const item: QueueItem = { event, priority, expiresAt: this.now() + ttl };
     this.queue.push(item);
     this.queue.sort((a, b) => b.priority - a.priority);
@@ -161,6 +166,24 @@ export class Triage {
     if (repeated) return "repeated message";
     if (inWindow.length >= FLOOD_MAX_MESSAGES) return "flooding";
     return undefined;
+  }
+
+  /**
+   * Folds a gift into one already waiting from the same viewer (same gift),
+   * so a burst of roses becomes one "ten roses" thank-you, not ten.
+   */
+  private mergeGift(event: Extract<LiveEvent, { kind: "gift" }>, ttl: number): QueueItem | undefined {
+    this.prune();
+    const index = this.queue.findIndex(
+      (item) => item.event.kind === "gift" && item.event.viewer.id === event.viewer.id && item.event.giftName === event.giftName,
+    );
+    const item = this.queue[index];
+    if (!item || item.event.kind !== "gift") return undefined;
+    const combined: LiveEvent = { ...item.event, count: item.event.count + event.count, diamonds: item.event.diamonds + event.diamonds };
+    const merged: QueueItem = { event: combined, priority: this.score(combined) as number, expiresAt: this.now() + ttl };
+    this.queue[index] = merged;
+    this.queue.sort((a, b) => b.priority - a.priority);
+    return merged;
   }
 
   private isDuplicateQueued(text: string): boolean {

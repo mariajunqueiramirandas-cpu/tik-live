@@ -6,7 +6,7 @@ import type { EngineEvents, EngineMode, StageEngine, Telemetry } from "../src/en
 export class FakeEngine implements StageEngine {
   readonly audio = new AudioEngine();
   readonly applied: StageServerPayload[] = [];
-  readonly listeners: { [K in keyof EngineEvents]: Set<EngineEvents[K]> } = { spoken: new Set(), telemetry: new Set() };
+  readonly listeners: { [K in keyof EngineEvents]: Set<EngineEvents[K]> } = { started: new Set(), spoken: new Set(), telemetry: new Set() };
   failed: string | null = null;
   autoSpeak = true;
 
@@ -14,7 +14,12 @@ export class FakeEngine implements StageEngine {
 
   apply(message: StageServerPayload): void {
     this.applied.push(message);
-    if (message.t === "speak" && this.autoSpeak) queueMicrotask(() => this.emit("spoken", message.id));
+    if (message.t === "speak" && this.autoSpeak) {
+      queueMicrotask(() => {
+        this.emit("started", message.id, message.durationMs);
+        this.emit("spoken", message.id);
+      });
+    }
   }
   setLook(_name: string, _look: Look): void {}
   setEmotion(_emotion: Emotion): void {}

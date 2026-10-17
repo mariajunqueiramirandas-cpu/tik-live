@@ -72,6 +72,8 @@ export const stageClientMessageSchema = z.discriminatedUnion("t", [
     engine: z.string().max(40),
     caps: z.object({ webgl2: z.boolean(), audio: z.boolean() }),
   }),
+  /** A line's audio started on this stage; `durationMs` is how long it really is. */
+  z.object({ v: z.number(), t: z.literal("started"), id: z.string().max(64), durationMs: z.number().min(0).max(600_000) }),
   z.object({ v: z.number(), t: z.literal("spoken"), id: z.string().max(64) }),
   z.object({
     v: z.number(),

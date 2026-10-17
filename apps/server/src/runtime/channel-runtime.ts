@@ -278,7 +278,8 @@ export class ChannelRuntime {
         const utterance = toUtterance(command.text);
         if (!utterance) return { ok: false, error: "There's nothing speakable in that line." };
         this.sayTimes.push(now);
-        this.speech.enqueue(utterance, { trusted: true });
+        // Right after the sentence on stage, ahead of the host's queued lines.
+        this.speech.enqueue(utterance, { trusted: true, front: true });
         return { ok: true };
       }
       case "inject": {

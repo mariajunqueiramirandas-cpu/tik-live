@@ -15,8 +15,12 @@ import type { StageNotifier } from "./brain/director";
 import { BACKPRESSURE_BYTES, type Peer } from "./peer";
 import type { SpeechCue, SpeechOutput } from "./voice/pipeline";
 
-/** Extra time a stage gets past the cue's estimated duration before we move on anyway. */
-const PLAYBACK_GRACE_MS = 4_000;
+/** Time a stage gets to fetch and decode a line before it must have started. */
+const START_GRACE_MS = 4_000;
+/** Extra time past a started line's real duration before we move on anyway. */
+const END_GRACE_MS = 1_500;
+/** Stats change with every like; stages need them a few times a second at most. */
+const STATS_INTERVAL_MS = 250;
 
 export interface EngineTelemetry {
   fps: number;
@@ -44,6 +48,16 @@ export interface StageHubOptions {
 
 export type CueListener = (cue: SpeechCue, at: number) => void;
 
+/** A line on stage, waiting for every on-air stage that got it to finish. */
+interface Playback {
+  cue: SpeechCue;
+  /** On-air stages still playing it. */
+  pending: Set<string>;
+  /** Moves the deadline (a stage started the line and told us how long it really is). */
+  rearm(ms: number): void;
+  done(): void;
+}
+
 /**
  * The channel's link to its stage clients (OBS sources, previews, the cloud
  * broadcaster). Lives as long as the channel has connections or a running
@@ -52,9 +66,11 @@ export type CueListener = (cue: SpeechCue, at: number) => void;
  */
 export class StageHub implements SpeechOutput, StageNotifier {
   private readonly peers = new Map<string, StagePeer>();
-  private readonly waiters = new Map<string, () => void>();
+  private readonly playing = new Map<string, Playback>();
   private lastSegment: Segment | undefined;
   private lastStats: { viewers: number; likes: number } | undefined;
+  private statsSentAt = 0;
+  private statsTimer: ReturnType<typeof setTimeout> | undefined;
   private telemetry: EngineTelemetry | null = null;
   private cueListener: CueListener | null = null;
   private readonly now: () => number;
@@ -81,6 +97,8 @@ export class StageHub implements SpeechOutput, StageNotifier {
     const entry = this.peers.get(peerId);
     if (!entry) return;
     this.peers.delete(peerId);
+    // A stage that left can't finish its lines; don't wait for it.
+    for (const playback of [...this.playing.values()]) this.settle(playback, peerId);
     this.options.log?.debug(`${entry.role} stage disconnected`);
   }
 
@@ -93,10 +111,17 @@ export class StageHub implements SpeechOutput, StageNotifier {
       case "ready":
         entry.role = message.role;
         break;
-      case "spoken":
-        // Only stages that are really on air pace the host; previews don't.
-        if (entry.role !== "preview") this.waiters.get(message.id)?.();
+      case "started": {
+        const playback = this.playing.get(message.id);
+        if (playback?.pending.has(peerId)) playback.rearm((message.durationMs || playback.cue.durationMs) + END_GRACE_MS);
         break;
+      }
+      case "spoken": {
+        // Only stages that are really on air pace the host; previews don't.
+        const playback = this.playing.get(message.id);
+        if (playback) this.settle(playback, peerId);
+        break;
+      }
       case "telemetry":
         if (entry.role !== "preview") {
           this.telemetry = {
@@ -153,6 +178,8 @@ export class StageHub implements SpeechOutput, StageNotifier {
   }
 
   closeAll(code = 1001, reason = "channel removed"): void {
+    clearTimeout(this.statsTimer);
+    this.statsTimer = undefined;
     for (const { peer } of this.peers.values()) peer.close(code, reason);
     this.peers.clear();
   }
@@ -164,33 +191,50 @@ export class StageHub implements SpeechOutput, StageNotifier {
     if (audioUrl) this.broadcast({ t: "prefetch", audioUrl });
   }
 
+  /**
+   * Sends a line and resolves once every on-air stage that got it finished
+   * it (ADR-0022): the show never runs ahead of the slowest stage on air, so
+   * no stage has a sentence cut short by the next one. A stage that stalls
+   * is waited for until the line should have ended plus a grace period.
+   */
   play(cue: SpeechCue, signal: AbortSignal): Promise<void> {
     const audioUrl = this.audioUrlFor(cue);
     this.broadcast({ t: "speak", id: cue.id, text: cue.text, emotion: cue.emotion, audioUrl, durationMs: cue.durationMs });
     this.cueListener?.(cue, this.now());
 
-    // With no on-air stage connected (e.g. OBS not open yet), pace speech by
-    // its estimated duration so the show's rhythm stays realistic.
-    const { program, broadcast } = this.counts();
-    const onAir = program + broadcast > 0;
-    const timeoutMs = onAir ? cue.durationMs + PLAYBACK_GRACE_MS : cue.durationMs;
-
+    const onAir = [...this.peers].filter(([, entry]) => entry.role !== "preview").map(([id]) => id);
     return new Promise((resolve) => {
-      const done = () => {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", done);
-        this.waiters.delete(cue.id);
-        resolve();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const playback: Playback = {
+        cue,
+        pending: new Set(onAir),
+        rearm: (ms) => {
+          clearTimeout(timer);
+          timer = setTimeout(playback.done, ms);
+        },
+        done: () => {
+          clearTimeout(timer);
+          signal.removeEventListener("abort", playback.done);
+          if (this.playing.get(cue.id) === playback) this.playing.delete(cue.id);
+          resolve();
+        },
       };
-      const timer = setTimeout(done, timeoutMs);
-      signal.addEventListener("abort", done, { once: true });
-      this.waiters.set(cue.id, done);
+      // With no on-air stage connected (e.g. OBS not open yet), pace speech by
+      // its estimated duration so the show's rhythm stays realistic.
+      playback.rearm(onAir.length > 0 ? cue.durationMs + START_GRACE_MS : cue.durationMs);
+      signal.addEventListener("abort", playback.done, { once: true });
+      this.playing.set(cue.id, playback);
     });
   }
 
   interrupt(): void {
     this.broadcast({ t: "stop" });
-    for (const done of [...this.waiters.values()]) done();
+    for (const playback of [...this.playing.values()]) playback.done();
+  }
+
+  private settle(playback: Playback, peerId: string): void {
+    if (!playback.pending.delete(peerId)) return;
+    if (playback.pending.size === 0) playback.done();
   }
 
   private audioUrlFor(cue: SpeechCue): string | null {
@@ -216,9 +260,18 @@ export class StageHub implements SpeechOutput, StageNotifier {
     this.broadcast({ t: "segment", title: segment.title });
   }
 
+  /** Coalesced: a like storm becomes at most a few stats messages a second. */
   stats(stats: { viewers: number; likes: number }): void {
     this.lastStats = stats;
-    this.broadcast({ t: "stats", ...stats });
+    if (this.statsTimer) return;
+    const send = () => {
+      this.statsTimer = undefined;
+      this.statsSentAt = this.now();
+      if (this.lastStats) this.broadcast({ t: "stats", ...this.lastStats });
+    };
+    const wait = this.statsSentAt + STATS_INTERVAL_MS - this.now();
+    if (wait <= 0) send();
+    else this.statsTimer = setTimeout(send, wait);
   }
 
   // ---- internals ----------------------------------------------------------

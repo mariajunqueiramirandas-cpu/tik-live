@@ -189,3 +189,104 @@ describe("Director", () => {
     expect(director.segment().id).toBe("c");
   });
 });
+
+/** A stage that holds each line until the test lets it finish. */
+class HeldOutput implements SpeechOutput {
+  played: string[] = [];
+  private release: (() => void) | undefined;
+  play(cue: { text: string }): Promise<void> {
+    this.played.push(cue.text);
+    return new Promise((resolve) => (this.release = resolve));
+  }
+  interrupt(): void {
+    this.finish();
+  }
+  finish(): void {
+    const release = this.release;
+    this.release = undefined;
+    release?.();
+  }
+}
+
+/** Says three sentences per turn, so there's always something queued to cut. */
+class ChattyHost implements HostBrain {
+  readonly name = "chatty";
+  turns: TurnRequest[] = [];
+  async *generate(turn: TurnRequest): AsyncGenerator<Utterance> {
+    this.turns.push(turn);
+    for (const n of [1, 2, 3]) yield { text: `${turn.kind} ${n}`, emotion: "neutral" };
+  }
+  reconfigure(): void {}
+}
+
+function liveSetup() {
+  const clock = fakeClock();
+  const memory = new ViewerMemory({ now: clock.now });
+  const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
+  const output = new HeldOutput();
+  const events = { onSpoken: (cue: { text: string }) => director.noteSpoken(cue.text) };
+  const speech = new SpeechPipeline(new NoTts(), new SafetyGate({ blocklist: [] }), output, events, clock.now);
+  const host = new ChattyHost();
+  const director: Director = new Director({ persona, host, triage, memory, speech, stage, deadAirMs: 7_000, now: clock.now });
+  const flush = async () => {
+    for (let i = 0; i < 30; i++) await new Promise((r) => setImmediate(r));
+  };
+  const step = async (ms = 0) => {
+    clock.advance(ms);
+    await director.tick();
+    await flush();
+  };
+  /** Lets the line on stage finish and the next one start. */
+  const next = async () => {
+    output.finish();
+    await flush();
+  };
+  return { director, host, output, speech, step, next };
+}
+
+describe("Director turn-taking", () => {
+  it("lets a gift cut a filler short, but only after the sentence on stage", async () => {
+    const { director, host, output, speech, step, next } = liveSetup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    for (let i = 0; i < 3; i++) await next(); // the opening plays out
+    await step(8_000);
+    expect(host.turns.map((t) => t.kind)).toEqual(["opening", "filler"]);
+    expect(output.played.at(-1)).toBe("filler 1");
+    expect(speech.pending()).toBe(2);
+
+    director.handleEvent(gift("maria", "Rose", 1));
+    expect(speech.pending()).toBe(0); // filler 2 and 3 dropped; filler 1 still on stage
+    await step(); // no gap after yielding
+    expect(host.turns.map((t) => t.kind)).toEqual(["opening", "filler", "react"]);
+    await next();
+    expect(output.played.slice(-2)).toEqual(["filler 1", "react 1"]);
+  });
+
+  it("never cuts a reaction short for another event", async () => {
+    const { director, host, speech, step, next } = liveSetup();
+    await step();
+    for (let i = 0; i < 3; i++) await next();
+    director.handleEvent(chat("joe", "hello host"));
+    await step(2_000);
+    expect(host.turns.at(-1)?.kind).toBe("react");
+    director.handleEvent(gift("maria", "Lion", 500));
+    expect(speech.pending()).toBe(2); // react 2 and 3 stay
+  });
+
+  it("tells the model what it's still about to say, and keeps busy replies brief", async () => {
+    const { director, host, step, next } = liveSetup();
+    await step();
+    await next(); // "opening 1" done; "opening 2" on stage; "opening 3" queued
+    director.handleEvent(chat("ana", "first question?"));
+    await step(2_000);
+    expect(host.turns).toHaveLength(1); // waits until the opening's last line is on stage
+    await next();
+    for (const name of ["b", "c", "d", "e", "f"]) director.handleEvent(chat(name, `message from ${name}`));
+    await step(2_000);
+    const react = host.turns.at(-1)!;
+    expect(react.kind).toBe("react");
+    expect(react.recentLines).toEqual(["opening 1", "opening 2", "opening 3"]);
+    expect(react.brief).toBe(true); // more than one turn's worth waiting
+  });
+});

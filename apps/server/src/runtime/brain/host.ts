@@ -14,6 +14,9 @@ export interface HostBrain {
   reconfigure(update: { persona?: Persona; safety?: SafetySettings; speechLanguage?: string | null }): void;
 }
 
+/** Longest reply when chat is busy (the prompt asks for one or two sentences). */
+const BRIEF_SENTENCES = 2;
+
 /** Models that accept server-side refusal fallbacks (`fallbacks: "default"`). */
 const FALLBACK_CAPABLE = new Set(["claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-sonnet-5-5"]);
 
@@ -74,7 +77,7 @@ export class ClaudeHost implements HostBrain {
     );
 
     const splitter = new SentenceSplitter();
-    const maxUtterances = persona.maxSentences + 1;
+    const maxUtterances = turn.brief ? BRIEF_SENTENCES : persona.maxSentences + 1;
     let emotion: Emotion = "neutral";
     let produced = 0;
 
@@ -171,7 +174,7 @@ export class ScriptedHost implements HostBrain {
       }
       case "react": {
         const out: string[] = [];
-        for (const item of turn.items.slice(0, 3)) {
+        for (const item of turn.items.slice(0, turn.brief ? 2 : 3)) {
           const e = item.event;
           if (e.kind === "gift") out.push(`[excited] ${name(item)}, thank you for the ${e.count} ${e.giftName}!`);
           else if (e.kind === "follow") out.push(`[love] Thanks for the follow, ${name(item)}!`);
