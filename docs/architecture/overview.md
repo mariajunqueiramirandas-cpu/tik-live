@@ -167,9 +167,10 @@ sequenceDiagram
     R->>M: is this safe?
     R->>V: synthesize
   end
-  R->>S: speak {cue, emotion, audioUrl}
-  S->>R: GET audio, play, ack "spoken"
-  R->>R: next sentence or next turn
+  R->>S: cue {id, emotion, audioUrl, word timings} (one line ahead)
+  S->>R: GET audio while the line before plays
+  S->>R: ack "spoken" (back to back, never cut off)
+  R->>R: send the next queued line; start the next turn just in time (ADR-0022)
 ```
 
 ### Channel start and recovery
