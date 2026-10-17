@@ -31,7 +31,7 @@ export function LineChart({ points, label, formatX, formatY, height = 220 }: { p
     return () => observer.disconnect();
   }, []);
 
-  if (points.length < 2) return <p className={s.empty}>Not enough data for a chart yet.</p>;
+  if (points.length < 2) return <p className={s.empty}>Ainda não há dados para o gráfico.</p>;
 
   const pad = { left: 44, right: 12, top: 12, bottom: 28 };
   const w = width - pad.left - pad.right;
@@ -87,7 +87,7 @@ export function LineChart({ points, label, formatX, formatY, height = 220 }: { p
       </svg>
       {active && (
         <div className={s.tip} style={{ left: Math.min(width - 140, Math.max(0, x(active.t) - 70)) }} aria-hidden>
-          <strong>{formatY(active.v)}</strong> watching
+          <strong>{formatY(active.v)}</strong> assistindo
           <span>{formatX(active.t)}</span>
         </div>
       )}

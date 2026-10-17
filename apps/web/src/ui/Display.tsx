@@ -14,12 +14,12 @@ export function Skeleton({ width = "100%", height = 16, style, className }: { wi
 }
 
 const STATUS: Record<RuntimeStatus, { label: string; tone?: "live" | "waiting" | "failed" }> = {
-  stopped: { label: "Off air" },
-  starting: { label: "Starting", tone: "waiting" },
-  standby: { label: "Waiting for TikTok", tone: "waiting" },
-  live: { label: "Live", tone: "live" },
-  stopping: { label: "Stopping", tone: "waiting" },
-  failed: { label: "Needs attention", tone: "failed" },
+  stopped: { label: "Fora do ar" },
+  starting: { label: "Iniciando", tone: "waiting" },
+  standby: { label: "Aguardando a live", tone: "waiting" },
+  live: { label: "Ao vivo", tone: "live" },
+  stopping: { label: "Parando", tone: "waiting" },
+  failed: { label: "Precisa de atenção", tone: "failed" },
 };
 
 export function statusLabel(status: RuntimeStatus): string {
@@ -76,14 +76,14 @@ export function CopyField({ value, label, id, ...aria }: { value: string; label:
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast.error("Couldn't copy", "Select the text and copy it by hand.");
+      toast.error("Não deu para copiar", "Selecione o texto e copie manualmente.");
     }
   };
   return (
     <div className={c.copy}>
       <input id={id} className={c.input} value={value} readOnly onFocus={(e) => e.currentTarget.select()} aria-label={id ? undefined : label} {...aria} />
       <Button onClick={copy} icon={copied ? <Check aria-hidden /> : <Copy aria-hidden />} aria-live="polite">
-        {copied ? "Copied" : "Copy"}
+        {copied ? "Copiado" : "Copiar"}
       </Button>
     </div>
   );

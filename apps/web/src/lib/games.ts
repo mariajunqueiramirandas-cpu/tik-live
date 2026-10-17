@@ -2,40 +2,40 @@ import type { GameKind, GameStatus } from "@tik-live/shared";
 
 /** One line on how viewers play each game, for pickers and hints. */
 export const GAME_HOW: Record<GameKind, string> = {
-  trivia: "A question with up to four options. Viewers type the letter.",
-  poll: "Chat votes between two to four options. No winners, just opinions.",
-  scramble: "Unscramble the word. The first viewer to type it wins.",
-  number: "Guess the secret number. The stage narrows the range after each guess.",
-  truefalse: "True or false? Viewers type T or F.",
-  math: "Solve the sum. The first right answer wins.",
-  riddle: "Answer the riddle. The first right answer wins.",
-  fastest: "Type the word on screen. The fastest typer wins.",
+  trivia: "Uma pergunta com até quatro opções. O chat responde com a letra.",
+  poll: "O chat vota entre duas e quatro opções. Sem vencedor, só opinião.",
+  scramble: "Desembaralhe a palavra. Ganha quem digitar primeiro.",
+  number: "Adivinhe o número secreto. A cada palpite, o palco diminui o intervalo.",
+  truefalse: "Verdadeiro ou falso? O chat digita V ou F.",
+  math: "Resolva a conta. Ganha a primeira resposta certa.",
+  riddle: "Responda a charada. Ganha a primeira resposta certa.",
+  fastest: "Digite a palavra que aparece na tela. Ganha quem for mais rápido.",
 };
 
-/** What one entry from chat is called, per game: "12 votes", "3 guesses". */
+/** What one entry from chat is called, per game: "12 votos", "3 palpites". */
 export const ANSWER_WORD: Record<GameKind, [one: string, many: string]> = {
-  trivia: ["answer", "answers"],
-  poll: ["vote", "votes"],
-  scramble: ["guess", "guesses"],
-  number: ["guess", "guesses"],
-  truefalse: ["answer", "answers"],
-  math: ["answer", "answers"],
-  riddle: ["guess", "guesses"],
-  fastest: ["try", "tries"],
+  trivia: ["resposta", "respostas"],
+  poll: ["voto", "votos"],
+  scramble: ["palpite", "palpites"],
+  number: ["palpite", "palpites"],
+  truefalse: ["resposta", "respostas"],
+  math: ["resposta", "respostas"],
+  riddle: ["palpite", "palpites"],
+  fastest: ["tentativa", "tentativas"],
 };
 
-export const TOPIC_PLACEHOLDER = "Anything, or e.g. 90s cartoons";
+export const TOPIC_PLACEHOLDER = "Ex.: desenhos dos anos 90";
 
-/** "Round 2 of 5", or "Writing questions…" before the first one. */
+/** "Rodada 2/5", or "Escrevendo as perguntas…" before the first one. */
 export function gamePhase(game: GameStatus): string {
   switch (game.phase) {
     case "preparing":
-      return "Writing questions…";
+      return "Escrevendo as perguntas…";
     case "open":
-      return `Round ${game.round} of ${game.rounds}`;
+      return `Rodada ${game.round}/${game.rounds}`;
     case "reveal":
-      return "Revealing the answer";
+      return "Revelando a resposta";
     case "results":
-      return "Final scores";
+      return "Placar final";
   }
 }

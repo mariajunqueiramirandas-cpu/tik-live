@@ -20,12 +20,12 @@ test("landing page", async ({ page }) => {
 
 test("dashboard screens", async ({ page }) => {
   await page.goto("/app/new");
-  await audit(page, "create a host");
-  await page.getByLabel("Name").fill("A11y host");
-  await page.getByRole("button", { name: "Create host" }).click();
+  await audit(page, "criar apresentador");
+  await page.getByLabel("Nome").fill("Apresentador A11y");
+  await page.getByRole("button", { name: "Criar apresentador" }).click();
   await expect(page).toHaveURL(/\/app\/hosts\/[^/]+$/);
   const host = page.url();
-  await expect(page.getByText("is off air")).toBeVisible();
+  await expect(page.getByText("está fora do ar")).toBeVisible();
   await audit(page, "studio");
   for (const tab of ["character", "character?tab=voice", "character?tab=show", "safety", "setup", "analytics"]) {
     await page.goto(`${host}/${tab}`);

@@ -29,7 +29,7 @@ export default function SignIn() {
           <ClerkSignIn />
         </Suspense>
       ) : (
-        <p className={s.note}>Taking you to sign in…</p>
+        <p className={s.note}>Levando você para entrar…</p>
       )}
     </main>
   );

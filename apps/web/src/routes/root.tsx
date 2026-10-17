@@ -8,16 +8,16 @@ import { HostSwatch, LanternMark } from "../components/Brand";
 import { prefetchProps } from "../lib/prefetch";
 import { useChannels, useMe } from "../lib/query";
 import { count } from "../lib/format";
-import { Skeleton, Status } from "../ui/Display";
+import { Skeleton, Status, statusLabel } from "../ui/Display";
 import { cx } from "../ui/cx";
 import s from "./shell.module.css";
 
 function HostList({ onNavigate }: { onNavigate?: () => void }) {
   const { data: channels, isPending } = useChannels();
   return (
-    <nav aria-label="Your hosts" className={s.hosts}>
+    <nav aria-label="Seus apresentadores" className={s.hosts}>
       <p className={s.navHeading} id="hosts-heading">
-        Hosts
+        Apresentadores
       </p>
       {isPending ? (
         <div className={s.hostSkeletons}>
@@ -38,12 +38,12 @@ function HostList({ onNavigate }: { onNavigate?: () => void }) {
                 <HostSwatch look={channel.persona.look} size={24} />
                 <span className={s.hostName}>{channel.name}</span>
                 {channel.runtime.status === "live" ? (
-                  <span className={s.hostLive} aria-label={`Live, ${channel.runtime.viewers} watching`}>
+                  <span className={s.hostLive} aria-label={`Ao vivo, ${channel.runtime.viewers} assistindo`}>
                     {count(channel.runtime.viewers)}
                   </span>
                 ) : channel.runtime.status !== "stopped" ? (
                   <Status status={channel.runtime.status}>
-                    <span className="visually-hidden">{channel.runtime.status}</span>
+                    <span className="visually-hidden">{statusLabel(channel.runtime.status)}</span>
                   </Status>
                 ) : null}
               </NavLink>
@@ -52,7 +52,7 @@ function HostList({ onNavigate }: { onNavigate?: () => void }) {
         </ul>
       )}
       <Link to="/app/new" className={s.newHost} onClick={onNavigate} {...prefetchProps("/app/new")}>
-        <Plus aria-hidden /> New host
+        <Plus aria-hidden /> Novo apresentador
       </Link>
     </nav>
   );
@@ -68,19 +68,19 @@ function SidebarContent({ onNavigate, onSearch }: { onNavigate?: () => void; onS
       </Link>
       <button type="button" className={s.search} onClick={onSearch}>
         <Search aria-hidden />
-        <span>Go to…</span>
+        <span>Ir para…</span>
         <kbd>{navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K"}</kbd>
       </button>
       <HostList onNavigate={onNavigate} />
-      <nav aria-label="Account" className={s.footerNav}>
+      <nav aria-label="Conta" className={s.footerNav}>
         <NavLink to="/app/billing" className={({ isActive }) => cx(s.footerLink, isActive && s.active)} onClick={onNavigate} {...prefetchProps("/app/billing")}>
           <CreditCard aria-hidden />
-          <span>Plan and billing</span>
+          <span>Plano e assinatura</span>
         </NavLink>
         <NavLink to="/app/account" className={({ isActive }) => cx(s.footerLink, isActive && s.active)} onClick={onNavigate} {...prefetchProps("/app/account")}>
           <UserRound aria-hidden />
-          <span>Account</span>
-          {me?.devUser && <span className={s.dev}>Test user: {me.devUser}</span>}
+          <span>Conta</span>
+          {me?.devUser && <span className={s.dev}>Teste: {me.devUser}</span>}
         </NavLink>
       </nav>
     </>
@@ -96,7 +96,7 @@ function NavigationProgress() {
     const timer = setTimeout(() => setVisible(true), 150);
     return () => clearTimeout(timer);
   }, [navigation.state]);
-  return <div className={cx(s.progress, visible && s.progressOn)} role="progressbar" aria-hidden={!visible} aria-label="Loading" />;
+  return <div className={cx(s.progress, visible && s.progressOn)} role="progressbar" aria-hidden={!visible} aria-label="Carregando" />;
 }
 
 export function Root() {
@@ -123,7 +123,7 @@ export function Root() {
   return (
     <div className={s.shell}>
       <a href="#main" className={s.skip}>
-        Skip to content
+        Pular para o conteúdo
       </a>
       <NavigationProgress />
       <aside className={s.sidebar}>
@@ -136,14 +136,14 @@ export function Root() {
           <span>{PRODUCT_NAME}</span>
         </Link>
         <RadixDialog.Root open={drawer} onOpenChange={setDrawer}>
-          <RadixDialog.Trigger className={s.menuButton} aria-label="Open menu">
+          <RadixDialog.Trigger className={s.menuButton} aria-label="Abrir menu">
             <MenuIcon aria-hidden />
           </RadixDialog.Trigger>
           <RadixDialog.Portal>
             <RadixDialog.Overlay className={s.drawerOverlay} />
             <RadixDialog.Content className={s.drawer} aria-describedby={undefined}>
               <RadixDialog.Title className="visually-hidden">Menu</RadixDialog.Title>
-              <RadixDialog.Close className={s.drawerClose} aria-label="Close menu">
+              <RadixDialog.Close className={s.drawerClose} aria-label="Fechar menu">
                 <X aria-hidden />
               </RadixDialog.Close>
               <SidebarContent

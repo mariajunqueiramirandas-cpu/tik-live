@@ -25,7 +25,7 @@ export function Field({ label, hint, error, optional, count, children, className
     <div className={cx(s.field, className)}>
       <div className={s.labelRow}>
         <label className={s.label} htmlFor={id}>
-          {label} {optional && <span className={s.optional}>Optional</span>}
+          {label} {optional && <span className={s.optional}>Opcional</span>}
         </label>
         {count && (
           <span className={s.counter} aria-live="polite">
@@ -186,7 +186,7 @@ export function Chips({
       {values.map((value, i) => (
         <span key={`${value}-${i}`} className={s.chip}>
           <span className={s.chipText}>{value}</span>
-          <button type="button" className={s.chipRemove} onClick={() => onChange(values.filter((_, j) => j !== i))} aria-label={`Remove "${value}"`}>
+          <button type="button" className={s.chipRemove} onClick={() => onChange(values.filter((_, j) => j !== i))} aria-label={`Remover "${value}"`}>
             <X aria-hidden />
           </button>
         </span>
@@ -198,7 +198,7 @@ export function Chips({
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={onKeyDown}
         onBlur={add}
-        placeholder={values.length >= max ? `That's the limit (${max})` : placeholder}
+        placeholder={values.length >= max ? `Chegou ao limite (${max})` : placeholder}
         disabled={values.length >= max}
         maxLength={maxLength}
         {...aria}
@@ -214,7 +214,7 @@ export function ColorField({ id, value, onChange, label }: { id?: string; value:
   return (
     <div className={s.color}>
       <span className={s.swatch} style={{ background: value }}>
-        <input type="color" value={value.toLowerCase()} onChange={(e) => onChange(e.target.value.toUpperCase())} aria-label={`${label}: pick a color`} />
+        <input type="color" value={value.toLowerCase()} onChange={(e) => onChange(e.target.value.toUpperCase())} aria-label={`${label}: escolher cor`} />
       </span>
       <input
         id={id}

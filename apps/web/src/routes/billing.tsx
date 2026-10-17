@@ -1,9 +1,10 @@
+import { PLANS } from "@tik-live/shared";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, ApiError, call, errorMessage } from "../lib/api";
-import { dateTime, duration, money } from "../lib/format";
+import { dateTime, duration, money, usd } from "../lib/format";
 import { keys, queries, queryClient } from "../lib/query";
 import type { BillingStatus } from "../lib/types";
 import { Button, ButtonLink } from "../ui/Button";
@@ -21,21 +22,21 @@ function subscriptionLine(sub: Subscription): { text: string; tone: "ok" | "warn
   const next = sub.nextPaymentAt ? dateTime(sub.nextPaymentAt) : null;
   switch (sub.status) {
     case "authorized":
-      if (sub.lastPaymentStatus === "rejected" && sub.graceUntil) return { text: `The last payment didn't go through. Mercado Pago retries; your plan stays active until ${dateTime(sub.graceUntil)}.`, tone: "bad" };
-      return { text: next ? `Renews ${next}` : "Active", tone: "ok" };
+      if (sub.lastPaymentStatus === "rejected" && sub.graceUntil) return { text: `O último pagamento não passou. O Mercado Pago vai tentar de novo; seu plano continua ativo até ${dateTime(sub.graceUntil)}.`, tone: "bad" };
+      return { text: next ? `Renova em ${next}` : "Ativo", tone: "ok" };
     case "pending":
-      return { text: "Waiting for Mercado Pago to confirm your payment.", tone: "warn" };
+      return { text: "Aguardando o Mercado Pago confirmar seu pagamento.", tone: "warn" };
     case "paused":
-      return { text: "Paused in Mercado Pago. Resume it there to keep your plan.", tone: "warn" };
+      return { text: "Pausada no Mercado Pago. Retome por lá para manter seu plano.", tone: "warn" };
     case "cancelled":
-      return { text: sub.graceUntil ? `Cancelled. Your plan stays active until ${dateTime(sub.graceUntil)}.` : "Cancelled.", tone: "warn" };
+      return { text: sub.graceUntil ? `Cancelada. Seu plano continua ativo até ${dateTime(sub.graceUntil)}.` : "Cancelada.", tone: "warn" };
   }
 }
 
 function PlanRow({ offer, current, billing, onChoose, busy }: { offer: Offer; current: boolean; billing: BillingStatus; onChoose: (offer: Offer) => void; busy: boolean }) {
   const sub = billing.subscription;
   const subscribed = sub && sub.status === "authorized";
-  const action = current ? null : offer.purchasable ? (subscribed ? `Switch to ${offer.name}` : `Choose ${offer.name}`) : null;
+  const action = current ? null : offer.purchasable ? (subscribed ? `Mudar para ${offer.name}` : `Escolher ${offer.name}`) : null;
   return (
     <li className={cx(s.plan, current && s.current)}>
       <div className={s.planName}>
@@ -51,17 +52,17 @@ function PlanRow({ offer, current, billing, onChoose, busy }: { offer: Offer; cu
       </ul>
       <div className={s.price}>
         {offer.price === null || offer.price === 0 ? (
-          <span className={s.free}>{offer.id === "free" || offer.price === 0 ? "Free" : "Contact us"}</span>
+          <span className={s.free}>{offer.id === "free" || offer.price === 0 ? "Grátis" : "Fale com a gente"}</span>
         ) : (
           <>
             <span className="money">{money(offer.price, offer.currency)}</span>
-            <span className={s.per}>a month</span>
+            <span className={s.per}>por mês</span>
           </>
         )}
       </div>
       <div className={s.planAction}>
         {current ? (
-          <span className={s.currentLabel}>Your plan</span>
+          <span className={s.currentLabel}>Seu plano</span>
         ) : action && billing.enabled ? (
           <Button variant={offer.id === "creator" && !subscribed ? "primary" : "secondary"} onClick={() => onChoose(offer)} busy={busy}>
             {action}
@@ -89,7 +90,7 @@ export default function Billing() {
   useEffect(() => {
     if (watching && billing?.subscription?.status === "authorized") {
       setWatching(false);
-      toast.success(`You're on ${billing.plan.name}`, "Thanks for subscribing.");
+      toast.success(`Agora você está no ${billing.plan.name}`, "Obrigado por assinar.");
       setParams({}, { replace: true });
       void queryClient.invalidateQueries({ queryKey: keys.me });
     }
@@ -104,16 +105,16 @@ export default function Billing() {
       }
       void queryClient.invalidateQueries({ queryKey: keys.billing });
       void queryClient.invalidateQueries({ queryKey: keys.me });
-      toast.success(result.changed ? "Plan changed" : "You're already on that plan");
+      toast.success(result.changed ? "Plano alterado" : "Você já está nesse plano");
     },
-    onError: (error) => toast.error("Couldn't start checkout", error),
+    onError: (error) => toast.error("Não deu para abrir o pagamento", error),
   });
 
   const cancel = useMutation({
     mutationFn: () => call(api.api.billing.cancel.$post()),
     onSuccess: (status) => {
       queryClient.setQueryData(keys.billing, status);
-      toast.info("Renewal cancelled", "Your plan stays active until the end of the period you paid for.");
+      toast.info("Renovação cancelada", "Seu plano continua ativo até o fim do período pago.");
     },
   });
 
@@ -141,21 +142,21 @@ export default function Billing() {
     <div className={cx(p.page, p.narrow)}>
       <header className={p.header}>
         <div>
-          <h1>Plan and billing</h1>
-          <p className={p.lede}>Pay monthly through Mercado Pago. Change or cancel any time.</p>
+          <h1>Plano e assinatura</h1>
+          <p className={p.lede}>Pagamento mensal pelo Mercado Pago. Mude ou cancele quando quiser.</p>
         </div>
       </header>
 
       {watching && sub?.status !== "authorized" && (
-        <Banner title="Confirming your payment">Mercado Pago is confirming the subscription. This page updates on its own, usually within a minute.</Banner>
+        <Banner title="Confirmando seu pagamento">O Mercado Pago está confirmando a assinatura. Esta página se atualiza sozinha, em geral em até um minuto.</Banner>
       )}
       {!billing.enabled && (
-        <Banner tone="warn" title="Payments aren't set up on this server">
-          Everyone here is on the {billing.plan.name} plan. Plans below are shown for reference.
+        <Banner tone="warn" title="Os pagamentos não estão configurados neste servidor">
+          Todo mundo aqui está no plano {billing.plan.name}. Os planos abaixo são só para referência.
         </Banner>
       )}
       {emailProblem && (
-        <Banner tone="error" title="Add an email address first" action={<ButtonLink to="/app/account" size="sm">Account</ButtonLink>}>
+        <Banner tone="error" title="Adicione um e-mail primeiro" action={<ButtonLink to="/app/account" size="sm">Conta</ButtonLink>}>
           {errorMessage(checkout.error)}
         </Banner>
       )}
@@ -163,40 +164,40 @@ export default function Billing() {
       <Panel raised className={s.summary} aria-labelledby="current-heading">
         <div className={s.summaryMain}>
           <p className={s.dim} id="current-heading">
-            Current plan
+            Plano atual
           </p>
           <p className={s.planTitle}>{billing.plan.name}</p>
           {line && <p className={cx(s.subLine, s[line.tone])}>{line.text}</p>}
           {sub?.amount != null && sub.currency && (
             <p className={s.dim}>
-              <span className="money">{money(sub.amount, sub.currency)}</span> a month
+              <span className="money">{money(sub.amount, sub.currency)}</span> por mês
             </p>
           )}
         </div>
         <div className={s.usage}>
-          <p className={s.dim}>Live this month</p>
+          <p className={s.dim}>Ao vivo neste mês</p>
           <p className={s.usageValue}>
             {duration(billing.usage.liveSeconds * 1000)}
-            {limit !== null && <span className={s.dim}> of {limit} h</span>}
+            {limit !== null && <span className={s.dim}> de {limit} h</span>}
           </p>
           {limit !== null && (
-            <div className={s.meter} role="meter" aria-label="Live hours used" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={Math.round(hours * 10) / 10}>
+            <div className={s.meter} role="meter" aria-label="Horas ao vivo usadas" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={Math.round(hours * 10) / 10}>
               <span style={{ width: `${Math.min(100, (hours / limit) * 100)}%` }} data-high={hours / limit > 0.85 || undefined} />
             </div>
           )}
-          <p className={s.dim}>AI usage so far: about ${billing.usage.estimatedAiCostUsd.toFixed(2)}</p>
+          <p className={s.dim}>Uso de IA até agora: cerca de {usd(Math.round(billing.usage.estimatedAiCostUsd * 100) / 100)}</p>
         </div>
         {sub && sub.status === "authorized" && billing.enabled && (
           <div className={s.summaryActions}>
             <Button variant="quietDanger" size="sm" onClick={() => setConfirmCancel(true)}>
-              Cancel renewal
+              Cancelar renovação
             </Button>
           </div>
         )}
       </Panel>
 
       <section aria-labelledby="plans-heading" className={p.section}>
-        <h2 id="plans-heading">Plans</h2>
+        <h2 id="plans-heading">Planos</h2>
         <ul role="list" className={s.plans}>
           {billing.offers
             .filter((offer) => offer.id !== "self-hosted")
@@ -204,24 +205,24 @@ export default function Billing() {
               <PlanRow key={offer.id} offer={offer} current={offer.id === billing.plan.id} billing={billing} onChoose={choose} busy={checkout.isPending && checkout.variables === offer.id} />
             ))}
         </ul>
-        <p className={s.fine}>You'll finish checkout on Mercado Pago's page. Prices include taxes where applicable. Live hours reset on the 1st of each month.</p>
+        <p className={s.fine}>Você conclui o pagamento na página do Mercado Pago. Os preços incluem impostos, quando aplicáveis. As horas ao vivo zeram no dia 1º de cada mês.</p>
       </section>
 
       <Confirm
         open={confirmCancel}
         onOpenChange={setConfirmCancel}
-        title="Cancel renewal?"
-        description={`You keep ${billing.plan.name} until the end of the period you already paid for, then move to Free. Hosts above the Free limits stop going live.`}
-        confirmLabel="Cancel renewal"
+        title="Cancelar renovação?"
+        description={`Você continua no ${billing.plan.name} até o fim do período já pago e depois passa para o ${PLANS.free.name}. Apresentadores acima dos limites do ${PLANS.free.name} deixam de entrar ao vivo.`}
+        confirmLabel="Cancelar renovação"
         danger
         onConfirm={() => cancel.mutateAsync()}
       />
       <Confirm
         open={switchTo !== null}
         onOpenChange={(open) => !open && setSwitchTo(null)}
-        title={`Switch to ${switchTo?.name ?? ""}?`}
-        description={switchTo?.price ? `Your next payment will be ${money(switchTo.price, switchTo.currency)} a month. The change applies right away.` : ""}
-        confirmLabel="Switch plan"
+        title={`Mudar para ${switchTo?.name ?? ""}?`}
+        description={switchTo?.price ? `Seu próximo pagamento será de ${money(switchTo.price, switchTo.currency)} por mês. A mudança vale na hora.` : ""}
+        confirmLabel="Mudar de plano"
         onConfirm={async () => {
           if (switchTo && (switchTo.id === "creator" || switchTo.id === "pro")) await checkout.mutateAsync(switchTo.id);
         }}
