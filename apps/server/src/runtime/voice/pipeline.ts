@@ -52,6 +52,17 @@ interface Pending {
   abort: AbortController;
 }
 
+/** A line that was taken off the queue before it aired. */
+export interface DroppedLine {
+  text: string;
+  meta: CueMeta | undefined;
+  operator: boolean;
+}
+
+function droppedLine(item: Pending): DroppedLine {
+  return { text: item.text, meta: item.meta, operator: item.operator };
+}
+
 export interface EnqueueOptions {
   /** Skips the safety gate (operator-typed lines only). */
   trusted?: boolean;
@@ -144,15 +155,15 @@ export class SpeechPipeline {
 
   /**
    * Drops queued lines (never the one on stage) that match, and cancels their
-   * synthesis. Returns how many were dropped.
+   * synthesis. Returns the lines dropped, in order.
    */
-  drop(match: (meta: CueMeta | undefined, operator: boolean) => boolean): number {
+  drop(match: (meta: CueMeta | undefined, operator: boolean) => boolean): DroppedLine[] {
     const kept: Pending[] = [];
-    let dropped = 0;
+    const dropped: DroppedLine[] = [];
     for (const item of this.queue) {
       if (match(item.meta, item.operator)) {
         item.abort.abort();
-        dropped += 1;
+        dropped.push(droppedLine(item));
       } else {
         kept.push(item);
       }
@@ -194,8 +205,12 @@ export class SpeechPipeline {
     return this.current;
   }
 
-  /** Kill switch: drop everything queued and cut off the current sentence. */
-  stop(): void {
+  /** Kill switch: drop everything queued and cut off the current sentence. Returns what was cut, in order. */
+  stop(): DroppedLine[] {
+    const cut: DroppedLine[] = [];
+    if (this.current) cut.push({ text: this.current.text, meta: this.current.meta, operator: this.current.operator === true });
+    if (this.head) cut.push(droppedLine(this.head));
+    for (const item of this.queue) cut.push(droppedLine(item));
     this.generation += 1;
     for (const item of this.queue) item.abort.abort();
     this.head?.abort.abort();
@@ -204,6 +219,7 @@ export class SpeechPipeline {
     this.playback.abort();
     this.playback = new AbortController();
     this.output.interrupt();
+    return cut;
   }
 
   private async prepare(utterance: Utterance, trusted: boolean, meta: CueMeta | undefined, context: string | undefined, signal: AbortSignal): Promise<SpeechCue | null> {

@@ -260,6 +260,8 @@ describe("Director turn-taking", () => {
     expect(speech.pending()).toBe(0); // filler 2 and 3 dropped; filler 1 still on stage
     await step(); // no gap after yielding
     expect(host.turns.map((t) => t.kind)).toEqual(["opening", "filler", "react"]);
+    // The host knows the rest of its filler never aired.
+    expect(host.turns.at(-1)?.context.room).toContain('"filler 2" "filler 3"</unsaid>');
     await next();
     expect(output.played.slice(-2)).toEqual(["filler 1", "react 1"]);
   });
@@ -287,10 +289,10 @@ describe("Director turn-taking", () => {
     await step(2_000);
     const react = host.turns.at(-1)!;
     expect(react.kind).toBe("react");
-    // What it already said is in the room history; what's still playing or queued is "upcoming".
-    const said = react.history.flatMap((entry) => (entry.kind === "host" ? [entry.text] : []));
-    expect([...said, ...react.upcoming]).toEqual(["opening 1", "opening 2", "opening 3"]);
-    expect(react.history.some((entry) => entry.kind === "viewer" && entry.event.kind === "chat" && entry.event.text === "first question?")).toBe(true);
+    // The opening is in the conversation as it was written; its last line is still on stage.
+    expect(react.context.history.map((exchange) => exchange.reply)).toEqual(["opening 1\nopening 2\nopening 3"]);
+    expect(react.context.brief).toContain("Your previous line is still playing");
+    expect(react.context.room).toContain("first question?");
     expect(react.brief).toBe(true); // more than one turn's worth waiting
   });
 });
@@ -361,8 +363,8 @@ describe("Director with games and context", () => {
     const react = host.turns.at(-1)!;
     expect(react.kind).toBe("react");
     expect(react.items.map((item) => item.event.kind === "chat" && item.event.text)).toEqual(["this game is fun"]);
-    // The round's opening is now part of what the host remembers.
-    expect(react.history.some((entry) => entry.kind === "show" && entry.text.includes("round 1 of 2"))).toBe(true);
+    // The round's opening is part of the conversation, right where it happened.
+    expect(react.context.history.at(-1)?.room).toContain("round 1 of 2 opened");
   });
 
   it("gives the moderator what a line replies to, and plays sounds for gifts", async () => {
@@ -374,5 +376,74 @@ describe("Director with games and context", () => {
     await step(100);
     expect(contexts.some((context) => context?.includes("Viewer lucas wrote: canta um funk aí"))).toBe(true);
     expect(sounds).toContain("fanfare");
+  });
+});
+
+describe("Director ordering", () => {
+  const at = (event: ReturnType<typeof chat>, ms: number) => ({ ...event, at: ms });
+
+  it("thanks gifts first, then answers messages oldest first, and moves past older ones it skipped", async () => {
+    const { director, step, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.handleEvent(at(chat("ana", "Blip you are so fun to watch"), 1_000));
+    director.handleEvent(at(chat("bia", "Blip what game is this?"), 2_000));
+    director.handleEvent(at(chat("caio", "is it raining?"), 3_000));
+    director.handleEvent(at(chat("dani", "Blip do you like pizza?"), 4_000));
+    director.handleEvent({ ...gift("leo", "Rose", 1), at: 5_000 });
+    await step(2_000);
+    const react = host.turns.at(-1)!;
+    const who = react.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""));
+    expect(who).toEqual(["leo", "ana", "bia", "dani"]);
+    expect(react.context.brief).toContain("Now: Thank e5 (gift), then answer e1 (chat), then e2 (chat), then e4 (chat).");
+    // caio's question is older than dani's, so it isn't answered after it...
+    await step(2_000);
+    expect(host.turns.at(-1)).toBe(react);
+    // ...but comes back in the next quiet moment.
+    await step(8_000);
+    const filler = host.turns.at(-1)!;
+    expect(filler.kind).toBe("filler");
+    expect(filler.note).toBe("You didn't get to e3 earlier. Answer it now, saying who asked, then carry on.");
+  });
+
+  it("moves an overdue segment on even when chat keeps the host busy", async () => {
+    const { director, step, kinds } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    for (let i = 1; i <= 18; i++) {
+      director.handleEvent(chat(`v${i}`, `message number ${i}`));
+      await step(20_000);
+    }
+    const change = kinds().indexOf("segment_change");
+    expect(change).toBeGreaterThan(0);
+    // 5:40 into a 5-minute segment: the first turn more than 30 s past the end, then back to chat.
+    expect(kinds().slice(0, change).every((kind) => kind !== "filler")).toBe(true);
+    expect(change).toBe(17);
+    expect(kinds()[change + 1]).toBe("react");
+    expect(director.segment().id).toBe("b");
+  });
+
+  it("folds a like milestone into a reaction instead of making it wait", async () => {
+    const { director, step, kinds, host } = setup();
+    await step();
+    director.handleEvent({ kind: "like", at: 0, viewer: { id: "1", handle: "a", nickname: "a" }, count: 120 });
+    director.handleEvent(chat("joe", "hello there"));
+    await step(2_000);
+    expect(kinds()).toEqual(["opening", "react"]);
+    expect(host.turns[1]?.also).toBe("the stream just passed 100 likes: celebrate it in a few words.");
+    expect(host.turns[1]?.context.brief).toContain("Also: the stream just passed 100 likes");
+    await step(2_000);
+    expect(kinds()).toEqual(["opening", "react"]);
+  });
+
+  it("greets whoever woke the show up in the opening, instead of answering them again after it", async () => {
+    const { director, step, kinds, host } = setup({ startInStandby: true });
+    director.handleEvent(chat("joe", "anyone here?"));
+    await step();
+    expect(kinds()).toEqual(["opening"]);
+    expect(host.turns[0]?.items.map((item) => item.event.kind)).toEqual(["chat"]);
+    expect(host.turns[0]?.context.brief).toContain("Along the way, answer e1 (chat).");
+    await step(2_000);
+    expect(kinds()).toEqual(["opening"]);
   });
 });

@@ -1,14 +1,14 @@
-import { viewerName, type Effect, type LiveEvent, type Persona, type Segment, type Sound } from "@tik-live/shared";
+import type { Effect, LiveEvent, Persona, Segment, Sound } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import type { GameMaster } from "../games/master";
-import { containsBlockedTerm } from "../safety/rules";
-import type { SpeechPipeline } from "../voice/pipeline";
+import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
+import type { RoomEntry } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
 import type { ViewerMemory } from "./memory";
-import { describeClock, type TurnKind, type TurnRequest } from "./prompt";
-import { RoomLog } from "./room-log";
-import type { Triage, TriageResult } from "./triage";
+import { describeClock, type TurnKind, type TurnPlan } from "./prompt";
+import type { QueueItem, Triage, TriageResult } from "./triage";
+import { TurnEngine } from "./turns";
 
 export interface StreamStats {
   viewers: number;
@@ -39,6 +39,8 @@ export interface DirectorHooks {
   onTurnFailed?(error: unknown): void;
   onSegment?(segment: Segment): void;
   onStandbyChange?(standby: boolean): void;
+  /** The chronicler updated the show summary. */
+  onSummary?(summary: string): void;
 }
 
 export interface DirectorOptions {
@@ -59,8 +61,10 @@ export interface DirectorOptions {
   chronicler?: Chronicler;
   /** What the host may do besides talking (play music). */
   actions?: HostActions;
-  /** Terms never spoken, for the moderator context and the chronicler's notes. */
+  /** Terms never spoken, for viewer names and the chronicler's notes. */
   blocklist?: () => readonly string[];
+  /** How the channel's last stream went (its summary), for the opening. */
+  lastStream?: string;
   log?: Logger;
   now?: () => number;
 }
@@ -68,19 +72,21 @@ export interface DirectorOptions {
 const LIKE_MILESTONES = [100, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000];
 const MIN_TURN_GAP_MS = 1_500;
 const RECENT_LINES = 8;
-/** Moments of the room the host sees each turn. */
-const HISTORY_ENTRIES = 28;
 /** A segment's game starts this long after the segment does, and waits this long between games. */
 const SEGMENT_GAME_DELAY_MS = 4_000;
 const GAME_BREAK_MS = 40_000;
 /** Don't start a segment game with less than this left in the segment. */
 const MIN_GAME_WINDOW_MS = 90_000;
-/** The chronicler runs at most this often, and only with enough new material. */
-const CHRONICLE_EVERY_MS = 4 * 60_000;
-const CHRONICLE_MIN_ENTRIES = 10;
-/** Viewer events one reaction turn covers: the top few, plus gifts and thank-yous folded in. */
-const REACT_TOP_ITEMS = 4;
-const REACT_MAX_ITEMS = 8;
+/** Viewer events one reaction covers: a few messages, plus the gifts and follows waiting. */
+const REACT_CHAT = 3;
+const REACT_SUPPORT = 6;
+/** A segment this late moves on even while chat keeps the host busy. */
+const SEGMENT_OVERDUE_MS = 30_000;
+/** Questions the host moved past come back in a quiet moment, if they're this fresh. */
+const OWED_TTL_MS = 3 * 60_000;
+const OWED_MAX = 3;
+const CHAT_SAMPLE = 12;
+const SUPPORT_KINDS: ReadonlyArray<LiveEvent["kind"]> = ["gift", "follow", "share", "join"];
 
 /**
  * How much each kind of turn matters once it's under way (ADR-0022). A turn
@@ -112,6 +118,16 @@ export function eventUrgency(event: LiveEvent): number {
 /** With nobody watching and nothing happening for this long, stop filling silence (ADR-0012). */
 const EMPTY_ROOM_REACT_ONLY_MS = 10 * 60 * 1000;
 
+/** Ideas for quiet moments, in rotation, so fillers don't all sound alike. */
+const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean }> = [
+  { beat: "ask chat one fresh, easy question you haven't asked before." },
+  { beat: "share a quick, original opinion or hot take, then ask chat if they agree." },
+  { beat: "follow up on something a viewer told you earlier, by name.", needsChat: true },
+  { beat: "tell a tiny story or a funny observation that fits your character, two sentences at most." },
+  { beat: "welcome anyone who just arrived, say in one line what this show is about, and invite them to say hi." },
+  { beat: "start a quick challenge chat can answer in one word." },
+];
+
 export function nextLikeMilestone(likes: number): number {
   const fixed = LIKE_MILESTONES.find((m) => m > likes);
   if (fixed) return fixed;
@@ -138,13 +154,26 @@ export interface DirectorState {
 }
 
 /**
- * The show runner. Owns the run-of-show (segments), decides when the host
- * talks and about what, and keeps the stream alive when chat goes quiet.
+ * The show runner. Owns the run of show (segments), decides when the host
+ * talks and about what, and keeps the stream alive when chat goes quiet. The
+ * turn engine writes the turns; the director picks them.
  *
- * Decision order each tick: opening > reactions to viewers > like milestones
- * > segment changes > dead-air filler.
+ * What comes next, each tick (ADR-0026):
+ * 1. the opening, once per stream;
+ * 2. game moments, in the order they happened (a round, its answer, the next round);
+ * 3. what the channel owner asked for from the studio;
+ * 4. a segment change that is overdue (a busy chat can't hold the show in one segment forever);
+ * 5. reactions: gifts and follows first, then messages oldest first; a like milestone rides along;
+ * 6. a like milestone on its own;
+ * 7. the segment change, on time, in a quiet moment;
+ * 8. dead-air filler, including questions the host moved past earlier.
  *
- * Turn-taking (ADR-0022): one turn is generated at a time, and the next one
+ * The host moves forward through chat: once it answers a message, older
+ * messages it didn't pick are passed over (they're still in the room it
+ * saw), so it never jumps back to something older than what it just
+ * answered, except when it says so in a quiet moment.
+ *
+ * Turn-taking (ADR-0022): one turn is written at a time, and the next one
  * starts while the last sentence of the previous one is playing, so events
  * that arrive meanwhile are batched into it (and it's kept brief when chat is
  * busy). Sentences are never cut: when a gift or a message arrives during a
@@ -156,8 +185,6 @@ export class Director {
   private paused = false;
   private standby: boolean;
   private opened = false;
-  private turnInFlight: TurnKind | null = null;
-  private turnAbort: AbortController | undefined;
   private lastTurnAt = 0;
   private lastEventAt: number;
   private cooldownUntil = 0;
@@ -174,16 +201,16 @@ export class Director {
   private recentLines: string[] = [];
   private budgetReactOnly = false;
   private timer: ReturnType<typeof setInterval> | undefined;
-  private turnCounter = 0;
   /** A turn just yielded to something more urgent: start the next one without the usual gap. */
   private skipGap = false;
-  private readonly room: RoomLog;
   /** Something the creator asked the host to do, from the studio. */
   private pendingRequest: string | undefined;
-  private summary = "";
-  private chronicledAt: number;
-  private roomSinceChronicle = 0;
-  private chronicling = false;
+  /** Questions passed over on a busy stretch, by their room id. */
+  private owed: Array<{ ref: string; at: number }> = [];
+  private fillerBeat = 0;
+  private recentChat: string[] = [];
+  private music: { title: string; endsAt: number } | null = null;
+  private readonly engine: TurnEngine;
   private readonly now: () => number;
 
   constructor(private readonly options: DirectorOptions) {
@@ -192,9 +219,22 @@ export class Director {
     this.startedAt = this.now();
     this.segmentStartedAt = this.startedAt;
     this.lastEventAt = this.startedAt;
-    this.chronicledAt = this.startedAt;
     this.standby = options.startInStandby ?? false;
-    this.room = new RoomLog(this.now);
+    const blocklist = options.blocklist ?? (() => []);
+    this.engine = new TurnEngine({
+      host: options.host,
+      speech: options.speech,
+      memory: options.memory,
+      persona: () => this.persona,
+      blocklist,
+      ...(options.chronicler ? { chronicler: options.chronicler } : {}),
+      ...(options.actions ? { actions: options.actions } : {}),
+      ...(options.lastStream ? { lastStream: options.lastStream } : {}),
+      onTurn: (turn) => options.hooks?.onTurn?.(turn),
+      onSummary: (summary) => options.hooks?.onSummary?.(summary),
+      ...(options.log ? { log: options.log } : {}),
+      now: this.now,
+    });
   }
 
   start(intervalMs = 200): void {
@@ -205,7 +245,7 @@ export class Director {
   stop(): void {
     clearInterval(this.timer);
     this.timer = undefined;
-    this.turnAbort?.abort();
+    this.engine.stop();
     this.options.games?.stop();
   }
 
@@ -242,17 +282,25 @@ export class Director {
     return this.budgetReactOnly || (this.viewers === 0 && this.now() - this.lastEventAt > EMPTY_ROOM_REACT_ONLY_MS);
   }
 
+  /** The show's running summary, from the chronicler. */
+  showSummary(): string {
+    return this.engine.showSummary;
+  }
+
   handleEvent(event: LiveEvent): void {
     if (event.kind === "stream_end") {
       this.options.log?.info("stream ended; standing by until the next stream");
+      this.engine.endStream();
       this.setStandby(true);
       this.opened = false;
+      this.owed = [];
       this.options.games?.stop();
       this.options.hooks?.onEvent?.(event, null);
       return;
     }
     if (this.standby) {
       this.options.log?.info("audience activity detected; going on air");
+      this.engine.startStream();
       this.setStandby(false);
     }
     if (event.kind !== "viewers" && event.kind !== "like") this.lastEventAt = this.now();
@@ -290,19 +338,19 @@ export class Director {
         this.counters.diamonds += event.diamonds;
         this.options.stage.alert(event);
         this.sound(event.diamonds >= 1_000 ? "fanfare" : event.diamonds >= 100 ? "levelup" : event.diamonds >= 10 ? "chime" : "pop");
-        this.room.add({ at: event.at, kind: "support", event });
+        this.remember({ at: event.at, kind: "support", event });
         break;
       case "follow":
         this.counters.follows += 1;
         this.options.stage.alert(event);
         this.sound("chime");
-        this.room.add({ at: event.at, kind: "support", event });
+        this.remember({ at: event.at, kind: "support", event });
         break;
       case "share":
         this.counters.shares += 1;
         this.options.stage.alert(event);
         this.sound("whoosh");
-        this.room.add({ at: event.at, kind: "support", event });
+        this.remember({ at: event.at, kind: "support", event });
         break;
       case "chat":
       case "question":
@@ -322,16 +370,40 @@ export class Director {
     const result = this.options.triage.ingest(event);
     this.options.hooks?.onEvent?.(event, result);
     if (result.queued) {
-      // Only chat that passed triage's rules goes into the host's memory of the room.
-      if (event.kind === "chat" || event.kind === "question") this.remember({ at: event.at, kind: "viewer", event });
+      // Only chat that passed triage's rules reaches the host's conversation.
+      if (event.kind === "chat" || event.kind === "question") {
+        this.remember({ at: event.at, kind: "viewer", event });
+        this.recentChat = [...this.recentChat, event.text].slice(-CHAT_SAMPLE);
+      } else if (event.kind === "join") {
+        this.remember({ at: event.at, kind: "support", event });
+      }
       this.yieldTo(eventUrgency(event));
     }
   }
 
-  /** Called when a sentence was actually performed on stage. */
-  noteSpoken(text: string): void {
+  /** A line was performed on stage. Lines the owner typed join the conversation as theirs. */
+  noteSpoken(text: string, _meta?: CueMeta, operator = false): void {
     this.recentLines = [...this.recentLines, text].slice(-RECENT_LINES);
-    this.remember({ at: this.now(), kind: "host", text });
+    if (operator) this.remember({ at: this.now(), kind: "show", text: `The channel owner had you say: "${text}"` });
+  }
+
+  /** The safety gate stopped one of the host's lines. */
+  noteBlocked(text: string, meta?: CueMeta): void {
+    this.engine.unsaid("blocked", [{ text, meta }]);
+  }
+
+  /** Music went on (or off) on stage. */
+  noteMusic(track: { title: string; endsAt: number; byHost: boolean } | null): void {
+    if (!track) {
+      this.music = null;
+      return;
+    }
+    this.music = { title: track.title, endsAt: track.endsAt };
+    this.remember({
+      at: this.now(),
+      kind: "show",
+      text: track.byHost ? `Your piece "${track.title}" started playing on stage.` : `The channel owner put on "${track.title}".`,
+    });
   }
 
   /** Asks the host to do something on its next turn (from the studio), e.g. compose a beat. */
@@ -341,8 +413,8 @@ export class Director {
 
   pause(): void {
     this.paused = true;
-    this.turnAbort?.abort();
-    this.options.speech.stop();
+    this.engine.abort();
+    this.engine.unsaid("skipped", this.options.speech.stop());
     this.options.log?.warn("host paused (kill switch)");
   }
 
@@ -358,8 +430,8 @@ export class Director {
 
   /** Cut the current sentence and anything queued, but keep the show running. */
   skip(): void {
-    this.turnAbort?.abort();
-    this.options.speech.stop();
+    this.engine.abort();
+    this.engine.unsaid("skipped", this.options.speech.stop());
   }
 
   forceSegment(id: string): boolean {
@@ -373,10 +445,7 @@ export class Director {
 
   /** Recent chat messages, for matching a game's language to the room. */
   chatSample(): string[] {
-    return this.room
-      .recent(HISTORY_ENTRIES)
-      .flatMap((entry) => (entry.kind === "viewer" ? [entry.event.text] : []))
-      .slice(-12);
+    return this.recentChat;
   }
 
   stats(): StreamStats {
@@ -403,7 +472,7 @@ export class Director {
       paused: this.paused,
       standby: this.standby,
       reactOnly: this.reactOnly(),
-      turnInFlight: this.turnInFlight,
+      turnInFlight: this.engine.inFlight,
       segment,
       segmentEndsInSec: Math.max(0, Math.round((this.segmentStartedAt + segment.minutes * 60_000 - this.now()) / 1000)),
       stats: this.stats(),
@@ -415,39 +484,41 @@ export class Director {
   /** One scheduling step. Public so tests can drive it with a fake clock. */
   async tick(): Promise<void> {
     if (this.standby) return;
-    // Game clocks run even while a turn is being written.
-    this.options.games?.tick(this.options.speech.isIdle());
-    if (this.paused || this.turnInFlight) return;
+    // Game clocks run even while a turn is being written; a game waits for the host to finish talking.
+    this.options.games?.tick(this.options.speech.isIdle() && !this.engine.inFlight);
+    if (this.paused || this.engine.inFlight) return;
     const now = this.now();
     this.maybeStartSegmentGame(now);
-    this.maybeChronicle(now);
+    this.engine.maintain(now, !this.reactOnly());
     if (now < this.cooldownUntil || (!this.skipGap && now - this.lastTurnAt < MIN_TURN_GAP_MS)) return;
     // Start the next turn while the last sentence is still playing, but never
     // stack up more than one turn of queued speech.
     if (this.options.speech.pending() > 0) return;
 
-    const turn = this.chooseTurn(now);
-    if (turn) await this.runTurn(turn);
+    const plan = this.chooseTurn(now);
+    if (plan) await this.runTurn(plan);
   }
 
   /**
-   * Barge-in at a sentence boundary: stops generating and drops the queued
+   * Barge-in at a sentence boundary: stops writing and drops the queued
    * lines of any turn less important than `urgency`. The sentence on stage
-   * plays to the end; the next tick picks the reaction.
+   * plays to the end; the next tick picks the reaction, and the host learns
+   * which of its lines never aired.
    */
   private yieldTo(urgency: number): void {
     if (this.paused || this.standby || urgency <= 0) return;
     const outranked = (kind: string | undefined) => kind !== undefined && kind in TURN_PRIORITY && TURN_PRIORITY[kind as TurnKind] < urgency;
     const { speech } = this.options;
     let yielded = outranked(speech.activeMeta()?.turnKind);
-    if (this.turnInFlight && outranked(this.turnInFlight)) {
-      this.turnAbort?.abort();
+    if (this.engine.inFlight && outranked(this.engine.inFlight)) {
+      this.engine.abort();
       yielded = true;
     }
     const dropped = speech.drop((meta) => outranked(meta?.turnKind));
-    if (yielded || dropped > 0) {
+    this.engine.unsaid("cut", dropped);
+    if (yielded || dropped.length > 0) {
       this.skipGap = true;
-      this.options.log?.debug(`yielding to a viewer event (${dropped} queued line${dropped === 1 ? "" : "s"} dropped)`);
+      this.options.log?.debug(`yielding to a viewer event (${dropped.length} queued line${dropped.length === 1 ? "" : "s"} dropped)`);
     }
   }
 
@@ -457,25 +528,27 @@ export class Director {
     this.options.hooks?.onStandbyChange?.(value);
   }
 
-  private chooseTurn(now: number): (TurnRequest & { originAt: number }) | undefined {
+  private chooseTurn(now: number): TurnPlan | undefined {
     const { triage, speech } = this.options;
     const games = this.options.games;
     const game = games?.hostContext();
+    const segment = this.segment();
+    const segmentEndsAt = this.segmentStartedAt + segment.minutes * 60_000;
     const base = {
-      segment: this.segment(),
+      segment,
       stats: { viewers: this.viewers, likes: this.counters.likes, uptimeMinutes: this.stats().uptimeMinutes },
-      history: this.room.recent(HISTORY_ENTRIES),
-      // What it's still saying: the reply plays after those.
-      upcoming: speech.upcoming(),
       clock: describeClock(now, this.persona.timezone),
-      ...(this.summary ? { summary: this.summary } : {}),
+      segmentLeftMin: Math.max(0, Math.ceil((segmentEndsAt - now) / 60_000)),
       ...(game ? { game } : {}),
+      ...(this.music && this.music.endsAt > now ? { music: `"${this.music.title}" is playing (${Math.ceil((this.music.endsAt - now) / 1000)} s left).` } : {}),
       originAt: now,
     };
 
     if (!this.opened) {
       this.opened = true;
-      return { ...base, kind: "opening", items: [] };
+      // Whoever woke the show up gets greeted in the opening, not answered again right after it.
+      const focus = this.takeFocus();
+      return { ...base, kind: "opening", items: focus.items };
     }
 
     // Game moments are time-bound (a question just went up, an answer is being revealed).
@@ -491,52 +564,110 @@ export class Director {
       return { ...base, kind: "request", items: [], note };
     }
 
+    // A game in progress finishes before the segment moves on (a forced change already stopped a segment's game).
+    const gameHolds = this.forcedSegment === undefined && games?.isActive() === true;
+    const segmentDue = this.persona.segments.length > 1 && !gameHolds && now >= segmentEndsAt;
+    // Overdue because chat kept the host talking past the end (not because the room was empty): move on now.
+    const heldUp = segmentDue && now - segmentEndsAt >= SEGMENT_OVERDUE_MS && this.lastTurnAt >= segmentEndsAt;
+    if (this.forcedSegment !== undefined || (heldUp && !this.reactOnly())) return this.changeSegment(now, base);
+
     if (triage.pending() > 0) {
-      const items = triage.take(REACT_TOP_ITEMS);
-      // Fold the other gifts and thank-you-type events into the same turn.
-      items.push(...triage.takeKinds(["gift", "follow", "share", "join"], REACT_MAX_ITEMS - items.length));
-      // More is waiting, or this turn covers a lot: keep it short to keep up.
-      const brief = triage.pending() > 0 || items.length > REACT_TOP_ITEMS;
-      const originAt = Math.min(...items.map((item) => item.event.at));
-      return { ...base, kind: "react", items, brief, originAt: Number.isFinite(originAt) ? originAt : now };
+      const focus = this.takeFocus();
+      if (focus.items.length) {
+        const also = this.takeMilestone();
+        const first = Math.min(...focus.items.map((item) => item.event.at));
+        return {
+          ...base,
+          kind: "react",
+          items: focus.items,
+          brief: focus.brief,
+          ...(also ? { also: `${also}: celebrate it in a few words.` } : {}),
+          originAt: Number.isFinite(first) ? first : now,
+        };
+      }
     }
 
-    if (this.pendingMilestone !== undefined) {
-      const note = `the stream just passed ${this.pendingMilestone.toLocaleString("en-US")} likes`;
-      this.pendingMilestone = undefined;
-      return { ...base, kind: "milestone", items: [], note };
-    }
+    const milestone = this.takeMilestone();
+    if (milestone) return { ...base, kind: "milestone", items: [], note: milestone };
 
     if (this.reactOnly()) return undefined;
 
-    const segment = this.segment();
-    const segmentOver = now - this.segmentStartedAt >= segment.minutes * 60_000;
-    // A game in progress finishes before the segment moves on (a forced change already stopped a segment's game).
-    const gameHolds = this.forcedSegment === undefined && games?.isActive() === true;
-    if ((segmentOver || this.forcedSegment !== undefined) && !gameHolds && speech.isIdle() && this.persona.segments.length > 1) {
-      const nextIndex = this.forcedSegment ?? (this.segmentIndex + 1) % this.persona.segments.length;
-      this.forcedSegment = undefined;
-      const nextSegment = this.persona.segments[nextIndex] as Segment;
-      this.segmentIndex = nextIndex;
-      this.segmentStartedAt = now;
-      this.options.stage.segment(nextSegment);
-      this.options.hooks?.onSegment?.(nextSegment);
-      this.remember({ at: now, kind: "show", text: `New segment: ${nextSegment.title}` });
-      return { ...base, kind: "segment_change", items: [], nextSegment };
-    }
+    if (segmentDue && speech.isIdle()) return this.changeSegment(now, base);
 
     const deadAir = deadAirFor(this.viewers, this.options.deadAirMs);
     const quietFor = speech.silenceMs();
     if (quietFor >= deadAir && now - this.lastTurnAt >= deadAir) {
-      const note = games?.fillerNote();
-      return { ...base, kind: "filler", items: [], ...(note ? { note } : {}) };
+      return { ...base, kind: "filler", items: [], note: this.fillerNote(now) };
     }
     return undefined;
   }
 
-  private remember(entry: Parameters<RoomLog["add"]>[0]): void {
-    this.room.add(entry);
-    this.roomSinceChronicle += 1;
+  /**
+   * The events a reaction covers: the gifts, follows and returning viewers
+   * waiting, then the most important few messages, oldest first. Messages
+   * older than the newest one picked are passed over; questions among them
+   * come back in a quiet moment.
+   */
+  private takeFocus(): { items: QueueItem[]; brief: boolean } {
+    const triage = this.options.triage;
+    const inOrder = (a: QueueItem, b: QueueItem) => a.event.at - b.event.at || a.seq - b.seq;
+    const support = triage.takeKinds(SUPPORT_KINDS, REACT_SUPPORT).sort(inOrder);
+    const chat = triage.takeKinds(["chat", "question"], REACT_CHAT).sort(inOrder);
+    const newest = chat.at(-1);
+    if (newest) {
+      const passed = triage.discard(
+        (item) => (item.event.kind === "chat" || item.event.kind === "question") && inOrder(item, newest) < 0,
+      );
+      for (const item of passed) this.owe(item);
+    }
+    const brief = triage.pending() > 0 || support.length + chat.length > 5;
+    return { items: [...support, ...chat], brief };
+  }
+
+  private owe(item: QueueItem): void {
+    const event = item.event;
+    if (event.kind !== "question" && !(event.kind === "chat" && event.text.includes("?"))) return;
+    const ref = this.engine.conversation.ref(event);
+    if (!ref) return;
+    this.owed = [...this.owed, { ref, at: this.now() }].slice(-OWED_MAX);
+  }
+
+  private takeMilestone(): string | undefined {
+    if (this.pendingMilestone === undefined) return undefined;
+    const note = `the stream just passed ${this.pendingMilestone.toLocaleString("en-US")} likes`;
+    this.pendingMilestone = undefined;
+    return note;
+  }
+
+  private changeSegment(now: number, base: Omit<TurnPlan, "kind" | "items">): TurnPlan {
+    const nextIndex = this.forcedSegment ?? (this.segmentIndex + 1) % this.persona.segments.length;
+    this.forcedSegment = undefined;
+    const previous = this.segment();
+    const nextSegment = this.persona.segments[nextIndex] as Segment;
+    this.segmentIndex = nextIndex;
+    this.segmentStartedAt = now;
+    this.options.stage.segment(nextSegment);
+    this.options.hooks?.onSegment?.(nextSegment);
+    this.remember({ at: now, kind: "show", text: `New segment: ${nextSegment.title}` });
+    return { ...base, segment: previous, kind: "segment_change", items: [], nextSegment };
+  }
+
+  /** What a quiet moment is about: the game, a question the host owes, or the next idea in rotation. */
+  private fillerNote(now: number): string {
+    const games = this.options.games?.fillerNote();
+    if (games) return games;
+    this.owed = this.owed.filter((owed) => now - owed.at < OWED_TTL_MS);
+    const owed = this.owed.shift();
+    if (owed) return `You didn't get to ${owed.ref} earlier. Answer it now, saying who asked, then carry on.`;
+    const segment = this.segment();
+    const chat = this.engine.conversation.hasViewerChat();
+    let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
+    if (pick.needsChat && !chat) pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
+    return `Keep the show alive for "${segment.title}" (${segment.prompt}). This time, ${pick.beat}`;
+  }
+
+  private remember(entry: RoomEntry): void {
+    this.engine.conversation.add(entry);
   }
 
   private sound(sound: Sound): void {
@@ -556,77 +687,18 @@ export class Director {
     if (started.ok) this.options.log?.info(`starting the segment's game (${config.kind})`);
   }
 
-  /** Every few minutes, folds the recent room into a running summary and notes about viewers. */
-  private maybeChronicle(now: number): void {
-    const chronicler = this.options.chronicler;
-    if (!chronicler || this.chronicling || this.reactOnly()) return;
-    if (now - this.chronicledAt < CHRONICLE_EVERY_MS || this.roomSinceChronicle < CHRONICLE_MIN_ENTRIES) return;
-    this.chronicling = true;
-    this.chronicledAt = now;
-    const entries = this.room.recent(60);
-    this.roomSinceChronicle = 0;
-    const blocklist = this.options.blocklist?.() ?? [];
-    void chronicler
-      .update(this.summary, entries)
-      .then((chronicle) => {
-        if (!containsBlockedTerm(chronicle.summary, blocklist)) this.summary = chronicle.summary;
-        for (const note of chronicle.notes) {
-          if (!containsBlockedTerm(note.note, blocklist)) this.options.memory.addNote(note.viewerId, note.note);
-        }
-      })
-      .catch((err: unknown) => this.options.log?.warn("couldn't update the show summary", err))
-      .finally(() => {
-        this.chronicling = false;
-      });
-  }
-
-  /** What a line replies to, so the moderator reads it in context (ADR-0016). */
-  private moderationContext(turn: TurnRequest, said: string[]): string {
-    const lines: string[] = [];
-    for (const item of turn.items) {
-      const event = item.event;
-      if (event.kind === "chat" || event.kind === "question") lines.push(`Viewer ${viewerName(event.viewer).slice(0, 30)} wrote: ${event.text}`);
-      else if (event.kind === "gift") lines.push(`Viewer ${viewerName(event.viewer).slice(0, 30)} sent ${event.count}x ${event.giftName}.`);
-    }
-    if (turn.kind === "game") lines.push("The host is running a chat quiz game and announcing a round.");
-    if (turn.kind === "request") lines.push(`The channel owner asked the host: ${turn.note ?? ""}`);
-    if (said.length) lines.push(`The host just said: ${said.slice(-2).join(" ")}`);
-    return lines.join("\n");
-  }
-
-  private async runTurn(turn: TurnRequest & { originAt: number }): Promise<void> {
-    this.turnInFlight = turn.kind;
+  private async runTurn(plan: TurnPlan): Promise<void> {
     this.lastTurnAt = this.now();
     this.skipGap = false;
-    const abort = new AbortController();
-    this.turnAbort = abort;
-    const turnId = `t${++this.turnCounter}`;
-    this.options.hooks?.onTurn?.({ id: turnId, kind: turn.kind, items: turn.items.length });
-    let first = true;
-    const said: string[] = [];
-    try {
-      for await (const utterance of this.options.host.generate(turn, abort.signal, this.options.actions)) {
-        if (abort.signal.aborted || this.paused) break;
-        const context = this.moderationContext(turn, said);
-        this.options.speech.enqueue(utterance, {
-          meta: { turnId, turnKind: turn.kind, originAt: turn.originAt, first },
-          ...(context ? { context } : {}),
-        });
-        said.push(utterance.text);
-        first = false;
-      }
+    const result = await this.engine.run(plan);
+    if (result.ok) {
       this.failures = 0;
-    } catch (err) {
-      if (!abort.signal.aborted) {
-        this.failures += 1;
-        const backoff = Math.min(30_000, 1_000 * 2 ** this.failures);
-        this.cooldownUntil = this.now() + backoff;
-        this.options.log?.warn(`turn failed; cooling down ${Math.round(backoff / 1000)}s`, err);
-        this.options.hooks?.onTurnFailed?.(err);
-      }
-    } finally {
-      this.turnInFlight = null;
-      this.turnAbort = undefined;
+      return;
     }
+    this.failures += 1;
+    const backoff = Math.min(30_000, 1_000 * 2 ** this.failures);
+    this.cooldownUntil = this.now() + backoff;
+    this.options.log?.warn(`turn failed; cooling down ${Math.round(backoff / 1000)}s`, result.error);
+    this.options.hooks?.onTurnFailed?.(result.error);
   }
 }

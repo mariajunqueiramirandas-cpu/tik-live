@@ -93,7 +93,7 @@ describe("SpeechPipeline", () => {
     for (let i = 0; i < 20 && played.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
     expect(pipeline.upcoming()).toEqual(["filler one", "filler two", "filler three"]);
 
-    expect(pipeline.drop((m) => m?.turnKind === "filler")).toBe(2);
+    expect(pipeline.drop((m) => m?.turnKind === "filler").map((line) => line.text)).toEqual(["filler two", "filler three"]);
     expect(aborted.sort()).toEqual(["filler three", "filler two"]);
     pipeline.enqueue(say("thanks for the rose"), { meta: meta("react") });
     release();
@@ -115,12 +115,12 @@ describe("SpeechPipeline", () => {
     expect(output.played).toEqual(["host one", "operator one", "operator two", "host two"]);
   });
 
-  it("stop() discards everything queued", async () => {
+  it("stop() discards everything queued and says what it cut", async () => {
     const output = new RecordingOutput();
     const pipeline = new SpeechPipeline(new SlowTts(), new SafetyGate({ blocklist: [] }), output);
     pipeline.enqueue(say("first, will be cut"));
     pipeline.enqueue(say("second, will be cut"));
-    pipeline.stop();
+    expect(pipeline.stop().map((line) => line.text)).toEqual(["first, will be cut", "second, will be cut"]);
     await settle(pipeline);
     expect(output.played).toEqual([]);
     expect(output.interrupted).toBe(1);
