@@ -87,7 +87,7 @@ export function channelRoutes(deps: AppDeps) {
         name: input.name,
         tiktokUsername: input.tiktokUsername ?? null,
         source: input.tiktokUsername ? "tiktok" : "simulator",
-        persona: preset.persona,
+        persona: input.timezone ? { ...preset.persona, timezone: input.timezone } : preset.persona,
         voice,
         safety: DEFAULT_SAFETY,
         broadcast: { enabled: false, rtmpUrl: null, streamKeyCiphertext: null, streamKeyLast4: null },

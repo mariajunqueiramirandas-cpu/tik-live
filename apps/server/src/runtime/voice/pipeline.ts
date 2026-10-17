@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Emotion } from "@tik-live/shared";
+import type { Effect, Emotion } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import type { Utterance } from "../brain/sentences";
 import type { SafetyGate } from "../safety/gate";
@@ -20,6 +20,8 @@ export interface SpeechCue {
   id: string;
   text: string;
   emotion: Emotion;
+  /** Reactions the stage plays as the line starts. */
+  fx?: Effect[];
   meta?: CueMeta;
   /** Typed by the channel owner in the studio. */
   operator?: boolean;
@@ -56,6 +58,8 @@ export interface EnqueueOptions {
   meta?: CueMeta;
   /** Goes ahead of the host's queued lines, right after the current sentence (operator lines). */
   front?: boolean;
+  /** What the line replies to, for the safety moderator. */
+  context?: string;
 }
 
 export interface SpeechPipelineEvents {
@@ -103,6 +107,11 @@ export class SpeechPipeline {
     this.tts = tts;
   }
 
+  /** The voice's only language, if it has one. */
+  get ttsLanguage(): string | undefined {
+    return this.tts.language;
+  }
+
   get ttsName(): string {
     return this.tts.name;
   }
@@ -119,7 +128,7 @@ export class SpeechPipeline {
       abort,
       prepared: Promise.resolve(null),
     };
-    pending.prepared = this.prepare(utterance, operator, options.meta, abort.signal).then((cue) => {
+    pending.prepared = this.prepare(utterance, operator, options.meta, options.context, abort.signal).then((cue) => {
       pending.ready = cue;
       return cue;
     });
@@ -197,11 +206,11 @@ export class SpeechPipeline {
     this.output.interrupt();
   }
 
-  private async prepare(utterance: Utterance, trusted: boolean, meta: CueMeta | undefined, signal: AbortSignal): Promise<SpeechCue | null> {
+  private async prepare(utterance: Utterance, trusted: boolean, meta: CueMeta | undefined, context: string | undefined, signal: AbortSignal): Promise<SpeechCue | null> {
     const id = randomUUID();
     const tts = this.tts;
     const [verdict, audio] = await Promise.all([
-      trusted ? Promise.resolve({ safe: true as const }) : this.safety.check(utterance.text),
+      trusted ? Promise.resolve({ safe: true as const }) : this.safety.check(utterance.text, context),
       tts.synthesize(utterance.text, utterance.emotion, signal).catch((err: unknown) => {
         if (!signal.aborted) this.events.log?.warn("TTS failed; falling back to captions", err);
         return null;
@@ -221,6 +230,7 @@ export class SpeechPipeline {
       emotion: utterance.emotion,
       audio,
       durationMs: audio?.durationMs ?? estimateSpeechMs(utterance.text),
+      ...(utterance.fx?.length ? { fx: utterance.fx } : {}),
       ...(meta ? { meta } : {}),
       ...(trusted ? { operator: true } : {}),
     };

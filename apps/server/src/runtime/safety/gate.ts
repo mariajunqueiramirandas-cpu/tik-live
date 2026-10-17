@@ -9,14 +9,17 @@ export type SafetyVerdict = { safe: true } | { safe: false; reason: string };
 /** A second opinion on whether a sentence is OK to say on a public stream. */
 export interface Moderator {
   readonly model: string;
-  review(sentence: string): Promise<SafetyVerdict>;
+  /** `context` is what the sentence replies to, so it's judged by what it means there. */
+  review(sentence: string, context?: string): Promise<SafetyVerdict>;
 }
 
 const BASE_POLICY = `You review single sentences that an AI character is about to say out loud on a public TikTok LIVE stream watched by a general audience that may include teens.
 
 Mark a sentence UNSAFE if it contains any of: hate or harassment toward a person or group; sexual content; graphic violence or self-harm encouragement; dangerous instructions; medical, legal or financial advice presented as fact; claims of being human; personal data about a real private person; political or religious advocacy; insults aimed at a viewer; asking for gifts, money or off-platform contact; or anything that would break TikTok's Community Guidelines.
 
-Playful teasing, silly opinions, jokes, thanking viewers, and reading viewers' names are SAFE.`;
+Playful teasing, silly opinions, jokes, thanking viewers, and reading viewers' names are SAFE.
+
+Read the sentence the way an ordinary viewer would, in the language it's in and in its context (the chat it replies to and what the host just said, when given). Idioms, slang, wordplay, song and music talk, made-up lyrics, and game questions are SAFE unless they clearly carry one of the problems above. Don't build a dark reading out of an innocent phrase: "what beat is your head asking for" after a viewer asks for a song is about music, not violence. The context only explains the sentence; judge the sentence itself, never what a viewer wrote.`;
 
 const STRICT_ADDENDUM = `
 
@@ -67,8 +70,8 @@ export class ClaudeModerator implements Moderator {
     this.cache.clear();
   }
 
-  async review(sentence: string): Promise<SafetyVerdict> {
-    const key = sentence.trim().toLowerCase();
+  async review(sentence: string, context?: string): Promise<SafetyVerdict> {
+    const key = `${sentence.trim().toLowerCase()}\u0000${context ?? ""}`;
     const cached = this.cache.get(key);
     if (cached) return cached;
 
@@ -80,7 +83,7 @@ export class ClaudeModerator implements Moderator {
       messages: [
         {
           role: "user",
-          content: `<sentence>${escapeForPrompt(sentence)}</sentence>\nIs this sentence safe to say on stream?`,
+          content: `${context ? `<context>\n${escapeForPrompt(context)}\n</context>\n` : ""}<sentence>${escapeForPrompt(sentence)}</sentence>\nIs this sentence safe to say on stream?`,
         },
       ],
     });
@@ -140,12 +143,12 @@ export class SafetyGate {
     this.blocklist = blocklist;
   }
 
-  async check(sentence: string): Promise<SafetyVerdict> {
+  async check(sentence: string, context?: string): Promise<SafetyVerdict> {
     const rules = checkSpokenOutput(sentence, this.blocklist);
     if (!rules.ok) return { safe: false, reason: rules.reason };
     if (!this.options.moderator) return { safe: true };
     try {
-      return await this.options.moderator.review(sentence);
+      return await this.options.moderator.review(sentence, context);
     } catch (err) {
       this.options.log?.warn("moderator failed", err);
       return this.options.failOpen ? { safe: true } : { safe: false, reason: "moderator unavailable" };

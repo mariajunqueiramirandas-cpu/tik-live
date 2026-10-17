@@ -372,6 +372,8 @@ export function stoppedSnapshot(
     reactOnly: false,
     segment: { id: segment.id, title: segment.title, endsInSec: segment.minutes * 60 },
     segments: channel.persona.segments.map((s) => ({ id: s.id, title: s.title })),
+    game: null,
+    music: null,
     stats: { viewers: 0, likes: 0, diamonds: 0, messages: 0, follows: 0, uptimeSec: 0 },
     nowSaying: null,
     queue: [],

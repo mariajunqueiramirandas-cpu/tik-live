@@ -2,10 +2,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   injectEventSchema,
   isUnlimited,
+  MUSIC_LIBRARY,
+  musicTrackSchema,
+  passSeconds,
   viewerName,
   type InjectEvent,
   type LiveEvent,
   type LiveEventSummary,
+  type MusicTrack,
   type Plan,
   type RuntimeSnapshot,
   type RuntimeStatus,
@@ -17,11 +21,14 @@ import type { Logger } from "../log";
 import type { ChannelRow } from "../repos/channels";
 import { addUsage, channelCostOn, dayKey } from "../repos/usage";
 import { loadViewers, saveViewers, type ViewerRow } from "../repos/viewers";
+import { ClaudeChronicler } from "./brain/chronicle";
 import { Director } from "./brain/director";
 import { ClaudeHost, ScriptedHost, type HostBrain } from "./brain/host";
 import { ViewerMemory, type ViewerPersistence, type ViewerRecord } from "./brain/memory";
 import { toUtterance } from "./brain/sentences";
 import { Triage, type TriageResult } from "./brain/triage";
+import { GameMaster } from "./games/master";
+import { ClaudeGameWriter } from "./games/writer";
 import { LatencyTracker } from "./latency";
 import { ClaudeModerator, SafetyGate } from "./safety/gate";
 import { SimulatorSource } from "./sources/simulator";
@@ -59,6 +66,8 @@ const FLUSH_MS = 5_000;
 const USAGE_FLUSH_EVERY = 3; // flush ticks
 const SAY_LIMIT_PER_MINUTE = 10;
 const BUDGET_WARN_RATIO = 0.8;
+/** The host composes at most one piece of music this often. */
+const HOST_MUSIC_GAP_MS = 90_000;
 
 export type CommandResult = { ok: true } | { ok: false; error: string };
 
@@ -83,6 +92,10 @@ export class ChannelRuntime {
   private host!: HostBrain;
   private speech!: SpeechPipeline;
   private director!: Director;
+  private games!: GameMaster;
+  /** The piece of music on stage, if any. */
+  private music: { title: string; endsAt: number; byHost: boolean } | null = null;
+  private hostMusicAt = -Infinity;
   private source!: EventSource;
   private recorder!: StreamRecorder;
   private readonly meter: UsageMeter;
@@ -164,6 +177,17 @@ export class ChannelRuntime {
       if (cue.meta?.first) this.latency.record(at - cue.meta.originAt);
     });
 
+    this.games = new GameMaster({
+      writer: ai ? new ClaudeGameWriter({ client: ai, model: ctx.config.HOST_MODEL ?? this.plan.models.host, onUsage: (u) => this.usage(u), log: this.log }) : null,
+      gate: this.gate,
+      stage,
+      blocklist: () => this.channel.safety.blocklist,
+      language: () => this.speech.ttsLanguage,
+      sounds: () => this.channel.persona.sound?.effects !== false,
+      now: this.now,
+      log: this.log,
+    });
+
     this.recorder = new StreamRecorder(ctx.db, channel.id, channel.source, this.log, this.now);
     this.source = this.options.makeSource?.(channel) ?? this.defaultSource(channel);
     const simulated = this.source.name === "simulator";
@@ -177,6 +201,21 @@ export class ChannelRuntime {
       stage,
       deadAirMs: 7_000,
       startInStandby: !simulated,
+      games: this.games,
+      ...(ai && this.host instanceof ClaudeHost
+        ? {
+            chronicler: new ClaudeChronicler({
+              client: ai,
+              model: ctx.config.MODERATION_MODEL ?? this.plan.models.moderator,
+              memory: this.memory,
+              blocklist: () => this.channel.safety.blocklist,
+              onUsage: (u) => this.usage(u),
+              log: this.log,
+            }),
+          }
+        : {}),
+      actions: { playMusic: (track) => void this.playMusic(track, true) },
+      blocklist: () => this.channel.safety.blocklist,
       log: this.log,
       now: this.now,
       hooks: {
@@ -216,6 +255,7 @@ export class ChannelRuntime {
     this.flushTimer = undefined;
     this.director?.stop();
     this.speech?.stop();
+    this.stopMusic();
     this.options.stage.setCueListener(null);
     await this.source?.stop().catch((err) => this.log.warn("source stop failed", err));
     this.accrue();
@@ -288,7 +328,72 @@ export class ChannelRuntime {
         this.director.handleEvent(this.toLiveEvent(parsed.data));
         return { ok: true };
       }
+      case "game_start":
+        return this.games.start(command.game, "studio", this.director.chatSample());
+      case "game_stop":
+        if (!this.games.isActive()) return { ok: false, error: "No game is running." };
+        this.games.stop();
+        return { ok: true };
+      case "music_play": {
+        if (this.channel.persona.sound?.music === false) return { ok: false, error: "Music is turned off for this host. Turn it on in Character." };
+        if (command.library) {
+          const track = musicTrackSchema.parse(MUSIC_LIBRARY[command.library]);
+          void this.playMusic(track, false);
+          return { ok: true };
+        }
+        if (command.prompt && !(this.host instanceof ClaudeHost)) {
+          // The offline host can't compose; play something from the library instead.
+          const ids = Object.keys(MUSIC_LIBRARY);
+          const pick = ids[Math.floor(Math.random() * ids.length)] as string;
+          void this.playMusic(musicTrackSchema.parse(MUSIC_LIBRARY[pick]), false);
+          return { ok: true };
+        }
+        if (command.prompt) {
+          this.director.request(
+            `Compose and play a short original piece with the play_music tool, in this style: "${command.prompt}". Introduce it in one short line first.`,
+          );
+          return { ok: true };
+        }
+        return { ok: false, error: "Pick a piece or describe one." };
+      }
+      case "music_stop":
+        this.stopMusic();
+        return { ok: true };
     }
+  }
+
+  /** Puts a piece of music on stage. The host's own pieces are rate-limited and checked like speech. */
+  private async playMusic(track: MusicTrack, byHost: boolean): Promise<void> {
+    if (this.channel.persona.sound?.music === false) return;
+    const now = this.now();
+    if (byHost) {
+      if (now - this.hostMusicAt < HOST_MUSIC_GAP_MS) {
+        this.log.info("skipped the host's music: it played some a moment ago");
+        return;
+      }
+      if (this.games.status()?.phase === "open") {
+        this.log.info("skipped the host's music: a game round is open");
+        return;
+      }
+      this.hostMusicAt = now;
+      // The title is shown on stage, so it passes the same gate as speech.
+      const verdict = await this.gate.check(track.title, "The title of a short piece of music the host composed.");
+      if (!verdict.safe) {
+        this.log.warn(`blocked the host's music title (${verdict.reason})`);
+        return;
+      }
+    }
+    if (this.status === "stopped" || this.status === "stopping") return;
+    const endsAt = this.now() + passSeconds(track.bpm, track.bars) * track.repeat * 1000;
+    this.music = { title: track.title, endsAt, byHost };
+    this.options.stage.music(track, endsAt);
+    this.log.info(`playing "${track.title}" (${byHost ? "composed by the host" : "from the library"})`);
+  }
+
+  private stopMusic(): void {
+    if (!this.music) return;
+    this.music = null;
+    this.options.stage.music(null);
   }
 
   /** Called once a minute by the manager: accrues live time and enforces the AI budgets. */
@@ -346,6 +451,10 @@ export class ChannelRuntime {
       reactOnly: d?.reactOnly ?? false,
       segment: { id: segment.id, title: segment.title, endsInSec: d?.segmentEndsInSec ?? segment.minutes * 60 },
       segments: this.channel.persona.segments.map((s) => ({ id: s.id, title: s.title })),
+      game: this.games?.status() ?? null,
+      music: this.music && this.music.endsAt > this.now()
+        ? { title: this.music.title, endsInSec: Math.ceil((this.music.endsAt - this.now()) / 1000), byHost: this.music.byHost }
+        : null,
       stats: {
         viewers: stats?.viewers ?? 0,
         likes: stats?.likes ?? 0,

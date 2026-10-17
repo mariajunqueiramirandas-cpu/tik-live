@@ -1,15 +1,22 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Persona, SafetySettings } from "@tik-live/shared";
+import type { Effect, MusicTrack, Persona, SafetySettings } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import type { UsageReport } from "../usage";
 import type { ViewerMemory } from "./memory";
+import { PLAY_MUSIC_TOOL, PLAY_MUSIC_TOOL_NAME, readMusicCall } from "./music-tool";
 import { buildSystemPrompt, buildTurnMessage, type TurnRequest } from "./prompt";
-import { SentenceSplitter, toUtterance, type Emotion, type Utterance } from "./sentences";
+import { effectTags, SentenceSplitter, toUtterance, type Emotion, type Utterance } from "./sentences";
+
+/** Things the host can do besides talking. */
+export interface HostActions {
+  /** The host composed a piece of music (validated). */
+  playMusic?(track: MusicTrack): void;
+}
 
 /** Produces what the host says next, one sentence at a time, as fast as possible. */
 export interface HostBrain {
   readonly name: string;
-  generate(turn: TurnRequest, signal: AbortSignal): AsyncGenerator<Utterance>;
+  generate(turn: TurnRequest, signal: AbortSignal, actions?: HostActions): AsyncGenerator<Utterance>;
   /** `speechLanguage: null` lifts a previous voice's language. */
   reconfigure(update: { persona?: Persona; safety?: SafetySettings; speechLanguage?: string | null }): void;
 }
@@ -31,6 +38,7 @@ export interface ClaudeHostOptions {
   effort: "low" | "medium" | "high";
   onUsage?: (usage: UsageReport) => void;
   log?: Logger;
+  now?: () => number;
 }
 
 /**
@@ -56,8 +64,10 @@ export class ClaudeHost implements HostBrain {
     this.system = buildSystemPrompt(this.options.persona, this.options.safety, this.options.speechLanguage);
   }
 
-  async *generate(turn: TurnRequest, signal: AbortSignal): AsyncGenerator<Utterance> {
+  async *generate(turn: TurnRequest, signal: AbortSignal, actions: HostActions = {}): AsyncGenerator<Utterance> {
     const { client, model, effort, persona, memory, safety, log } = this.options;
+    // Stable per persona, so the cached prefix (tools, then system) survives across turns.
+    const music = persona.sound?.music !== false;
     const local = new AbortController();
     const abort = () => local.abort();
     signal.addEventListener("abort", abort, { once: true });
@@ -67,8 +77,9 @@ export class ClaudeHost implements HostBrain {
         model,
         max_tokens: 4000,
         system: [{ type: "text", text: this.system, cache_control: { type: "ephemeral" } }],
+        ...(music ? { tools: [PLAY_MUSIC_TOOL], tool_choice: { type: "auto" as const } } : {}),
         output_config: { effort },
-        messages: [{ role: "user", content: buildTurnMessage(turn, memory, safety.blocklist) }],
+        messages: [{ role: "user", content: buildTurnMessage(turn, memory, safety.blocklist, this.options.now?.()) }],
         ...(FALLBACK_CAPABLE.has(model)
           ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
           : {}),
@@ -77,14 +88,24 @@ export class ClaudeHost implements HostBrain {
     );
 
     const splitter = new SentenceSplitter();
-    const maxUtterances = turn.brief ? BRIEF_SENTENCES : persona.maxSentences + 1;
+    // A game turn reads a question and its options, so it gets a little more room.
+    const maxUtterances = turn.brief ? BRIEF_SENTENCES : persona.maxSentences + (turn.kind === "game" ? 3 : 1);
     let emotion: Emotion = "neutral";
     let produced = 0;
 
+    // Effect tags that arrived on their own ("... gift! " then "[confetti]") ride on the next line.
+    let orphanFx: Effect[] = [];
     const take = function* (sentences: string[]) {
       for (const sentence of sentences) {
         const utterance = toUtterance(sentence, emotion);
-        if (!utterance) continue;
+        if (!utterance) {
+          orphanFx = [...orphanFx, ...effectTags(sentence)].slice(0, 2);
+          continue;
+        }
+        if (orphanFx.length) {
+          utterance.fx = [...new Set([...orphanFx, ...(utterance.fx ?? [])])].slice(0, 2);
+          orphanFx = [];
+        }
         emotion = utterance.emotion;
         produced += 1;
         yield utterance;
@@ -105,6 +126,16 @@ export class ClaudeHost implements HostBrain {
 
       const final = await stream.finalMessage();
       if (final.stop_reason === "refusal") log?.warn("host turn ended in a refusal");
+      for (const block of final.content) {
+        if (block.type !== "tool_use" || block.name !== PLAY_MUSIC_TOOL_NAME) continue;
+        if (final.stop_reason === "max_tokens") {
+          log?.warn("the host's music was cut off; not playing it");
+          continue;
+        }
+        const call = readMusicCall(block.input);
+        if (call.ok) actions.playMusic?.(call.track);
+        else log?.warn(`the host wrote music that doesn't parse (${call.error})`);
+      }
       this.options.onUsage?.({
         kind: "turn",
         model: final.model ?? model,
@@ -163,6 +194,10 @@ export class ScriptedHost implements HostBrain {
         return [`[excited] New segment time: ${turn.nextSegment?.title ?? "something new"}!`];
       case "milestone":
         return [`[excited] ${turn.note ?? "We did it"}! You are all amazing.`];
+      case "game":
+        return [`[excited] ${turn.line ?? "Game time!"}`];
+      case "request":
+        return ["[happy] You got it, coming right up!"];
       case "filler": {
         const fillers = [
           "[thinking] Quick question for chat: what did you eat today?",

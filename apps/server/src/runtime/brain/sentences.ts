@@ -1,11 +1,15 @@
-import { EMOTIONS, type Emotion } from "@tik-live/shared";
+import { EFFECTS, EMOTIONS, type Effect, type Emotion } from "@tik-live/shared";
 
 export { EMOTIONS, type Emotion };
 
 export interface Utterance {
   text: string;
   emotion: Emotion;
+  /** Reactions cued in the line with tags like [confetti]; played when it starts. */
+  fx?: Effect[];
 }
+
+const MAX_FX_PER_LINE = 2;
 
 const ABBREVIATIONS = new Set(["mr", "mrs", "ms", "dr", "st", "vs", "etc", "e.g", "i.e", "approx"]);
 const MIN_CHUNK_CHARS = 10;
@@ -51,6 +55,25 @@ export class SentenceSplitter {
     out.push(combined);
   }
 
+  /**
+   * Effect tags right after a sentence ("What a gift! [confetti]") belong to
+   * it. Emotion tags there start the next sentence, so only effects are kept.
+   * Returns -1 while a tag is still arriving.
+   */
+  private withTrailingEffects(end: number): number {
+    const text = this.buffer;
+    let at = end;
+    for (;;) {
+      const rest = text.slice(at);
+      const tag = rest.match(/^\s*\[([a-z]*)(\])?/i);
+      if (!tag) return at;
+      if (!tag[2]) return tag[0].length === rest.length ? -1 : at; // "[conf" mid-stream: wait
+      if (!(EFFECTS as readonly string[]).includes((tag[1] ?? "").toLowerCase())) return at;
+      at += tag[0].length;
+      if (at >= text.length) return -1; // more tags (or the next sentence) may follow
+    }
+  }
+
   /** Index just past the end of the first complete sentence in the buffer, or -1. */
   private findBoundary(): number {
     const text = this.buffer;
@@ -66,7 +89,7 @@ export class SentenceSplitter {
         const word = text.slice(0, i).split(/\s+/).pop()?.toLowerCase() ?? "";
         if (ABBREVIATIONS.has(word)) continue;
       }
-      return end;
+      return this.withTrailingEffects(end);
     }
     return -1;
   }
@@ -76,10 +99,20 @@ function stripTags(text: string): string {
   return text.replace(/\[[^\]]*\]/g, "").trim();
 }
 
+/** The effect tags in a piece of model text, at most two, in order. */
+export function effectTags(raw: string): Effect[] {
+  const fx: Effect[] = [];
+  for (const match of raw.matchAll(/\[([a-z]+)\]/gi)) {
+    const candidate = match[1]?.toLowerCase() as Effect;
+    if ((EFFECTS as readonly string[]).includes(candidate) && !fx.includes(candidate) && fx.length < MAX_FX_PER_LINE) fx.push(candidate);
+  }
+  return fx;
+}
+
 /**
  * Turns a raw model sentence into something safe to feed a TTS engine:
- * reads an optional leading [emotion] tag, drops stage directions, markdown
- * and emoji (TTS engines read those literally).
+ * reads an optional leading [emotion] tag and any [effect] tags, drops stage
+ * directions, markdown and emoji (TTS engines read those literally).
  */
 export function toUtterance(raw: string, fallback: Emotion = "neutral"): Utterance | undefined {
   let emotion = fallback;
@@ -88,6 +121,7 @@ export function toUtterance(raw: string, fallback: Emotion = "neutral"): Utteran
     const candidate = tag[1]?.toLowerCase() as Emotion;
     if ((EMOTIONS as readonly string[]).includes(candidate)) emotion = candidate;
   }
+  const fx = effectTags(raw);
   const text = raw
     .replace(/\[[^\]]*\]/g, " ") // emotion tags and any other bracketed directions
     .replace(/(\*\*|__)(.+?)\1/g, "$2") // **bold** keeps its words
@@ -98,5 +132,5 @@ export function toUtterance(raw: string, fallback: Emotion = "neutral"): Utteran
     .replace(/\s+([,.!?;:])/g, "$1") // "Joe 🎮, hi" -> "Joe, hi"
     .trim();
   if (!/[\p{L}\p{N}]/u.test(text)) return undefined;
-  return { text, emotion };
+  return fx.length ? { text, emotion, fx } : { text, emotion };
 }

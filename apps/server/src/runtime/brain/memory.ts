@@ -28,6 +28,7 @@ export interface ViewerPersistence {
 /** A gap longer than this between two sightings counts as a new visit. */
 export const NEW_VISIT_GAP_MS = 3 * 60 * 60 * 1000;
 const RECENT_LINES = 3;
+const MAX_NOTES = 5;
 const MAX_CACHED = 20_000;
 
 export interface ViewerMemoryOptions {
@@ -112,7 +113,21 @@ export class ViewerMemory {
       parts.push(`has gifted ${r.diamonds} diamonds total (${top})`);
     }
     if (r.follows > 0) parts.push("follows the channel");
+    if (r.notes.length > 0) parts.push(`notes: ${r.notes.slice(-3).join("; ")}`);
+    if (r.visits > 1 && r.recentLines.length > 0) {
+      parts.push(`once said: ${r.recentLines.slice(-2).map((line) => `"${line.slice(0, 60)}"`).join(", ")}`);
+    }
     return parts.join("; ");
+  }
+
+  /** Remembers something harmless a viewer shared (the chronicler's notes). Keeps the newest few. */
+  addNote(id: string, note: string): void {
+    const record = this.viewers.get(id);
+    if (!record) return;
+    const lower = note.toLowerCase();
+    if (record.notes.some((existing) => existing.toLowerCase() === lower)) return;
+    record.notes = [...record.notes, note].slice(-MAX_NOTES);
+    this.dirty.add(id);
   }
 
   /** Resolves when background loads queued so far have completed. */
