@@ -116,7 +116,7 @@ export function channelRoutes(deps: AppDeps) {
       const source = patch.source ?? current.source;
       const handle = patch.tiktokUsername !== undefined ? patch.tiktokUsername : current.tiktokUsername;
       if (source === "tiktok" && !handle) {
-        return problem(c, 400, "tiktok_handle_required", "Adicione o @ do TikTok que este apresentador deve acompanhar.");
+        return problem(c, 400, "tiktok_handle_required", "Adicione o usuário do TikTok que este apresentador deve acompanhar.");
       }
       const row = await updateChannel(deps.db, user.id, current.id, patch);
       if (!row) throw notFound("Esse apresentador");
@@ -187,7 +187,7 @@ export function channelRoutes(deps: AppDeps) {
         const user = c.get("user");
         const row = await owned(user.id, c.req.valid("param").id);
         if (row.source === "tiktok" && !row.tiktokUsername) {
-          return problem(c, 400, "tiktok_handle_required", "Adicione o @ do TikTok que este apresentador deve acompanhar.");
+          return problem(c, 400, "tiktok_handle_required", "Adicione o usuário do TikTok que este apresentador deve acompanhar.");
         }
         const result = await deps.manager.start(row);
         if (!result.ok) return problem(c, result.code === "shutting_down" ? 503 : 402, result.code, result.message);

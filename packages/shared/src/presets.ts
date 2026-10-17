@@ -40,28 +40,28 @@ export const PRESETS: CharacterPreset[] = [
         },
         {
           id: "would-you-rather",
-          title: "O Que Você Prefere",
+          title: "O que você prefere",
           minutes: 6,
           prompt: "Entre as rodadas, reaja à votação do chat e provoque de leve o lado que perdeu.",
           game: { kind: "poll", rounds: 4 },
         },
         {
           id: "orb-quiz",
-          title: "Quiz da Bolinha",
+          title: "Quiz da bolinha",
           minutes: 7,
           prompt: "Entre as rodadas, converse com quem está ganhando e pergunte qual deveria ser o próximo tema.",
           game: { kind: "trivia", rounds: 5 },
         },
         {
           id: "hot-takes",
-          title: "Opiniões Polêmicas (de Mentira)",
+          title: "Opiniões polêmicas (de mentira)",
           minutes: 6,
           prompt:
             "Solte uma opinião boba e inofensiva (comida, bichos, dia a dia; nunca política, religião ou pessoas reais) e pergunte se o chat concorda.",
         },
         {
           id: "story",
-          title: "O Chat Escreve a História",
+          title: "O chat escreve a história",
           minutes: 7,
           prompt:
             "Continue uma historinha coletiva, uma ou duas frases por vez. Pergunte ao chat o que acontece depois e use as ideias de quem responder.",
@@ -93,27 +93,27 @@ export const PRESETS: CharacterPreset[] = [
         },
         {
           id: "dream-journal",
-          title: "Diário de Sonhos",
+          title: "Diário de sonhos",
           minutes: 8,
           prompt: "Peça para o chat contar um sonho de que se lembra, ou descreva em duas frases um sonho estranho e gentil seu.",
         },
         {
           id: "imaginary-songs",
-          title: "Músicas Que Não Existem",
+          title: "Músicas que não existem",
           minutes: 8,
           prompt:
             "Descreva uma música imaginária que combine com esta hora (nome, clima, um verso inventado) e peça ao chat para batizar a próxima.",
         },
         {
           id: "radio-quiz",
-          title: "Quiz da Rádio",
+          title: "Quiz da rádio",
           minutes: 8,
           prompt: "Entre as rodadas, converse com calma sobre as respostas dos ouvintes, como num quiz de fim de noite.",
           game: { kind: "trivia", rounds: 5 },
         },
         {
           id: "secret-frequency",
-          title: "Frequência Secreta",
+          title: "Frequência secreta",
           minutes: 6,
           prompt: "Entre as rodadas, fale da 'frequência' secreta em que a rádio se esconde e de quem chegou mais perto.",
           game: { kind: "number", rounds: 3 },
@@ -138,35 +138,35 @@ export const PRESETS: CharacterPreset[] = [
       segments: [
         {
           id: "quickfire",
-          title: "Quiz Relâmpago",
+          title: "Quiz relâmpago",
           minutes: 8,
           prompt: "Entre as rodadas, anime o placar e quem está perto do topo.",
           game: { kind: "trivia", rounds: 6 },
         },
         {
           id: "scramble",
-          title: "Palavra Embaralhada",
+          title: "Palavra embaralhada",
           minutes: 6,
           prompt: "Entre as rodadas, comemore quem digitou mais rápido e faça suspense sobre a próxima palavra.",
           game: { kind: "scramble", rounds: 5 },
         },
         {
           id: "guess-the-number",
-          title: "Adivinhe o Número",
+          title: "Adivinhe o número",
           minutes: 6,
           prompt: "Entre as rodadas, destaque os palpites mais próximos e desafie o chat a fazer melhor.",
           game: { kind: "number", rounds: 3 },
         },
         {
           id: "this-or-that",
-          title: "Isso ou Aquilo",
+          title: "Isso ou aquilo",
           minutes: 5,
           prompt: "Entre as rodadas, reaja à votação como se fosse o resultado de uma final de campeonato.",
           game: { kind: "poll", rounds: 4 },
         },
         {
           id: "hot-seat",
-          title: "Cadeira Quente",
+          title: "Cadeira quente",
           minutes: 6,
           prompt: "Escolha quem mandou mensagem por último e faça uma pergunta divertida e inofensiva de isso-ou-aquilo valendo pontos bônus.",
         },
@@ -196,21 +196,21 @@ export const PRESETS: CharacterPreset[] = [
         },
         {
           id: "quiz-do-baile",
-          title: "Quiz do Baile",
+          title: "Quiz do baile",
           minutes: 7,
           prompt: "Entre as rodadas, zoe de leve quem tá liderando e chame o resto pra virar o jogo.",
           game: { kind: "trivia", rounds: 5 },
         },
         {
           id: "dedo-mais-rapido",
-          title: "Dedo Mais Rápido",
+          title: "Dedo mais rápido",
           minutes: 5,
           prompt: "Entre as rodadas, narre como se fosse final de campeonato.",
           game: { kind: "fastest", rounds: 5 },
         },
         {
           id: "isso-ou-aquilo",
-          title: "Isso ou Aquilo",
+          title: "Isso ou aquilo",
           minutes: 5,
           prompt: "Entre as rodadas, comente o resultado da votação com exagero e humor.",
           game: { kind: "poll", rounds: 4 },
@@ -235,7 +235,7 @@ export const PRESETS: CharacterPreset[] = [
       segments: [
         {
           id: "papo",
-          title: "Papo de Amiga",
+          title: "Papo de amiga",
           minutes: 8,
           prompt: "Pergunte algo leve sobre o dia das pessoas, ou retome algo que alguém contou antes.",
         },
@@ -248,7 +248,7 @@ export const PRESETS: CharacterPreset[] = [
         },
         {
           id: "verdade-ou-mentira",
-          title: "Verdade ou Mentira",
+          title: "Verdade ou mentira",
           minutes: 6,
           prompt: "Entre as rodadas, conte uma curiosidade fofa relacionada à última pergunta.",
           game: { kind: "truefalse", rounds: 5 },
@@ -279,21 +279,21 @@ export const PRESETS: CharacterPreset[] = [
         },
         {
           id: "reflex-test",
-          title: "Teste de Reflexo",
+          title: "Teste de reflexo",
           minutes: 6,
           prompt: "Entre as rodadas, narre os tempos de reação como se fossem recordes mundiais.",
           game: { kind: "fastest", rounds: 6 },
         },
         {
           id: "speed-math",
-          title: "Matemática Speedrun",
+          title: "Matemática speedrun",
           minutes: 6,
           prompt: "Entre as rodadas, anime o placar como se fosse a chave de um torneio.",
           game: { kind: "math", rounds: 6 },
         },
         {
           id: "gamer-trivia",
-          title: "Quiz Gamer",
+          title: "Quiz gamer",
           minutes: 7,
           prompt: "Entre as rodadas, conte uma curiosidade rápida sobre games.",
           game: { kind: "trivia", rounds: 5, topic: "videogames" },
@@ -318,20 +318,20 @@ export const PRESETS: CharacterPreset[] = [
       segments: [
         {
           id: "fact-drop",
-          title: "Curiosidade do Dia",
+          title: "Curiosidade do dia",
           minutes: 7,
           prompt: "Conte um fato surpreendente e bem estabelecido sobre a natureza, o espaço ou o dia a dia, e pergunte se o chat já sabia.",
         },
         {
           id: "fact-or-fake",
-          title: "Fato ou Fake",
+          title: "Fato ou fake",
           minutes: 7,
           prompt: "Entre as rodadas, explique a última resposta numa frase incrível.",
           game: { kind: "truefalse", rounds: 6 },
         },
         {
           id: "explorer-quiz",
-          title: "Quiz do Explorador",
+          title: "Quiz do explorador",
           minutes: 7,
           prompt: "Entre as rodadas, pergunte ao chat qual lugar do mundo gostariam de explorar.",
           game: { kind: "trivia", rounds: 5, topic: "animais, espaço e geografia" },
@@ -356,7 +356,7 @@ export const PRESETS: CharacterPreset[] = [
       segments: [
         {
           id: "story-time",
-          title: "História do Caos",
+          title: "História do caos",
           minutes: 7,
           prompt: "Continue uma história absurda estrelada por pessoas do chat, uma ou duas frases por vez, e pergunte o que acontece depois.",
         },
@@ -369,7 +369,7 @@ export const PRESETS: CharacterPreset[] = [
         },
         {
           id: "word-goblin",
-          title: "O Gremlin das Palavras",
+          title: "O gremlin das palavras",
           minutes: 6,
           prompt: "Entre as rodadas, finja que o gremlin comeu algumas letras e coloque a culpa no chat, de brincadeira.",
           game: { kind: "scramble", rounds: 5 },
@@ -394,13 +394,13 @@ export const PRESETS: CharacterPreset[] = [
       segments: [
         {
           id: "focus",
-          title: "Sessão de Foco",
+          title: "Sessão de foco",
           minutes: 12,
           prompt: "Faça um check-in gentil: pergunte no que alguém está trabalhando, ou comemore um progresso que alguém contou antes. De vez em quando, ofereça um lo-fi suave.",
         },
         {
           id: "brain-break",
-          title: "Pausa pro Cérebro",
+          title: "Pausa pro cérebro",
           minutes: 5,
           prompt: "Entre as rodadas, mantenha tudo tranquilo e lembre que a pausa é curta.",
           game: { kind: "scramble", rounds: 3 },

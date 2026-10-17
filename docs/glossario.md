@@ -62,7 +62,33 @@ fixa os termos para que tudo soe como um produto só. Documentação técnica
 | billing, plan | assinatura, plano |
 | cloud broadcast | transmissão pela nuvem |
 | stream key | chave de transmissão |
-| sign in / sign out | entrar / sair |
+| sign in / sign out | entrar / sair (verbos); login (substantivo) |
+| TikTok handle | usuário do TikTok |
+| delete | excluir |
+| the room (studio feed) | a sala |
+| now saying | falando agora |
+| up next | a seguir |
+| catchphrases | bordões |
+| failed (status) | precisa de atenção |
+| strictness: standard / strict | padrão / rigoroso |
+
+## Navegação
+
+- Abas do apresentador: Estúdio, Personagem, Segurança, Configuração, Desempenho.
+- Abas do editor de personagem: Identidade, Voz e som, Visual, Roteiro, Regras.
+- Cobrança: "Plano e assinatura". Conta: "Conta".
+
+## Frases-padrão
+
+- Falhas: "Não deu para {ação}." ("Não deu para salvar.")
+- Expressões do personagem são substantivos, para não ter gênero: Calma, Alegria,
+  Empolgação, Risada, Surpresa, Pensando, Tristeza, Carinho, Travessura,
+  Confusão, Timidez, Sono, Orgulho, Biquinho.
+- Personagens podem ser femininos (Mel, Nova): evite adjetivos com gênero
+  ligados ao nome ("{nome} parou de repente", não "{nome} está pronto").
+- Nomes de presentes ficam como o TikTok manda ("Rose", "Galaxy").
+- Números que o espectador digita (palpites, contas) ficam sem ponto de milhar;
+  contagens e pontos usam ("12.345 respostas", "1.000 pts").
 
 ## Jogos
 

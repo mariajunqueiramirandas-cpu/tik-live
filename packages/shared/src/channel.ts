@@ -9,7 +9,7 @@ export const tiktokHandleSchema = z
   .string()
   .trim()
   .transform((value) => value.replace(/^@/, ""))
-  .pipe(z.string().regex(/^[A-Za-z0-9._]{2,24}$/, "Isso não parece um @ do TikTok"));
+  .pipe(z.string().regex(/^[A-Za-z0-9._]{2,24}$/, "Isso não parece um usuário do TikTok"));
 
 export const voiceSettingsSchema = z.object({
   provider: z.enum(["elevenlabs", "pocket", "none"]).default("none"),
