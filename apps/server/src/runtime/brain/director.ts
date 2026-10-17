@@ -54,6 +54,35 @@ export interface DirectorOptions {
 const LIKE_MILESTONES = [100, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000];
 const MIN_TURN_GAP_MS = 1_500;
 const RECENT_LINES = 8;
+/** Viewer events one reaction turn covers: the top few, plus gifts and thank-yous folded in. */
+const REACT_TOP_ITEMS = 4;
+const REACT_MAX_ITEMS = 8;
+
+/**
+ * How much each kind of turn matters once it's under way (ADR-0022). A turn
+ * is only ever interrupted, between sentences, by an event more urgent than
+ * its priority.
+ */
+export const TURN_PRIORITY: Record<TurnKind, number> = {
+  filler: 10,
+  segment_change: 20,
+  milestone: 30,
+  opening: 40,
+  react: 50,
+};
+
+/** How urgently a queued event wants the floor: gifts cut short anything but a reaction or the opening; chat only cuts filler. */
+export function eventUrgency(event: LiveEvent): number {
+  switch (event.kind) {
+    case "gift":
+      return 35;
+    case "chat":
+    case "question":
+      return 15;
+    default:
+      return 0;
+  }
+}
 /** With nobody watching and nothing happening for this long, stop filling silence (ADR-0012). */
 const EMPTY_ROOM_REACT_ONLY_MS = 10 * 60 * 1000;
 
@@ -88,6 +117,13 @@ export interface DirectorState {
  *
  * Decision order each tick: opening > reactions to viewers > like milestones
  * > segment changes > dead-air filler.
+ *
+ * Turn-taking (ADR-0022): one turn is generated at a time, and the next one
+ * starts while the last sentence of the previous one is playing, so events
+ * that arrive meanwhile are batched into it (and it's kept brief when chat is
+ * busy). Sentences are never cut: when a gift or a message arrives during a
+ * less important turn (filler, a segment intro), the sentence on stage
+ * finishes, the rest of that turn is dropped, and the host reacts next.
  */
 export class Director {
   private persona: Persona;
@@ -113,6 +149,8 @@ export class Director {
   private budgetReactOnly = false;
   private timer: ReturnType<typeof setInterval> | undefined;
   private turnCounter = 0;
+  /** A turn just yielded to something more urgent: start the next one without the usual gap. */
+  private skipGap = false;
   private readonly now: () => number;
 
   constructor(private readonly options: DirectorOptions) {
@@ -233,6 +271,7 @@ export class Director {
     }
     const result = this.options.triage.ingest(event);
     this.options.hooks?.onEvent?.(event, result);
+    if (result.queued) this.yieldTo(eventUrgency(event));
   }
 
   /** Called when a sentence was actually performed on stage. */
@@ -307,13 +346,34 @@ export class Director {
   async tick(): Promise<void> {
     if (this.paused || this.standby || this.turnInFlight) return;
     const now = this.now();
-    if (now < this.cooldownUntil || now - this.lastTurnAt < MIN_TURN_GAP_MS) return;
+    if (now < this.cooldownUntil || (!this.skipGap && now - this.lastTurnAt < MIN_TURN_GAP_MS)) return;
     // Start the next turn while the last sentence is still playing, but never
     // stack up more than one turn of queued speech.
     if (this.options.speech.pending() > 0) return;
 
     const turn = this.chooseTurn(now);
     if (turn) await this.runTurn(turn);
+  }
+
+  /**
+   * Barge-in at a sentence boundary: stops generating and drops the queued
+   * lines of any turn less important than `urgency`. The sentence on stage
+   * plays to the end; the next tick picks the reaction.
+   */
+  private yieldTo(urgency: number): void {
+    if (this.paused || this.standby || urgency <= 0) return;
+    const outranked = (kind: string | undefined) => kind !== undefined && kind in TURN_PRIORITY && TURN_PRIORITY[kind as TurnKind] < urgency;
+    const { speech } = this.options;
+    let yielded = outranked(speech.activeMeta()?.turnKind);
+    if (this.turnInFlight && outranked(this.turnInFlight)) {
+      this.turnAbort?.abort();
+      yielded = true;
+    }
+    const dropped = speech.drop((meta) => outranked(meta?.turnKind));
+    if (yielded || dropped > 0) {
+      this.skipGap = true;
+      this.options.log?.debug(`yielding to a viewer event (${dropped} queued line${dropped === 1 ? "" : "s"} dropped)`);
+    }
   }
 
   private setStandby(value: boolean): void {
@@ -327,7 +387,8 @@ export class Director {
     const base = {
       segment: this.segment(),
       stats: { viewers: this.viewers, likes: this.counters.likes, uptimeMinutes: this.stats().uptimeMinutes },
-      recentLines: this.recentLines,
+      // What it said, plus what it's still saying: the reply plays after those.
+      recentLines: [...this.recentLines, ...speech.upcoming()].slice(-RECENT_LINES),
       originAt: now,
     };
 
@@ -337,11 +398,13 @@ export class Director {
     }
 
     if (triage.pending() > 0) {
-      const items = triage.take(4);
-      // Fold any remaining thank-you-type events into the same turn.
-      items.push(...triage.takeKinds(["follow", "share", "join"], 6 - items.length));
+      const items = triage.take(REACT_TOP_ITEMS);
+      // Fold the other gifts and thank-you-type events into the same turn.
+      items.push(...triage.takeKinds(["gift", "follow", "share", "join"], REACT_MAX_ITEMS - items.length));
+      // More is waiting, or this turn covers a lot: keep it short to keep up.
+      const brief = triage.pending() > 0 || items.length > REACT_TOP_ITEMS;
       const originAt = Math.min(...items.map((item) => item.event.at));
-      return { ...base, kind: "react", items, originAt: Number.isFinite(originAt) ? originAt : now };
+      return { ...base, kind: "react", items, brief, originAt: Number.isFinite(originAt) ? originAt : now };
     }
 
     if (this.pendingMilestone !== undefined) {
@@ -376,6 +439,7 @@ export class Director {
   private async runTurn(turn: TurnRequest & { originAt: number }): Promise<void> {
     this.turnInFlight = turn.kind;
     this.lastTurnAt = this.now();
+    this.skipGap = false;
     const abort = new AbortController();
     this.turnAbort = abort;
     const turnId = `t${++this.turnCounter}`;

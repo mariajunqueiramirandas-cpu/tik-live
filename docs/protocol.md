@@ -44,8 +44,11 @@ Close codes with a meaning:
 | `4004` | The host was deleted | Stops reconnecting |
 | anything else | Network loss, server restart | Reconnects |
 
-Only `program` and `broadcast` stages are "on air": their `spoken` messages
-pace the host and their telemetry shows in the studio. Previews never pace
+Only `program` and `broadcast` stages are "on air": their `started` and
+`spoken` messages pace the host and their telemetry shows in the studio.
+The server sends the next line only once **every** on-air stage that got the
+current one has finished it, so the show never runs ahead of the slowest
+stage on air ([ADR-0022](adr/0022-host-turn-taking.md)). Previews never pace
 the show. When no on-air stage is connected, the server paces speech by
 each line's estimated duration so the show keeps a realistic rhythm.
 
@@ -70,8 +73,13 @@ page to reload.
 
 Say one line: show the caption, set the expression, play `audioUrl` (or
 animate the mouth from the text when it's `null`, which is captions-only
-mode). When playback ends the stage replies with [`spoken`](#spoken) and the
-same `id`. A new `speak` replaces the current one.
+mode). When playback starts the stage replies with [`started`](#started),
+and when it ends with [`spoken`](#spoken), both with the same `id`.
+
+A `speak` that arrives while another line is playing **waits** for that line
+to end; it never cuts it off. Only [`stop`](#stop) cuts a line. If more than
+three lines are waiting (the stage fell far behind), the stage skips the
+oldest waiting one and reports it as `spoken`.
 
 #### `prefetch`
 
@@ -84,8 +92,8 @@ it now so the next `speak` starts without a gap.
 
 #### `stop`
 
-Stop speaking now (the operator pressed pause or skip). Audio stops and the
-caption clears at once.
+Stop speaking now (the operator pressed pause or skip). Audio stops, lines
+waiting to be spoken are discarded, and the caption clears at once.
 
 #### `alert`
 
@@ -111,8 +119,10 @@ The show moved to a new segment; the stage shows its title.
 { "v": 1, "t": "stats", "viewers": 42, "likes": 1800 }
 ```
 
-Audience numbers for on-screen counters. Droppable: when a client's send
-buffer is over 1 MB, stats are skipped for it rather than queued.
+Audience numbers for on-screen counters, sent at most four times a second
+(a burst of likes is coalesced into the latest numbers). Droppable: when a
+client's send buffer is over 1 MB, stats are skipped for it rather than
+queued.
 
 #### `look`
 
@@ -140,14 +150,26 @@ Sent on every (re)connect. `role` overrides the query parameter. `caps`
 says whether WebGL2 and audio are available (OBS without "Control audio via
 OBS" still reports audio; a machine without WebGL2 gets the 2D fallback).
 
+#### `started`
+
+```json
+{ "v": 1, "t": "started", "id": "c-1f3a", "durationMs": 2380 }
+```
+
+The line with this `id` started playing; `durationMs` is the length of the
+decoded audio (or of the silent envelope in captions-only mode). Until a
+stage sends this, the server gives it the line's estimated duration plus 4
+seconds to fetch and decode; after it, the real duration plus 1.5 seconds.
+
 #### `spoken`
 
 ```json
 { "v": 1, "t": "spoken", "id": "c-1f3a" }
 ```
 
-The line with this `id` finished playing. The host waits for it, plus a
-4-second grace, before speaking again.
+The line with this `id` finished playing. The host speaks again once every
+on-air stage that got the line has sent this (or disconnected, or ran out of
+the time described under [`started`](#started)).
 
 #### `telemetry`
 
@@ -289,7 +311,8 @@ Cut the current line; the host carries on with the next turn.
 ##### `say`
 
 `{ "kind": "say", "text": "…" }` (1–300 characters): the host speaks this
-line next, in its own voice. Lines typed by the owner skip the safety gate
+line next, in its own voice, right after the sentence on stage and ahead of
+anything the host had queued. Lines typed by the owner skip the safety gate
 and show as `operator` in the transcript; at most 10 a minute.
 
 ##### `segment`

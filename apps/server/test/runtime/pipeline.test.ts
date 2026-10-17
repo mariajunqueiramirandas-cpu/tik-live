@@ -66,6 +66,55 @@ describe("SpeechPipeline", () => {
     expect(output.played).toEqual(["operator says hi"]);
   });
 
+  it("drop() removes queued lines, never the one on stage, and cancels their synthesis", async () => {
+    let release: () => void = () => {};
+    const output: SpeechOutput = {
+      play: (cue) => {
+        played.push(cue.text);
+        return new Promise((resolve) => (release = resolve));
+      },
+      interrupt: () => {},
+    };
+    const played: string[] = [];
+    const aborted: string[] = [];
+    const tts: TtsProvider = {
+      name: "watch",
+      synthesize: async (text, _emotion, signal) => {
+        signal?.addEventListener("abort", () => aborted.push(text));
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return null;
+      },
+    };
+    const meta = (turnKind: string) => ({ turnId: turnKind, turnKind, originAt: 0, first: false });
+    const pipeline = new SpeechPipeline(tts, new SafetyGate({ blocklist: [] }), output);
+    pipeline.enqueue(say("filler one"), { meta: meta("filler") });
+    pipeline.enqueue(say("filler two"), { meta: meta("filler") });
+    pipeline.enqueue(say("filler three"), { meta: meta("filler") });
+    for (let i = 0; i < 20 && played.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(pipeline.upcoming()).toEqual(["filler one", "filler two", "filler three"]);
+
+    expect(pipeline.drop((m) => m?.turnKind === "filler")).toBe(2);
+    expect(aborted.sort()).toEqual(["filler three", "filler two"]);
+    pipeline.enqueue(say("thanks for the rose"), { meta: meta("react") });
+    release();
+    for (let i = 0; i < 20 && played.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    release();
+    await settle(pipeline);
+    expect(played).toEqual(["filler one", "thanks for the rose"]);
+  });
+
+  it("puts operator lines right after the current sentence, in the order typed", async () => {
+    const output = new RecordingOutput();
+    const pipeline = new SpeechPipeline(new SlowTts(), new SafetyGate({ blocklist: [] }), output);
+    pipeline.enqueue(say("host one"));
+    pipeline.enqueue(say("host two"));
+    pipeline.enqueue(say("operator one"), { trusted: true, front: true });
+    pipeline.enqueue(say("operator two"), { trusted: true, front: true });
+    await settle(pipeline);
+    // "host one" is already on its way to the stage; the operator cuts in right after it.
+    expect(output.played).toEqual(["host one", "operator one", "operator two", "host two"]);
+  });
+
   it("stop() discards everything queued", async () => {
     const output = new RecordingOutput();
     const pipeline = new SpeechPipeline(new SlowTts(), new SafetyGate({ blocklist: [] }), output);

@@ -3,7 +3,7 @@ import { ENGINE_VERSION, type StageEngine, type Telemetry } from "./engine";
 
 /**
  * The stage's connection to the server (ADR-0008): announces itself, feeds
- * protocol messages to the engine, reports `spoken` and telemetry back, and
+ * protocol messages to the engine, reports `started`, `spoken` and telemetry back, and
  * reconnects with exponential backoff and jitter. While disconnected the
  * engine keeps its idle animation running; nothing broken shows on screen.
  */
@@ -94,6 +94,7 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
     });
   };
 
+  const offStarted = engine.on("started", (id, durationMs) => send({ t: "started", id, durationMs }));
   const offSpoken = engine.on("spoken", (id) => send({ t: "spoken", id }));
   const offTelemetry = engine.on("telemetry", sendTelemetry);
 
@@ -172,6 +173,7 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
     close() {
       stopped = true;
       if (timer !== null) cancel(timer);
+      offStarted();
       offSpoken();
       offTelemetry();
       const ws = socket;

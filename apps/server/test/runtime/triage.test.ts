@@ -24,6 +24,15 @@ describe("Triage", () => {
     expect(order).toEqual(["Lion", "Rose", "chat"]);
   });
 
+  it("folds repeat gifts from one viewer into a single thank-you", () => {
+    const { triage, ingest } = setup();
+    for (let i = 0; i < 10; i++) ingest(gift("maria", "Rose", 1));
+    ingest(gift("maria", "Lion", 29999));
+    ingest(gift("joe", "Rose", 1));
+    const gifts = triage.take(10).map((item) => (item.event.kind === "gift" ? `${item.event.viewer.handle} ${item.event.count}x ${item.event.giftName} ${item.event.diamonds}` : ""));
+    expect(gifts).toEqual(["maria 1x Lion 29999", "maria 10x Rose 10", "joe 1x Rose 1"]);
+  });
+
   it("boosts questions and messages that mention the host", () => {
     const { triage, ingest } = setup();
     ingest(chat("a", "nice stream"));

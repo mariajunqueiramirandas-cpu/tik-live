@@ -36,6 +36,8 @@ export class AudioEngine {
   private source: AudioBufferSourceNode | null = null;
   private envelope: { fn: Envelope; start: number } | null = null;
   private resolveCurrent: (() => void) | null = null;
+  /** Bumped by every play and stop, so a clip that finishes loading late can't start over a newer line. */
+  private token = 0;
   private readonly cache = new Map<string, Promise<AudioBuffer | null>>();
   private readonly now: () => number;
   private readonly fetcher: (url: string) => Promise<Response>;
@@ -100,16 +102,20 @@ export class AudioEngine {
    */
   async play(text: string, audioUrl: string | null, fallbackMs: number): Promise<PlaybackHandle> {
     this.stop();
+    const token = this.token;
     const ctx = audioUrl ? this.ensure() : null;
     if (ctx && audioUrl) {
       const buffer = await this.load(audioUrl);
       this.cache.delete(audioUrl);
-      if (buffer && ctx.state === "running") return this.playBuffer(ctx, buffer, text);
+      // Stopped (or replaced) while loading: start nothing.
+      if (token !== this.token) return inertHandle(buffer?.duration ?? fallbackMs / 1000);
+      if (buffer && ctx.state === "running") return this.playBuffer(ctx, buffer, token);
     }
-    return this.playEnvelope(text, fallbackMs);
+    return this.playEnvelope(text, fallbackMs, token);
   }
 
   stop(): void {
+    this.token += 1;
     if (this.source) {
       try {
         this.source.onended = null;
@@ -230,7 +236,12 @@ export class AudioEngine {
     return ctx;
   }
 
-  private playBuffer(ctx: AudioContext, buffer: AudioBuffer, _text: string): PlaybackHandle {
+  /** Stops this line only if it's still the one playing. */
+  private stopIf(token: number): void {
+    if (token === this.token) this.stop();
+  }
+
+  private playBuffer(ctx: AudioContext, buffer: AudioBuffer, token: number): PlaybackHandle {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.analyser!);
@@ -248,10 +259,10 @@ export class AudioEngine {
     });
     // A hair of lead time keeps the start sample-accurate and glitch-free.
     source.start(ctx.currentTime + 0.02);
-    return { done, duration: buffer.duration, stop: () => this.stop() };
+    return { done, duration: buffer.duration, stop: () => this.stopIf(token) };
   }
 
-  private playEnvelope(text: string, durationMs: number): PlaybackHandle {
+  private playEnvelope(text: string, durationMs: number, token: number): PlaybackHandle {
     const fn = syllableEnvelope(text, durationMs);
     const envelope = { fn, start: this.now() };
     this.envelope = envelope;
@@ -267,8 +278,12 @@ export class AudioEngine {
       this.resolveCurrent = finish;
       const timer = setTimeout(finish, durationMs);
     });
-    return { done, duration: durationMs / 1000, stop: () => this.stop() };
+    return { done, duration: durationMs / 1000, stop: () => this.stopIf(token) };
   }
+}
+
+function inertHandle(duration: number): PlaybackHandle {
+  return { done: Promise.resolve(), duration, stop: () => {} };
 }
 
 function clamp01(v: number): number {

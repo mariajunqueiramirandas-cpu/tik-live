@@ -12,8 +12,13 @@ export interface TurnRequest {
   segment: Segment;
   nextSegment?: Segment;
   stats: { viewers: number; likes: number; uptimeMinutes: number };
-  /** The host's own recent lines, to keep continuity and avoid repeats. */
+  /**
+   * The host's own recent lines, to keep continuity and avoid repeats,
+   * including lines still queued to be said before this reply.
+   */
   recentLines: string[];
+  /** Chat is busy: answer in one or two sentences so the host keeps up. */
+  brief?: boolean;
   /** Extra context for milestones etc. */
   note?: string;
 }
@@ -119,7 +124,9 @@ function taskFor(turn: TurnRequest): string {
     case "opening":
       return `You just came on air (or came back after a short break). Greet everyone with energy and set up the current segment, "${turn.segment.title}".`;
     case "react":
-      return "React to the live events above.";
+      return turn.brief
+        ? "React to the live events above. Chat is busy: one or two short sentences, and thank several people together."
+        : "React to the live events above.";
     case "filler":
       return `Nobody has said anything for a bit. Keep the show alive: ${turn.segment.prompt}`;
     case "segment_change":
