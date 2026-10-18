@@ -11,6 +11,7 @@ const LAB = "http://localhost:5199";
 // Never reach paid providers from tests, whatever the developer's shell has.
 const offline = {
   ANTHROPIC_API_KEY: "",
+  OPENROUTER_API_KEY: "",
   ELEVENLABS_API_KEY: "",
   MP_ACCESS_TOKEN: "",
   MP_PLATFORM_ACCESS_TOKEN: "",
