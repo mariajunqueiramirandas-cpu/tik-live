@@ -1,5 +1,6 @@
 import {
   isUnlimited,
+  runOfShow,
   type ChannelRuntimeSummary,
   type RuntimeSnapshot,
   type RuntimeStatus,
@@ -362,7 +363,9 @@ export function stoppedSnapshot(
   status: RuntimeStatus,
   detail: string,
 ): RuntimeSnapshot {
-  const segment = channel.persona.segments[0]!;
+  // Stopped, an automatic run of show (ADR-0035) previews a plan; the live one draws its own.
+  const segments = runOfShow(channel.persona, 0, 0);
+  const segment = segments[0]!;
   return {
     status,
     detail,
@@ -371,7 +374,7 @@ export function stoppedSnapshot(
     thinking: false,
     reactOnly: false,
     segment: { id: segment.id, title: segment.title, endsInSec: segment.minutes * 60 },
-    segments: channel.persona.segments.map((s) => ({ id: s.id, title: s.title })),
+    segments: segments.map((s) => ({ id: s.id, title: s.title, ...(s.game ? { game: s.game.kind } : {}) })),
     game: null,
     upNext: [],
     leaders: { likes: [], gifts: [] },

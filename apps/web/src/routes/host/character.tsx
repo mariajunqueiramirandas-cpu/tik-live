@@ -444,15 +444,29 @@ export default function Character() {
           </Tabs.Content>
 
           <Tabs.Content value="show" className={s.panel}>
-            <p className={s.note}>
-              Os quadros guiam a live quando o chat está parado. O apresentador passa para o próximo quando o tempo acaba, e você pode trocar quando quiser pelo estúdio. Um quadro com minijogo roda o jogo enquanto está no ar: os espectadores respondem no chat.
-            </p>
-            <SegmentEditor segments={persona.segments} onChange={(segments) => set("segments", segments)} errors={errors} />
+            <Switch
+              label="Roteiro 100% automático"
+              hint={`${persona.name || channel.name} monta o roteiro sozinho: alterna papo e minijogos, troca de quadro na hora certa e sorteia um roteiro novo a cada volta. Seus quadros ficam guardados para quando você desligar.`}
+              checked={persona.autoShow ?? false}
+              onChange={(autoShow) => set("autoShow", autoShow)}
+            />
+            {persona.autoShow ? (
+              <p className={s.note}>
+                Cada volta tem seis quadros: conversa, opinião polêmica, história com o chat, perguntas e desafios, intercalados com minijogos, e termina com um jogo e o pódio. Você continua podendo trocar de quadro pelo estúdio.
+              </p>
+            ) : (
+              <>
+                <p className={s.note}>
+                  Os quadros guiam a live quando o chat está parado. O apresentador passa para o próximo quando o tempo acaba, e você pode trocar quando quiser pelo estúdio. Um quadro com minijogo roda o jogo enquanto está no ar: os espectadores respondem no chat.
+                </p>
+                <SegmentEditor segments={persona.segments} onChange={(segments) => set("segments", segments)} errors={errors} />
+              </>
+            )}
             <Switch
               label="O chat escolhe o jogo do último quadro"
-              hint="Perto do fim do penúltimo quadro, o palco abre uma votação com três minijogos. O mais votado é o jogo do último quadro. Precisa de pelo menos dois quadros."
+              hint={persona.autoShow ? "Perto do fim do penúltimo quadro, o palco abre uma votação com três minijogos. O mais votado é o jogo do último quadro." : "Perto do fim do penúltimo quadro, o palco abre uma votação com três minijogos. O mais votado é o jogo do último quadro. Precisa de pelo menos dois quadros."}
               checked={persona.finalVote ?? true}
-              disabled={persona.segments.length < 2}
+              disabled={!persona.autoShow && persona.segments.length < 2}
               onChange={(finalVote) => set("finalVote", finalVote)}
             />
             <Switch

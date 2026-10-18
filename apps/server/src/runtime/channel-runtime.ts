@@ -5,6 +5,7 @@ import {
   MUSIC_LIBRARY,
   musicTrackSchema,
   passSeconds,
+  runOfShow,
   viewerName,
   type InjectEvent,
   type LiveEvent,
@@ -498,7 +499,8 @@ export class ChannelRuntime {
   snapshot(): RuntimeSnapshot {
     const d = this.director?.state();
     const stats = d?.stats;
-    const segment = d?.segment ?? this.channel.persona.segments[0]!;
+    const segments = this.director?.segments() ?? runOfShow(this.channel.persona, 0, 0);
+    const segment = d?.segment ?? segments[0]!;
     const limit = this.plan.limits.tokenBudgetPerHour;
     const telemetry = this.options.stage.engineTelemetry();
     const source = this.source?.status() ?? { name: this.channel.source, connected: false, live: false, detail: "" };
@@ -510,7 +512,7 @@ export class ChannelRuntime {
       thinking: Boolean(d?.turnInFlight),
       reactOnly: d?.reactOnly ?? false,
       segment: { id: segment.id, title: segment.title, endsInSec: d?.segmentEndsInSec ?? segment.minutes * 60 },
-      segments: this.channel.persona.segments.map((s) => ({ id: s.id, title: s.title })),
+      segments: segments.map((s) => ({ id: s.id, title: s.title, ...(s.game ? { game: s.game.kind } : {}) })),
       game: this.games?.status() ?? null,
       upNext: (this.director?.upNext() ?? []).map((item) => ({ kind: item.kind, title: item.title, inSec: Math.max(0, Math.ceil((item.at - this.now()) / 1000)) })),
       leaders: this.director?.leaders() ?? { likes: [], gifts: [] },

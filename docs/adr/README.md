@@ -40,6 +40,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed |
 | [0033](0033-host-memory.md) | Host memory that's cheap, fast and accurate | Proposed |
 | [0034](0034-names-that-sound-rude.md) | Names that sound rude out loud | Proposed |
+| [0035](0035-automatic-run-of-show.md) | A run of show the host plans by itself | Proposed |
 
 ## Evidence used
 

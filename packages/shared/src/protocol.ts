@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { RUNTIME_STATUSES } from "./channel";
 import { injectEventSchema } from "./events";
-import { BOOST_KINDS, gameConfigSchema, gameSceneSchema, type GameStatus, type LoopRankingStatus } from "./game";
+import { BOOST_KINDS, gameConfigSchema, gameSceneSchema, type GameStatus, type LoopRankingStatus, type SegmentGame } from "./game";
 import { MUSIC_LIBRARY, musicTrackSchema, SOUNDS } from "./music";
 import { effectSchema, emotionSchema, lookSchema } from "./persona";
 
@@ -179,7 +179,8 @@ export interface RuntimeSnapshot {
   /** The host only reacts to events (budget exhausted or nobody watching). */
   reactOnly: boolean;
   segment: { id: string; title: string; endsInSec: number };
-  segments: Array<{ id: string; title: string }>;
+  /** The run of show this loop plays (the automatic one when it's on, ADR-0035), with each segment's minigame. */
+  segments: Array<{ id: string; title: string; game?: SegmentGame["kind"] }>;
   /** The minigame running now, if any. */
   game: GameStatus | null;
   /** What's coming up on the show, soonest first (estimates: segments wait for games and quiet moments). */
