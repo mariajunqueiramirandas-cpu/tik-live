@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { SafetySettings } from "@tik-live/shared";
+import { wellFormedDeep, type SafetySettings } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import type { UsageReport } from "../usage";
 import { checkSpokenOutput } from "./rules";
@@ -106,7 +106,7 @@ export class ClaudeModerator implements Moderator {
     const cached = this.cache.get(key);
     if (cached) return cached;
 
-    const response = await this.options.client.messages.create({
+    const response = await this.options.client.messages.create(wellFormedDeep({
       model: this.options.model,
       max_tokens: 2000,
       system: [{ type: "text", text: this.policy, cache_control: { type: "ephemeral" } }],
@@ -119,7 +119,7 @@ export class ClaudeModerator implements Moderator {
           content: `${context ? `<context>\n${escapeForPrompt(context)}\n</context>\n` : ""}<sentence>${escapeForPrompt(sentence)}</sentence>\nIs this sentence safe to say on stream?`,
         },
       ],
-    });
+    }));
     this.options.onUsage?.({
       kind: "moderation",
       model: this.options.model,

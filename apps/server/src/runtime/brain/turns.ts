@@ -1,4 +1,5 @@
-import { viewerName, type LiveEvent, type Persona } from "@tik-live/shared";
+import Anthropic from "@anthropic-ai/sdk";
+import { clip, viewerName, type LiveEvent, type Persona } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import { escapeForPrompt } from "../safety/gate";
 import { containsBlockedTerm } from "../safety/rules";
@@ -16,8 +17,20 @@ import type { QueueItem } from "./triage";
  * next chronicle, keeping `keepTurns` turns word for word; past `hardTokens`
  * old turns go even without a summary. Kept small: every turn reads the
  * whole conversation (from the cache, but still).
+ *
+ * `maxRequestBytes` is a backstop above the hard limit (~96 KB of text plus
+ * ~10 KB of system prompt and tools): a turn only compacts for it when one
+ * room or reply is unusually large.
  */
-const CONTEXT_BUDGET = { softTokens: 14_000, hardTokens: 28_000, keepTurns: 6 };
+const CONTEXT_BUDGET: ContextBudget = { softTokens: 16_000, hardTokens: 32_000, keepTurns: 8, maxRequestBytes: 140_000 };
+
+export interface ContextBudget {
+  softTokens: number;
+  hardTokens: number;
+  keepTurns: number;
+  /** The most a whole request may weigh (conversation, room, brief, system prompt, tools); a turn compacts first rather than send more. */
+  maxRequestBytes?: number;
+}
 /** The chronicler runs at most this often for viewer notes and the show summary, and only with enough new turns. */
 const CHRONICLE_EVERY_MS = 4 * 60_000;
 const CHRONICLE_MIN_TURNS = 6;
@@ -43,7 +56,7 @@ export interface TurnEngineOptions {
   /** How the last stream went, for the first turn of this one. */
   lastStream?: string;
   /** When to fold the conversation, and how many turns to keep word for word (tests shrink it). */
-  budget?: { softTokens: number; hardTokens: number; keepTurns: number };
+  budget?: ContextBudget;
   onTurn?(turn: { id: string; kind: TurnKind; items: number }): void;
   /** The show summary changed (the runtime keeps it with the stream session). */
   onSummary?(summary: string): void;
@@ -76,7 +89,9 @@ export class TurnEngine {
   private chronicledAt: number;
   private chronicling: AbortController | null = null;
   private chronicleRetryAt = 0;
-  private readonly budget: { softTokens: number; hardTokens: number; keepTurns: number };
+  private readonly budget: ContextBudget;
+  /** Requests refused in a row for their size: each one keeps fewer turns word for word. */
+  private squeeze = 0;
   private readonly now: () => number;
 
   constructor(private readonly options: TurnEngineOptions) {
@@ -114,12 +129,18 @@ export class TurnEngine {
     this.options.onTurn?.({ id: turnId, kind: plan.kind, items: plan.items.length });
 
     const focus = new Set<LiveEvent>(plan.items.flatMap((item) => item.events));
-    const draft = this.conversation.draft(focus);
-    const brief = buildBrief(plan, this.refs(plan.items, draft), {
-      maxSentences: persona.maxSentences,
-      stillSpeaking: speech.upcoming().length > 0,
-      lastStream: plan.kind === "opening" && this.lastStream !== "",
-    });
+    const compose = () => {
+      const draft = this.conversation.draft(focus);
+      const brief = buildBrief(plan, this.refs(plan.items, draft), {
+        maxSentences: persona.maxSentences,
+        stillSpeaking: speech.upcoming().length > 0,
+        lastStream: plan.kind === "opening" && this.lastStream !== "",
+      });
+      return { draft, brief };
+    };
+    let { draft, brief } = compose();
+    // Compact before sending a request the API would refuse; the brief is rebuilt, as it may point at turns that left.
+    if (this.fit(draft.room, brief)) ({ draft, brief } = compose());
     const { originAt, ...rest } = plan;
     const request: TurnRequest = { ...rest, context: this.conversation.context(draft, brief) };
 
@@ -152,6 +173,16 @@ export class TurnEngine {
       if (!abort.signal.aborted) error = err;
     } finally {
       if (this.current?.abort === abort) this.current = null;
+    }
+    // The uncommitted room would be sent again unchanged, and the API would refuse it again: shrink what the next
+    // turn carries, harder each time in a row (half the kept turns each time, down to the summary and recap only),
+    // so whatever in the history the API can't take leaves it.
+    if (error !== undefined && bodyRejected(error)) {
+      this.squeeze += 1;
+      const dropped = this.compact(this.budget.keepTurns >> this.squeeze);
+      this.options.log?.warn(`the Claude API refused the request body; compacted ${dropped} turns (attempt ${this.squeeze})`);
+    } else if (error === undefined) {
+      this.squeeze = 0;
     }
     const at = this.now();
     if (repeats.length) this.conversation.add({ at, kind: "unsaid", why: "repeat", lines: repeats });
@@ -256,10 +287,40 @@ export class TurnEngine {
     return this.lastStream ? `<last_stream>\n${escapeForPrompt(this.lastStream)}\n</last_stream>` : "";
   }
 
-  /** Without a summary to fold into, the oldest turns just leave the conversation. */
+  /** Past the hard limit, old turns leave even if the chronicler hasn't caught up. */
   private dropOldTurns(): void {
-    const dropped = this.conversation.roll(null, this.conversation.lastExchangeId(), this.budget.keepTurns);
+    const dropped = this.compact(this.budget.keepTurns);
     if (dropped) this.options.log?.debug(`dropped ${dropped} old turns from the conversation`);
+  }
+
+  /**
+   * Keeps the newest `keep` turns word for word. Older turns the summary
+   * covers fold into it; the rest go into the conversation's recap, so
+   * nothing that happened is forgotten outright. Returns how many left.
+   */
+  private compact(keep: number): number {
+    let dropped = 0;
+    if (this.summary) dropped += this.conversation.roll(`<earlier>\n${escapeForPrompt(this.summary)}\n</earlier>`, this.chronicledThrough, keep);
+    dropped += this.conversation.roll(null, this.conversation.lastExchangeId(), keep);
+    return dropped;
+  }
+
+  /** The whole request's size in bytes, as the API will receive it (near enough: JSON framing is small). */
+  private requestBytes(room: string, brief: string): number {
+    return this.conversation.bytes() + Buffer.byteLength(room) + Buffer.byteLength(brief) + (this.options.host.requestOverheadBytes?.() ?? 0);
+  }
+
+  /** Compacts until the request fits under `maxRequestBytes`, fewer turns kept each step. Returns true if anything left. */
+  private fit(room: string, brief: string): boolean {
+    const max = this.budget.maxRequestBytes;
+    if (max === undefined || this.requestBytes(room, brief) <= max) return false;
+    let dropped = 0;
+    for (let keep = Math.min(this.budget.keepTurns, this.conversation.turnCount() - 1); keep >= 0; keep = keep > 1 ? keep >> 1 : keep - 1) {
+      dropped += this.compact(keep);
+      if (this.requestBytes(room, brief) <= max) break;
+    }
+    if (dropped) this.options.log?.info(`compacted ${dropped} turns to keep the request under ${Math.round(max / 1000)} KB`);
+    return dropped > 0;
   }
 
   /** The brief's references for a turn's events, in the plan's order; only events the model can read. */
@@ -290,6 +351,12 @@ export class TurnEngine {
     const words = new Set(key.split(" "));
     return this.said.some((entry) => entry.at >= cutoff && (entry.key === key || (words.size >= 6 && jaccard(words, entry.words) >= 0.9)));
   }
+}
+
+/** The API refused the request body itself (malformed or too large): the same conversation would be refused again. */
+function bodyRejected(err: unknown): boolean {
+  if (!(err instanceof Anthropic.APIError)) return false;
+  return err.status === 413 || (err.status === 400 && /request body/i.test(err.message));
 }
 
 /** The model refers to events by id (e12) in its head, never out loud. */
@@ -327,8 +394,8 @@ function moderationContext(plan: TurnPlan, said: string[]): string {
   const lines: string[] = [];
   for (const item of plan.items) {
     const event = item.event;
-    if (event.kind === "chat" || event.kind === "question") lines.push(`Viewer ${viewerName(event.viewer).slice(0, 30)} wrote: ${event.text}`);
-    else if (event.kind === "gift") lines.push(`Viewer ${viewerName(event.viewer).slice(0, 30)} sent ${event.count}x ${event.giftName}.`);
+    if (event.kind === "chat" || event.kind === "question") lines.push(`Viewer ${clip(viewerName(event.viewer), 30)} wrote: ${event.text}`);
+    else if (event.kind === "gift") lines.push(`Viewer ${clip(viewerName(event.viewer), 30)} sent ${event.count}x ${event.giftName}.`);
   }
   if (plan.kind === "game") lines.push("The host is running a chat quiz game and announcing a round.");
   if (plan.kind === "request") lines.push(`The channel owner asked the host: ${plan.note ?? ""}`);

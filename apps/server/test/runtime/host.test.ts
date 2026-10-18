@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "bun:test";
 import type { TurnContext } from "../../src/runtime/brain/conversation";
 import { ClaudeHost } from "../../src/runtime/brain/host";
-import type { TurnRequest } from "../../src/runtime/brain/prompt";
+import { displayName, type TurnRequest } from "../../src/runtime/brain/prompt";
 import type { UsageReport } from "../../src/runtime/usage";
 import { chat, persona } from "./helpers";
 
@@ -112,6 +112,23 @@ describe("ClaudeHost", () => {
     const adaptive: Captured = {};
     await collect(new ClaudeHost({ client: fakeClient(["Hi."], adaptive), persona, safety, model: "claude-haiku-5-5", effort: "low" }));
     expect(adaptive.params).not.toHaveProperty("thinking");
+  });
+
+  it("never sends half an emoji, which the API refuses as a broken hex escape", async () => {
+    const captured: Captured = {};
+    const host = new ClaudeHost({ client: fakeClient(["Oi!"], captured), persona, safety, model: "claude-haiku-5-5", effort: "low" });
+    const room = '<room>\n<chat id="e1" from="Ana \uD83D">oi</chat>\n</room>';
+    await collect(host, turn({ context: context({ room, history: [{ room, brief: "Now: greet.", reply: "Oi Ana \uD83D" }] }) }));
+    const body = JSON.stringify(captured.params);
+    expect(body).not.toMatch(/\\ud83d/i);
+    expect(body).toContain("Ana \uFFFD");
+  });
+
+  it("names a viewer with an emoji nickname without cutting an emoji in half", () => {
+    const nickname = "✨ Maria 💖💖💖💖💖💖💖💖💖💖💖💖💖";
+    const name = displayName({ id: "1", handle: "maria", nickname }, []);
+    expect(name.length).toBeLessThanOrEqual(30);
+    expect(JSON.stringify(name)).not.toMatch(/\\ud[89ab]/i);
   });
 
   it("sends the show as one cached conversation: rooms, the director's briefs as system messages, and its own replies", async () => {

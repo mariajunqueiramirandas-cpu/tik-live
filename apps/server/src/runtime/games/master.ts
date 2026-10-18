@@ -1,4 +1,5 @@
 import {
+  clip,
   BOOST_DIAMONDS,
   BOOST_KINDS,
   BOOST_LABELS,
@@ -821,7 +822,7 @@ export class GameMaster {
     if (game.phase === "results") {
       return {
         kind: "scoreboard",
-        title: `Placar final · ${GAME_LABELS[game.config.kind]}`.slice(0, 60),
+        title: clip(`Placar final · ${GAME_LABELS[game.config.kind]}`, 60),
         rows: this.leaderboard(game).slice(0, 5),
       };
     }
@@ -903,7 +904,7 @@ export class GameMaster {
           riddle: content.riddle,
           hint: hintShown ? content.hint : null,
           guesses: round.guesses,
-          answer: revealed ? (content.answers[0] ?? "").slice(0, 40) : null,
+          answer: revealed ? clip(content.answers[0] ?? "", 40) : null,
           winner: round.winner?.name ?? null,
         };
       case "fastest":
@@ -916,7 +917,7 @@ export class GameMaster {
   }
 
   private nameOf(viewer: Viewer): string {
-    return displayName(viewer, this.options.blocklist()).slice(0, 24) || viewerName(viewer).slice(0, 24);
+    return clip(displayName(viewer, this.options.blocklist()), 24) || clip(viewerName(viewer), 24);
   }
 }
 

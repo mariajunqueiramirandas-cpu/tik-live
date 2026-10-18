@@ -1,4 +1,4 @@
-import { EFFECTS, EMOTIONS, type Persona, type SafetySettings, type Segment, type Viewer } from "@tik-live/shared";
+import { clip, EFFECTS, EMOTIONS, type Persona, type SafetySettings, type Segment, type Viewer } from "@tik-live/shared";
 import { containsBlockedTerm, looksLikeInjection } from "../safety/rules";
 import type { TurnContext } from "./conversation";
 import type { QueueItem } from "./triage";
@@ -151,7 +151,7 @@ export function displayName(viewer: Viewer, blocklist: readonly string[]): strin
   // Check the full name before truncating so a cut can't hide a match.
   const full = (viewer.nickname || viewer.handle).replace(/\s+/g, " ").trim();
   if (!full || containsBlockedTerm(full, blocklist) || looksLikeInjection(full)) return "visitante";
-  return full.slice(0, 30);
+  return clip(full, 30);
 }
 
 /** How the brief refers to the events a turn covers. Only ids and kinds: never viewer text. */

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { clip, wellFormedDeep } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import { escapeForPrompt } from "../safety/gate";
 import type { UsageReport } from "../usage";
@@ -87,7 +88,7 @@ export class ClaudeChronicler implements Chronicler {
       if (said) lines.push(`host: ${escapeForPrompt(said)}`);
     }
     const response = await client.messages.create(
-      {
+      wellFormedDeep({
         model,
         max_tokens: 4000,
         system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
@@ -98,7 +99,7 @@ export class ClaudeChronicler implements Chronicler {
             content: `<previous_summary>${escapeForPrompt(previous) || "(the show just started)"}</previous_summary>\n<room>\n${lines.join("\n")}\n</room>`,
           },
         ],
-      },
+      }),
       signal ? { signal } : undefined,
     );
     onUsage?.({
@@ -113,12 +114,12 @@ export class ClaudeChronicler implements Chronicler {
     const text = response.content.find((block) => block.type === "text")?.text ?? "";
     const parsed = JSON.parse(text) as { summary: string; notes: Array<{ viewer: string; note: string }> };
     return {
-      summary: parsed.summary.slice(0, 1_200),
+      summary: clip(parsed.summary, 1_200),
       // Only viewers who were actually in this stretch: a note can't land on someone else.
       notes: parsed.notes
         .filter((note) => ids.has(note.viewer) && memory.get(note.viewer) && note.note.trim())
         .slice(0, 6)
-        .map((note) => ({ viewerId: note.viewer, note: note.note.trim().slice(0, 100) })),
+        .map((note) => ({ viewerId: note.viewer, note: clip(note.note.trim(), 100) })),
     };
   }
 }

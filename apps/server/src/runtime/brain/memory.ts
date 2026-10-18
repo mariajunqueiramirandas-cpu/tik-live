@@ -1,4 +1,4 @@
-import type { LiveEvent, Viewer } from "@tik-live/shared";
+import { clip, type LiveEvent, type Viewer } from "@tik-live/shared";
 import type { Logger } from "../../log";
 
 export interface ViewerRecord {
@@ -74,7 +74,7 @@ export class ViewerMemory {
       case "chat":
       case "question":
         record.messages += 1;
-        record.recentLines = [...record.recentLines, event.text.slice(0, 140)].slice(-RECENT_LINES);
+        record.recentLines = [...record.recentLines, clip(event.text, 140)].slice(-RECENT_LINES);
         break;
       case "gift":
         record.diamonds += event.diamonds;
@@ -115,7 +115,7 @@ export class ViewerMemory {
     if (r.follows > 0) parts.push("follows the channel");
     if (r.notes.length > 0) parts.push(`notes: ${r.notes.slice(-3).join("; ")}`);
     if (r.visits > 1 && r.recentLines.length > 0) {
-      parts.push(`once said: ${r.recentLines.slice(-2).map((line) => `"${line.slice(0, 60)}"`).join(", ")}`);
+      parts.push(`once said: ${r.recentLines.slice(-2).map((line) => `"${clip(line, 60)}"`).join(", ")}`);
     }
     return parts.join("; ");
   }

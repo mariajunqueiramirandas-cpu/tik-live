@@ -1,4 +1,4 @@
-import { estimateCostUsd, type ChannelSource, type LiveEvent } from "@tik-live/shared";
+import { clip, estimateCostUsd, type ChannelSource, type LiveEvent } from "@tik-live/shared";
 import type { Db } from "../db/client";
 import type { Logger } from "../log";
 import {
@@ -122,7 +122,7 @@ export class StreamRecorder {
     const id = this.sessionId;
     if (!id) return;
     // serialize() logs a failed write; nothing else to do with it here.
-    this.serialize(() => setSessionSummary(this.db, id, text.slice(0, 2_000))).catch(() => undefined);
+    this.serialize(() => setSessionSummary(this.db, id, clip(text, 2_000))).catch(() => undefined);
   }
 
   /** Writes buffered samples, lines and running totals. */
