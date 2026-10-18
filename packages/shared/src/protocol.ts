@@ -144,6 +144,8 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   }),
   /** The server is restarting: keep the last frame and reconnect quietly. */
   z.object({ v, t: z.literal("hold") }),
+  /** The owner asked for a fresh page from the dashboard: reload now (OBS sources only). */
+  z.object({ v, t: z.literal("reload") }),
 ]);
 
 export type StageServerMessage = z.infer<typeof stageServerMessageSchema>;
@@ -314,6 +316,8 @@ export const studioCommandSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("music_stop") }),
   /** Clears the stage (speech, game, podium, music) and restarts the stream's counters and leaderboards. */
   z.object({ kind: z.literal("reset") }),
+  /** Reloads the stage page in every connected OBS source. Works with the host off the air. */
+  z.object({ kind: z.literal("reload_stage") }),
 ]);
 
 export type StudioCommand = z.infer<typeof studioCommandSchema>;

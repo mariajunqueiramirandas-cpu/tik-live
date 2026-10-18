@@ -134,3 +134,19 @@ describe("StageHub pacing", () => {
     after();
   });
 });
+
+describe("StageHub reload", () => {
+  it("reloads OBS sources only, never previews or the cloud broadcast", () => {
+    const { hub, attach, after } = setup();
+    const obs = attach("obs", "program");
+    const obs2 = attach("obs2", "program");
+    const cloud = attach("cloud", "broadcast");
+    const studio = attach("studio", "preview");
+    expect(hub.reloadProgram()).toBe(2);
+    expect(obs.sent.at(-1)).toEqual({ v: 1, t: "reload" });
+    expect(obs2.sent.at(-1)).toEqual({ v: 1, t: "reload" });
+    expect(cloud.sent.some((m) => m.t === "reload")).toBe(false);
+    expect(studio.sent.some((m) => m.t === "reload")).toBe(false);
+    after();
+  });
+});

@@ -148,6 +148,11 @@ export class RuntimeManager {
   }
 
   command(channelId: string, command: StudioCommand): CommandResult {
+    // OBS stays connected while the host is stopped, so this one works off the air too.
+    if (command.kind === "reload_stage") {
+      const reloaded = this.slots.get(channelId)?.stage.reloadProgram() ?? 0;
+      return reloaded > 0 ? { ok: true } : { ok: false, error: "Nenhum palco aberto no OBS agora. Abra o link do palco no OBS primeiro." };
+    }
     const runtime = this.slots.get(channelId)?.runtime;
     if (!runtime) return { ok: false, error: "Coloque o apresentador no ar primeiro." };
     return runtime.command(command);

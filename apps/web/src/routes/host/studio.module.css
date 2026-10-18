@@ -20,6 +20,10 @@
   .monitor {
     position: relative;
   }
+  .reloadObs {
+    margin-top: var(--s-2);
+    width: 100%;
+  }
   .listen {
     position: absolute;
     top: 10px;

@@ -30,8 +30,11 @@ export interface StageConnectionOptions {
   random?: () => number;
   setTimeout?: (fn: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
-  /** Reloads the page when the server asks (new deploy, protocol change). */
-  reload?: () => void;
+  /**
+   * Reloads the page when the server asks: `forced` when the owner asked for
+   * it from the dashboard, otherwise a new deploy or protocol change.
+   */
+  reload?: (forced: boolean) => void;
 }
 
 export interface StageConnection {
@@ -108,11 +111,15 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
       return;
     }
     if (loose?.t === "hello" && (loose.reload === true || (typeof loose.v === "number" && loose.v > PROTOCOL_VERSION))) {
-      reload();
+      reload(false);
       return;
     }
     const message = parseMessage(stageServerMessageSchema, loose);
     if (!message) return;
+    if (message.t === "reload") {
+      reload(true);
+      return;
+    }
     if (message.t === "hold") holding = true;
     const { v: _v, ...payload } = message;
     engine.apply(payload as StageServerPayload);
@@ -184,12 +191,16 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
   };
 }
 
-/** Reloads at most once a minute, so a broken deploy can't cause a reload loop in OBS. */
-function defaultReload(): void {
+/**
+ * Reloads at most once a minute, so a broken deploy can't cause a reload loop
+ * in OBS. A reload the owner asked for always goes through: it's one click,
+ * never a loop.
+ */
+function defaultReload(forced: boolean): void {
   if (typeof location === "undefined") return;
   try {
     const last = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) ?? 0);
-    if (Date.now() - last < 60_000) return;
+    if (!forced && Date.now() - last < 60_000) return;
     sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
   } catch {
     // No storage: reload anyway.

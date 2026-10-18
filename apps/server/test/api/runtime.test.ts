@@ -155,6 +155,22 @@ describe("running a channel end to end", () => {
     studio.close();
   });
 
+  it("reloads OBS from the studio, even with the host off the air", async () => {
+    const channel = await newChannel();
+    const studio = await server.socket(`/ws/studio/${channel.id}`, "streamer");
+    await studio.next((m) => m.t === "snapshot");
+    studio.send({ v: 1, t: "command", id: "o1", command: { kind: "reload_stage" } });
+    expect(await studio.next((m) => m.t === "ack" && m.id === "o1")).toMatchObject({ ok: false });
+
+    const stage = await programStage(channel);
+    await stage.next((m) => m.t === "hello");
+    studio.send({ v: 1, t: "command", id: "o2", command: { kind: "reload_stage" } });
+    expect(await studio.next((m) => m.t === "ack" && m.id === "o2")).toMatchObject({ ok: true });
+    expect(await stage.next((m) => m.t === "reload")).toEqual({ v: 1, t: "reload" });
+    stage.close();
+    studio.close();
+  });
+
   it("morphs connected stages when the look changes", async () => {
     const channel = await newChannel();
     const stage = await programStage(channel);

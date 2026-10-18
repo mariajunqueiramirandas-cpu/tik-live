@@ -335,7 +335,8 @@ export class ChannelRuntime {
     return channel.source !== this.channel.source || channel.tiktokUsername !== this.channel.tiktokUsername;
   }
 
-  command(command: StudioCommand): CommandResult {
+  /** A studio command for the show. `reload_stage` is the manager's: it works with no runtime. */
+  command(command: Exclude<StudioCommand, { kind: "reload_stage" }>): CommandResult {
     if (!this.director || this.status === "stopped" || this.status === "stopping") {
       return { ok: false, error: "Coloque o apresentador no ar primeiro." };
     }

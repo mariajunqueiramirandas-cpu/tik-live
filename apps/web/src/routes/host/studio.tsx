@@ -1,9 +1,11 @@
-import { Play } from "lucide-react";
+import { Play, RefreshCw } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router";
 import { useRunChannel } from "../../lib/query";
 import { useStudio } from "../../lib/studio";
 import { Button } from "../../ui/Button";
 import { Banner } from "../../ui/Display";
+import { toast } from "../../ui/toast-store";
 import { Controls } from "./Controls";
 import { Health } from "./Health";
 import { Room } from "./Room";
@@ -41,6 +43,36 @@ function OffAir() {
         </Button>
       </div>
     </aside>
+  );
+}
+
+/** Reloads the stage page in OBS: a stuck browser source, or a new look that didn't come through. */
+function ReloadObs({ onAir }: { onAir: boolean }) {
+  const { store } = useHost();
+  const sources = useStudio(store, (st) => st.snapshot?.health.stages.program ?? 0);
+  const connected = useStudio(store, (st) => st.connection === "open");
+  const [busy, setBusy] = useState(false);
+  const reload = async () => {
+    if (onAir && !window.confirm("Recarregar o palco no OBS? A tela pisca por um instante e a fala atual é cortada.")) return;
+    setBusy(true);
+    const result = await store.command({ kind: "reload_stage" });
+    setBusy(false);
+    if (result.ok) toast.success(sources === 1 ? "Palco recarregado no OBS" : `Palco recarregado em ${sources} fontes do OBS`);
+    else toast.error("Não deu para recarregar o palco", new Error(result.error ?? "Tente de novo."));
+  };
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className={s.reloadObs}
+      icon={<RefreshCw aria-hidden />}
+      busy={busy}
+      disabled={!connected || sources === 0}
+      title={sources === 0 ? "Nenhum palco aberto no OBS agora" : undefined}
+      onClick={reload}
+    >
+      Recarregar palco no OBS
+    </Button>
   );
 }
 
@@ -85,6 +117,7 @@ export default function Studio() {
       <div className={s.grid}>
         <div className={s.stageCol}>
           <StageMonitor stageUrl={channel.stageUrl} name={channel.name} />
+          <ReloadObs onAir={onAir} />
         </div>
         <Room store={store} host={channel.name} />
         {onAir ? <Controls store={store} onAir={onAir} /> : <OffAir />}

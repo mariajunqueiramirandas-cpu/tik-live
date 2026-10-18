@@ -302,6 +302,13 @@ turned sound effects off.
 The server is restarting (graceful shutdown). Keep the last frame and
 reconnect quietly; the host resumes on the next boot.
 
+#### `reload`
+
+The owner pressed "Recarregar palco no OBS" in the studio
+([`reload_stage`](#reload_stage)): reload the page now. Sent only to `program`
+stages; previews and the cloud broadcaster never get it. Unlike a reload asked
+by `hello`, it skips the once-a-minute guard, since it can't loop.
+
 ### Stage to server
 
 #### `ready`
@@ -533,3 +540,10 @@ Stop the music on stage.
 Clears the stage without ending the stream: cuts the line being said and drops
 the queue, ends any game or podium, stops the music, and restarts the stream's
 counters and leaderboards. Viewer memory is kept.
+
+##### `reload_stage`
+
+Reloads the stage page in every connected OBS source by sending them
+[`reload`](#reload). Works while the host is off the air, since OBS stays
+connected. Fails with "Nenhum palco aberto no OBS agora…" when no `program`
+stage is connected.

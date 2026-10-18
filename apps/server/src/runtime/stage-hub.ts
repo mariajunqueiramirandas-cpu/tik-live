@@ -215,6 +215,23 @@ export class StageHub implements SpeechOutput, StageNotifier {
     this.broadcast({ t: "hold" });
   }
 
+  /**
+   * Reloads the page in every OBS source (the owner asked from the dashboard).
+   * Previews and the cloud broadcaster are left alone: the broadcaster drives
+   * its own page and a reload would cut the stream. Returns how many reloaded.
+   */
+  reloadProgram(): number {
+    const data = JSON.stringify({ v: PROTOCOL_VERSION, t: "reload" });
+    let sent = 0;
+    for (const { peer, role } of this.peers.values()) {
+      if (role !== "program") continue;
+      peer.send(data);
+      sent += 1;
+    }
+    this.options.log?.info(`asked ${sent} stage${sent === 1 ? "" : "s"} to reload`);
+    return sent;
+  }
+
   closeAll(code = 1001, reason = "channel removed"): void {
     clearTimeout(this.statsTimer);
     this.statsTimer = undefined;
