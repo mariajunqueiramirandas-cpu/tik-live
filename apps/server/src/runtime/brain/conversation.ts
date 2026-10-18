@@ -1,4 +1,4 @@
-import type { LiveEvent } from "@tik-live/shared";
+import { clip, type LiveEvent } from "@tik-live/shared";
 import { escapeForPrompt } from "../safety/gate";
 import type { ViewerMemory } from "./memory";
 import { displayName } from "./prompt";
@@ -306,14 +306,14 @@ export class Conversation {
   /** Folds turns leaving without a summary into the recap: who talked, who gave, what was asked, what happened. */
   private remember(exchanges: readonly Exchange[]): void {
     const recap = (this.recap ??= { turns: 0, viewers: [], gifts: new Map(), questions: [], shows: [], lastLine: "" });
-    const name = (viewer: Extract<RoomEntry, { event: LiveEvent }>["event"]["viewer"]) => displayName(viewer, this.options.blocklist()).slice(0, 30);
+    const name = (viewer: Extract<RoomEntry, { event: LiveEvent }>["event"]["viewer"]) => clip(displayName(viewer, this.options.blocklist()), 30);
     for (const exchange of exchanges) {
       recap.turns += 1;
       for (const entry of exchange.entries) {
         if (entry.kind === "viewer") {
           const who = name(entry.event.viewer);
           recap.viewers = [...recap.viewers.filter((v) => v !== who), who];
-          if (entry.event.kind === "question") recap.questions = [...recap.questions, `${who}: ${entry.event.text.slice(0, RECAP_MAX.text)}`].slice(-RECAP_MAX.questions);
+          if (entry.event.kind === "question") recap.questions = [...recap.questions, `${who}: ${clip(entry.event.text, RECAP_MAX.text)}`].slice(-RECAP_MAX.questions);
         } else if (entry.kind === "support" && entry.event.kind === "gift") {
           const who = name(entry.event.viewer);
           const key = `${who}\u0000${entry.event.giftName}`;
@@ -322,11 +322,11 @@ export class Conversation {
           gift.diamonds += entry.event.diamonds;
           recap.gifts.set(key, gift);
         } else if (entry.kind === "show") {
-          recap.shows = [...recap.shows, entry.text.slice(0, RECAP_MAX.text)].slice(-RECAP_MAX.shows);
+          recap.shows = [...recap.shows, clip(entry.text, RECAP_MAX.text)].slice(-RECAP_MAX.shows);
         }
       }
       const last = exchange.reply.split("\n").at(-1)?.trim();
-      if (last) recap.lastLine = last.slice(0, RECAP_MAX.text * 2);
+      if (last) recap.lastLine = clip(last, RECAP_MAX.text * 2);
     }
     recap.viewers = recap.viewers.slice(-RECAP_MAX.viewers * 4);
     // The biggest gifts are the ones worth remembering.

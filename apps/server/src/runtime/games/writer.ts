@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { wellFormedDeep } from "@tik-live/shared";
 import { z } from "zod";
 import type { Logger } from "../../log";
 import { escapeForPrompt } from "../safety/gate";
@@ -118,14 +119,14 @@ export class ClaudeGameWriter implements GameWriter {
     const content = `${KIND_BRIEF[request.kind]}\nWrite ${request.count} rounds. ${language}${topic}${avoid}${sample}`;
 
     const response = await client.beta.messages.create(
-      {
+      wellFormedDeep({
         model,
         max_tokens: 8000,
         system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
         output_config: { effort: "low", format: { type: "json_schema", schema } },
         messages: [{ role: "user", content }],
         ...(FALLBACK_CAPABLE.has(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-      },
+      }),
       signal ? { signal } : undefined,
     );
     onUsage?.({

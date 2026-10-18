@@ -1,11 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { viewerName, type LiveEvent, type Persona } from "@tik-live/shared";
+import { clip, viewerName, type LiveEvent, type Persona } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import { escapeForPrompt } from "../safety/gate";
 import { containsBlockedTerm } from "../safety/rules";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
-import { Conversation, type Draft, type Exchange, type UnsaidReason } from "./conversation";
+import { Conversation, type Draft, type UnsaidReason } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
 import type { ViewerMemory } from "./memory";
 import { buildBrief, type BriefRefs, type TurnKind, type TurnPlan, type TurnRequest } from "./prompt";
@@ -18,12 +18,11 @@ import type { QueueItem } from "./triage";
  * old turns go even without a summary. Kept small: every turn reads the
  * whole conversation (from the cache, but still).
  *
- * The request body also carries the system prompt and tools (about 10 KB) and
- * this turn's room and brief. A live request was cut off at 39,960 bytes
- * ("unexpected end of hex escape"), so keep the conversation near 18 KB and
- * 24 KB of Portuguese text (three characters per token), well under that.
+ * `maxRequestBytes` is a backstop above the hard limit (~96 KB of text plus
+ * ~10 KB of system prompt and tools): a turn only compacts for it when one
+ * room or reply is unusually large.
  */
-const CONTEXT_BUDGET: ContextBudget = { softTokens: 6_000, hardTokens: 8_000, keepTurns: 6, maxRequestBytes: 32_000 };
+const CONTEXT_BUDGET: ContextBudget = { softTokens: 16_000, hardTokens: 32_000, keepTurns: 8, maxRequestBytes: 140_000 };
 
 export interface ContextBudget {
   softTokens: number;
@@ -32,8 +31,6 @@ export interface ContextBudget {
   /** The most a whole request may weigh (conversation, room, brief, system prompt, tools); a turn compacts first rather than send more. */
   maxRequestBytes?: number;
 }
-/** What the chronicler reads at most per update, so its own request stays small too. */
-const CHRONICLE_MAX_BYTES = 20_000;
 /** The chronicler runs at most this often for viewer notes and the show summary, and only with enough new turns. */
 const CHRONICLE_EVERY_MS = 4 * 60_000;
 const CHRONICLE_MIN_TURNS = 6;
@@ -176,7 +173,8 @@ export class TurnEngine {
       if (this.current?.abort === abort) this.current = null;
     }
     // The uncommitted room would be sent again unchanged, and the API would refuse it again: shrink what the next
-    // turn carries, harder each time in a row (6 turns kept, then 3, 1, none: the summary and recap only).
+    // turn carries, harder each time in a row (half the kept turns each time, down to the summary and recap only),
+    // so whatever in the history the API can't take leaves it.
     if (error !== undefined && bodyRejected(error)) {
       this.squeeze += 1;
       const dropped = this.compact(this.budget.keepTurns >> this.squeeze);
@@ -219,7 +217,7 @@ export class TurnEngine {
       if (tokens > this.budget.hardTokens) this.dropOldTurns();
       return;
     }
-    const covered = newestWithin(fresh.slice(-CHRONICLE_MAX_TURNS), CHRONICLE_MAX_BYTES);
+    const covered = fresh.slice(-CHRONICLE_MAX_TURNS);
     const through = (covered.at(-1) as (typeof covered)[number]).id;
     const blocklist = this.options.blocklist();
     const abort = new AbortController();
@@ -352,20 +350,7 @@ export class TurnEngine {
   }
 }
 
-/** The newest exchanges whose text fits in `maxBytes` (always at least one), oldest first. */
-function newestWithin(exchanges: readonly Exchange[], maxBytes: number): Exchange[] {
-  let bytes = 0;
-  let from = exchanges.length;
-  while (from > 0) {
-    const exchange = exchanges[from - 1] as Exchange;
-    bytes += Buffer.byteLength(exchange.room) + Buffer.byteLength(exchange.brief) + Buffer.byteLength(exchange.reply);
-    if (bytes > maxBytes && from < exchanges.length) break;
-    from -= 1;
-  }
-  return exchanges.slice(from);
-}
-
-/** The API refused the request body itself (too large, or cut short on the way): the same conversation will be refused again. */
+/** The API refused the request body itself (malformed or too large): the same conversation would be refused again. */
 function bodyRejected(err: unknown): boolean {
   if (!(err instanceof Anthropic.APIError)) return false;
   return err.status === 413 || (err.status === 400 && /request body/i.test(err.message));
@@ -406,8 +391,8 @@ function moderationContext(plan: TurnPlan, said: string[]): string {
   const lines: string[] = [];
   for (const item of plan.items) {
     const event = item.event;
-    if (event.kind === "chat" || event.kind === "question") lines.push(`Viewer ${viewerName(event.viewer).slice(0, 30)} wrote: ${event.text}`);
-    else if (event.kind === "gift") lines.push(`Viewer ${viewerName(event.viewer).slice(0, 30)} sent ${event.count}x ${event.giftName}.`);
+    if (event.kind === "chat" || event.kind === "question") lines.push(`Viewer ${clip(viewerName(event.viewer), 30)} wrote: ${event.text}`);
+    else if (event.kind === "gift") lines.push(`Viewer ${clip(viewerName(event.viewer), 30)} sent ${event.count}x ${event.giftName}.`);
   }
   if (plan.kind === "game") lines.push("The host is running a chat quiz game and announcing a round.");
   if (plan.kind === "request") lines.push(`The channel owner asked the host: ${plan.note ?? ""}`);

@@ -33,6 +33,7 @@ import { LoopRanking } from "./games/ranking";
 import { ClaudeGameWriter } from "./games/writer";
 import { LatencyTracker } from "./latency";
 import { ClaudeModerator, SafetyGate } from "./safety/gate";
+import { sanitizeEvent } from "./sources/sanitize";
 import { SimulatorSource } from "./sources/simulator";
 import { TikTokSource } from "./sources/tiktok";
 import type { EventSource } from "./sources/types";
@@ -254,9 +255,10 @@ export class ChannelRuntime {
       },
     });
 
-    await this.source.start((event) => {
+    await this.source.start((raw) => {
       try {
-        this.director.handleEvent(event);
+        const event = sanitizeEvent(raw);
+        if (event) this.director.handleEvent(event);
       } catch (err) {
         this.log.error("failed to handle a live event", err);
       }
@@ -352,7 +354,9 @@ export class ChannelRuntime {
       case "inject": {
         const parsed = injectEventSchema.safeParse(command.event);
         if (!parsed.success) return { ok: false, error: "Esse evento de teste não é válido." };
-        this.director.handleEvent(this.toLiveEvent(parsed.data));
+        const event = sanitizeEvent(this.toLiveEvent(parsed.data));
+        if (!event) return { ok: false, error: "Esse evento de teste não é válido." };
+        this.director.handleEvent(event);
         return { ok: true };
       }
       case "game_start":

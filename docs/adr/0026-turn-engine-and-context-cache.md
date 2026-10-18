@@ -96,34 +96,51 @@ check.
 
 The chronicler (ADR-0025) now reads committed turns. It runs every ~4
 minutes with 6 or more new turns (for viewer notes and the summary), and at
-once when the conversation passes **6k tokens**; after a failure it waits
-30 s before trying again. It reads at most ~20 KB of the newest turns, so its
-own request stays small. When it returns, turns it
-covered leave the conversation, except the newest 6, and its summary
+once when the conversation passes **16k tokens**; after a failure it waits
+30 s before trying again. When it returns, turns it
+covered leave the conversation, except the newest 8, and its summary
 becomes the head (`<earlier>`). That rewrites the cache once per fold; at
-~600 tokens a turn that's every ~10 busy turns. Without a chronicler, or if
-it keeps failing, old turns are dropped past 8k tokens.
+~600 tokens a turn that's every ~20 busy turns. Without a chronicler, or if
+it keeps failing, old turns are dropped past 32k tokens.
 
-*Amended 2026-10-18.* The limits were 14k / 28k tokens until a live request
-was refused at ~40 KB ("The request body is not valid JSON: unexpected end of
-hex escape at line 1 column 39960"). The system prompt and tools are ~10 KB of
-every request, and each turn adds ~1.5 KB, so the old fold point (~57 KB of
-body) was never reached before the refusal, and the refused turn was retried
-unchanged. Now:
+*Amended 2026-10-18.* A live turn failed with "The request body is not valid
+JSON: unexpected end of hex escape at line 1 column 39960". The body wasn't
+cut: the API's JSON parser
+refuses a `\uD83D`-style escape (the first half of an emoji) that isn't
+followed by its second half, and `JSON.stringify` writes exactly that when a
+string was sliced through an emoji. Viewer names were clipped to 30 UTF-16
+units (`displayName`), so a nickname full of emoji put half of one into a
+room. A failed turn doesn't commit, so the next one sent the same room again,
+and viewer memory stored clipped lines the same way, so the request would
+keep failing. So:
 
-- **Request size budget.** Before sending, the turn engine adds up the
-  conversation's actual UTF-8 bytes, this turn's room and brief, and the
-  host's fixed overhead (`requestOverheadBytes`: system prompt and tools).
-  Over 32 KB, it compacts first, keeping fewer turns each step, and rebuilds
-  the brief so it only points at turns still shown.
-- **Escalating reset.** If the API still refuses the body (400 naming the
-  request body, or 413), the next attempt keeps half as many turns word for
-  word (6, then 3, 1, none); a successful turn resets this.
+- **Text is clipped by character, never through one** (`clip` in
+  `@tik-live/shared`), and every Claude API request goes through
+  `wellFormedDeep`, which turns any unpaired surrogate left anywhere into
+  U+FFFD.
+- **Every live event is sanitized** on the way in (`sources/sanitize.ts`),
+  whatever its source: invisible and bidi characters, tag-character text,
+  zalgo, floods, control characters and line breaks are removed, text is
+  NFKC-folded, numbers are clamped. Display names are also read through the
+  fonts people use to stand out (small caps, negative circled and squared
+  letters, Cyrillic look-alikes in a Latin word, overlays, decorative frames,
+  spaced-out letters).
+- **Escalating reset.** If the API still refuses a request body (a 400 naming
+  it, or a 413), the next attempt keeps half as many turns word for word,
+  down to the summary and recap only, so whatever in the history it can't
+  take leaves; a successful turn resets this.
 - **Recap instead of forgetting.** Turns that leave without a summary to fold
   into go into a recap in the head (`<earlier turns="N">`): who talked (most
   recent first), the biggest gifts, the last questions, what happened on the
   show, and the host's last line. Recaps merge across drops and stay capped,
   so the host keeps the thread of the show without an extra model call.
+- **Request size backstop.** Before sending, the turn engine adds up the
+  conversation's UTF-8 bytes, this turn's room and brief, and the host's
+  fixed overhead (`requestOverheadBytes`: system prompt and tools). Over
+  140 KB (above where the hard limit normally keeps it) it compacts first and
+  rebuilds the brief so it only points at turns still shown.
+- The fold point moved up a little (14k to 16k tokens, 28k to 32k, 6 to 8
+  turns kept), so the host remembers more of the show.
 
 The summary is stored on the stream session (`stream_session.summary`). The
 next stream opens with it as `<last_stream>`, so the host can say "last time
@@ -241,7 +258,7 @@ produces anyway.
   (tests check byte stability); the director's brief and the system prompt
   are now a contract the model learns from.
 - Revisit: measure `cache_read_input_tokens` and first-audio latency on a
-  real busy stream; tune the 6k fold point and the 6 kept turns; consider
+  real busy stream; tune the 16k fold point and the 8 kept turns; consider
   per-message effort (beta) for game and opening turns.
 
 ## Action Items

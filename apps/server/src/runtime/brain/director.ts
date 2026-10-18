@@ -1,4 +1,5 @@
 import {
+  clip,
   GAME_LABELS,
   LEADER_BOARDS,
   LEADERS_MAX,
@@ -566,7 +567,7 @@ export class Director {
       if (index === 0) podium();
       const next = segments[index] as Segment;
       const choosing = this.vote !== null && index === segments.length - 1;
-      items.push({ kind: "segment", title: choosing ? `${next.title} · o chat escolhe`.slice(0, 60) : segmentTitle(next, this.segmentGame(index)), at });
+      items.push({ kind: "segment", title: choosing ? clip(`${next.title} · o chat escolhe`, 60) : segmentTitle(next, this.segmentGame(index)), at });
       at += next.minutes * 60_000;
     }
     return items.slice(0, UP_NEXT_MAX);
@@ -977,7 +978,7 @@ export class Director {
 
   /** How a viewer shows on a ranking: blocklisted or injection-looking names read "visitante". */
   private boardName(viewer: Viewer): string {
-    return displayName(viewer, this.blocklist()).slice(0, 24);
+    return clip(displayName(viewer, this.blocklist()), 24);
   }
 
   private blocklist(): readonly string[] {
@@ -1031,11 +1032,11 @@ function segmentTitle(segment: Segment, config = segment.game): string {
   if (!config) return segment.title;
   const game = gameTitle(config);
   const named = segment.title.toLowerCase().includes(GAME_LABELS[config.kind].toLowerCase());
-  return named ? segment.title : `${segment.title} · ${game}`.slice(0, 60);
+  return named ? segment.title : clip(`${segment.title} · ${game}`, 60);
 }
 
 /** "Quiz" or "Quiz: futebol". */
 function gameTitle(config: GameConfig): string {
   const label = GAME_LABELS[config.kind];
-  return (config.topic ? `${label}: ${config.topic}` : label).slice(0, 60);
+  return clip(config.topic ? `${label}: ${config.topic}` : label, 60);
 }

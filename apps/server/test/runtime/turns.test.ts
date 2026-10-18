@@ -272,27 +272,6 @@ describe("TurnEngine", () => {
     expect(host.requests.at(-1)!.context.head).toContain("<earlier");
   });
 
-  it("caps what the chronicler reads at once, newest turns first", async () => {
-    const seen: Exchange[][] = [];
-    const chronicler: Chronicler = {
-      update: async (_previous, exchanges) => {
-        seen.push([...exchanges]);
-        return { summary: "A long show.", notes: [] };
-      },
-    };
-    const { engine, host, plan } = setup({ chronicler, budget: { softTokens: 200, hardTokens: 1_000_000_000, keepTurns: 2, maxRequestBytes: 1_000_000_000 } });
-    for (let i = 0; i < 10; i++) {
-      host.replies.push([{ text: `${Array.from({ length: 400 }, (_, j) => `w${i}_${j}`).join(" ")}.`, emotion: "neutral" }]);
-      await engine.run(plan());
-    }
-    engine.maintain(Date.now(), true);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const read = seen[0]!;
-    expect(read.length).toBeGreaterThan(0);
-    expect(read.length).toBeLessThan(10);
-    expect(read.at(-1)!.reply).toContain("w9_0");
-  });
-
   it("keeps the conversation when the API refuses for another reason", async () => {
     const { engine, host, plan } = setup({ budget: { softTokens: 1_000_000, hardTokens: 1_000_000, keepTurns: 2 } });
     for (let i = 0; i < 8; i++) {
@@ -303,20 +282,6 @@ describe("TurnEngine", () => {
     expect((await engine.run(plan())).ok).toBe(false);
     await engine.run(plan());
     expect(host.requests.at(-1)?.context.history).toHaveLength(8);
-  });
-
-  it("keeps the conversation small enough for the API's request body over a long show", async () => {
-    const { engine, host, plan } = setup();
-    for (let i = 0; i < 60; i++) {
-      host.replies.push([{ text: `Resposta número ${i}, que bom ter vocês aqui hoje, muito obrigada pelo carinho de todos.`, emotion: "happy" }]);
-      await engine.run(plan({ items: [], kind: "react" }));
-      engine.maintain(Date.now(), true);
-    }
-    const next = await engine.run(plan());
-    expect(next.ok).toBe(true);
-    const bytes = new TextEncoder().encode(JSON.stringify(host.requests.at(-1)?.context)).length;
-    // The system prompt and tools add about 10 KB on top, under the API's 40 KB limit.
-    expect(bytes).toBeLessThan(30_000);
   });
 
   it("opens a new stream with what happened on the last one", async () => {

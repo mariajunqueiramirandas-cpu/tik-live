@@ -9,3 +9,4 @@ export * from "./plans";
 export * from "./presets";
 export * from "./pricing";
 export * from "./protocol";
+export * from "./text";

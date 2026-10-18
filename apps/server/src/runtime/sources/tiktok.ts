@@ -116,21 +116,29 @@ export class TikTokSource implements EventSource {
     // The connector's typed-emitter typings don't resolve under NodeNext, so
     // listen through the plain EventEmitter interface it implements at runtime.
     const events = connection as unknown as NodeJS.EventEmitter;
-    const forward = (event: LiveEvent | undefined) => {
+    // A payload the connector mangled drops that one event, never the connection's listener.
+    const forward = (read: () => LiveEvent | undefined) => {
+      let event: LiveEvent | undefined;
+      try {
+        event = read();
+      } catch (err) {
+        this.options.log.debug("dropped an event that doesn't parse", err instanceof Error ? err.message : err);
+        return;
+      }
       if (event && this.emit) this.emit(event);
     };
 
-    events.on(WebcastEvent.CHAT, (data: unknown) => forward(normalizeChat(data)));
-    events.on(WebcastEvent.QUESTION_NEW, (data: unknown) => forward(normalizeQuestion(data)));
-    events.on(WebcastEvent.GIFT, (data: unknown) => forward(normalizeGift(data)));
-    events.on(WebcastEvent.LIKE, (data: unknown) => forward(normalizeLike(data)));
-    events.on(WebcastEvent.FOLLOW, (data: unknown) => forward(normalizeSimple("follow", data)));
-    events.on(WebcastEvent.SHARE, (data: unknown) => forward(normalizeSimple("share", data)));
-    events.on(WebcastEvent.MEMBER, (data: unknown) => forward(normalizeSimple("join", data)));
-    events.on(WebcastEvent.ROOM_USER, (data: unknown) => forward(normalizeViewerCount(data)));
+    events.on(WebcastEvent.CHAT, (data: unknown) => forward(() => normalizeChat(data)));
+    events.on(WebcastEvent.QUESTION_NEW, (data: unknown) => forward(() => normalizeQuestion(data)));
+    events.on(WebcastEvent.GIFT, (data: unknown) => forward(() => normalizeGift(data)));
+    events.on(WebcastEvent.LIKE, (data: unknown) => forward(() => normalizeLike(data)));
+    events.on(WebcastEvent.FOLLOW, (data: unknown) => forward(() => normalizeSimple("follow", data)));
+    events.on(WebcastEvent.SHARE, (data: unknown) => forward(() => normalizeSimple("share", data)));
+    events.on(WebcastEvent.MEMBER, (data: unknown) => forward(() => normalizeSimple("join", data)));
+    events.on(WebcastEvent.ROOM_USER, (data: unknown) => forward(() => normalizeViewerCount(data)));
     events.on(WebcastEvent.STREAM_END, () => {
       this.live = false;
-      forward({ kind: "stream_end", at: Date.now(), reason: "stream ended" });
+      forward(() => ({ kind: "stream_end", at: Date.now(), reason: "stream ended" }));
     });
     events.on(ControlEvent.ERROR, (err: unknown) => {
       // A failed connect is reported once, by connectLoop, with when it tries again.

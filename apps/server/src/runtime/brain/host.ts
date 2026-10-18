@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { Effect, MusicTrack, Persona, SafetySettings } from "@tik-live/shared";
+import { wellFormedDeep, type Effect, type MusicTrack, type Persona, type SafetySettings } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import { THINKING_OFF_MODELS } from "../safety/gate";
 import type { UsageReport } from "../usage";
@@ -177,8 +177,9 @@ export class ClaudeHost implements HostBrain {
     const abort = () => local.abort();
     signal.addEventListener("abort", abort, { once: true });
 
+    // One unpaired half of an emoji anywhere (a viewer's text, a clipped name) and the API refuses the whole request.
     const stream = client.beta.messages.stream(
-      {
+      wellFormedDeep({
         model,
         max_tokens: 4000,
         system: [{ type: "text", text: this.system, cache_control: { type: "ephemeral" } }],
@@ -187,7 +188,7 @@ export class ClaudeHost implements HostBrain {
         ...(thinkingOff ? { thinking: { type: "disabled" as const } } : {}),
         messages: this.messages(turn),
         ...(FALLBACK_CAPABLE.has(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
-      },
+      }),
       { signal: local.signal },
     );
 
