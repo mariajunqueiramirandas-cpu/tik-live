@@ -61,6 +61,8 @@ const ROOM_MAX_SUPPORT = 10;
 const MAX_PENDING = 200;
 /** Rough characters per token, for budgeting the conversation (mixed languages, Claude tokenizer). */
 const CHARS_PER_TOKEN = 3;
+/** How much the recap of turns dropped without a summary keeps of each kind. */
+const RECAP_MAX = { viewers: 20, gifts: 8, questions: 3, shows: 4, text: 100 };
 const UNSAID_WHY: Record<UnsaidReason, string> = {
   cut: "cut before it aired: something more urgent came in",
   blocked: "blocked by the safety filter, never aired",
@@ -88,6 +90,8 @@ export class Conversation {
   private pending: Array<{ id: number; entry: RoomEntry }> = [];
   private exchanges: Exchange[] = [];
   private head = "";
+  /** Turns that left without a summary to fold into, so the host keeps the thread of the show. */
+  private recap: Recap | null = null;
   private nextEntryId = 1;
   private nextExchangeId = 1;
   private readonly ids = new WeakMap<LiveEvent, number>();
@@ -211,7 +215,7 @@ export class Conversation {
 
   /** The conversation so far plus this turn's room and brief, as the model will see it. */
   context(draft: Draft, brief: string): TurnContext {
-    return { head: this.head, history: [...this.exchanges], room: draft.room, brief };
+    return { head: this.fullHead(), history: [...this.exchanges], room: draft.room, brief };
   }
 
   /**
@@ -241,25 +245,40 @@ export class Conversation {
 
   /** Estimated size of the conversation in tokens (the cached prefix the next turn reads). */
   tokens(): number {
-    let chars = this.head.length;
+    let chars = this.fullHead().length;
     for (const exchange of this.exchanges) chars += exchange.room.length + exchange.brief.length + exchange.reply.length;
     return Math.round(chars / CHARS_PER_TOKEN);
+  }
+
+  /** The conversation's actual size on the wire, in UTF-8 bytes: what a request body's limit counts. */
+  bytes(): number {
+    let bytes = Buffer.byteLength(this.fullHead());
+    for (const exchange of this.exchanges) bytes += Buffer.byteLength(exchange.room) + Buffer.byteLength(exchange.brief) + Buffer.byteLength(exchange.reply);
+    return bytes;
+  }
+
+  /** How many committed turns the conversation holds word for word. */
+  turnCount(): number {
+    return this.exchanges.length;
   }
 
   /**
    * Folds old turns into a summary: turns up to `throughId` leave the
    * conversation, except the newest `keep`, and `head` takes their place
-   * (null keeps the current head). This rewrites the cached prefix once, so
-   * it only happens when the conversation has grown past its budget.
-   * Returns how many turns left.
+   * (null keeps the current head, and the turns that leave go into the
+   * recap instead, so what happened in them isn't lost). This rewrites the
+   * cached prefix once, so it only happens when the conversation has grown
+   * past its budget. Returns how many turns left.
    */
   roll(head: string | null, throughId: number, keep: number): number {
     const limit = Math.max(0, this.exchanges.length - keep);
     let drop = 0;
     while (drop < limit && (this.exchanges[drop] as Exchange).id <= throughId) drop++;
     if (drop === 0) return 0;
-    for (const exchange of this.exchanges.splice(0, drop)) for (const id of exchange.ids) this.seen.delete(id);
+    const gone = this.exchanges.splice(0, drop);
+    for (const exchange of gone) for (const id of exchange.ids) this.seen.delete(id);
     if (head !== null) this.head = head;
+    else this.remember(gone);
     // The turns that introduced these viewers are gone: introduce them again.
     this.described.clear();
     return drop;
@@ -275,6 +294,43 @@ export class Conversation {
     this.merged.clear();
     this.draftedThrough = 0;
     this.head = head;
+    this.recap = null;
+  }
+
+  /** The head the model reads: the summary (or last stream), then the recap of turns dropped since. */
+  private fullHead(): string {
+    const recap = this.recap ? renderRecap(this.recap) : "";
+    return [this.head, recap].filter(Boolean).join("\n\n");
+  }
+
+  /** Folds turns leaving without a summary into the recap: who talked, who gave, what was asked, what happened. */
+  private remember(exchanges: readonly Exchange[]): void {
+    const recap = (this.recap ??= { turns: 0, viewers: [], gifts: new Map(), questions: [], shows: [], lastLine: "" });
+    const name = (viewer: Extract<RoomEntry, { event: LiveEvent }>["event"]["viewer"]) => displayName(viewer, this.options.blocklist()).slice(0, 30);
+    for (const exchange of exchanges) {
+      recap.turns += 1;
+      for (const entry of exchange.entries) {
+        if (entry.kind === "viewer") {
+          const who = name(entry.event.viewer);
+          recap.viewers = [...recap.viewers.filter((v) => v !== who), who];
+          if (entry.event.kind === "question") recap.questions = [...recap.questions, `${who}: ${entry.event.text.slice(0, RECAP_MAX.text)}`].slice(-RECAP_MAX.questions);
+        } else if (entry.kind === "support" && entry.event.kind === "gift") {
+          const who = name(entry.event.viewer);
+          const key = `${who}\u0000${entry.event.giftName}`;
+          const gift = recap.gifts.get(key) ?? { who, gift: entry.event.giftName, count: 0, diamonds: 0 };
+          gift.count += entry.event.count;
+          gift.diamonds += entry.event.diamonds;
+          recap.gifts.set(key, gift);
+        } else if (entry.kind === "show") {
+          recap.shows = [...recap.shows, entry.text.slice(0, RECAP_MAX.text)].slice(-RECAP_MAX.shows);
+        }
+      }
+      const last = exchange.reply.split("\n").at(-1)?.trim();
+      if (last) recap.lastLine = last.slice(0, RECAP_MAX.text * 2);
+    }
+    recap.viewers = recap.viewers.slice(-RECAP_MAX.viewers * 4);
+    // The biggest gifts are the ones worth remembering.
+    recap.gifts = new Map([...recap.gifts].sort(([, a], [, b]) => b.diamonds - a.diamonds).slice(0, RECAP_MAX.gifts));
   }
 
   private render(id: number, entry: RoomEntry, described: Map<string, string>): string {
@@ -312,6 +368,30 @@ export class Conversation {
         return `<join ${who}/>`;
     }
   }
+}
+
+interface Recap {
+  turns: number;
+  /** Who chatted, most recent last. */
+  viewers: string[];
+  gifts: Map<string, { who: string; gift: string; count: number; diamonds: number }>;
+  questions: string[];
+  shows: string[];
+  lastLine: string;
+}
+
+function renderRecap(recap: Recap): string {
+  const lines: string[] = [];
+  const recent = recap.viewers.slice(-RECAP_MAX.viewers).reverse();
+  if (recent.length) {
+    const others = recap.viewers.length - recent.length;
+    lines.push(`Talked with: ${recent.join(", ")}${others > 0 ? ` and ${others} others` : ""}.`);
+  }
+  if (recap.gifts.size) lines.push(`Gifts: ${[...recap.gifts.values()].map((g) => `${g.who} ${g.count}x ${g.gift}`).join(", ")}.`);
+  if (recap.questions.length) lines.push(`Questions asked: ${recap.questions.map((q) => `"${q}"`).join("; ")}.`);
+  if (recap.shows.length) lines.push(`On the show: ${recap.shows.join("; ")}.`);
+  if (recap.lastLine) lines.push(`Your last line then: "${recap.lastLine}"`);
+  return `<earlier turns="${recap.turns}">\n${escapeForPrompt(lines.join("\n") || "Nothing worth keeping.")}\n</earlier>`;
 }
 
 function attr(value: string | number): string {

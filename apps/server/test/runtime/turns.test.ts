@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "bun:test";
 import type { Chronicler } from "../../src/runtime/brain/chronicle";
 import type { Exchange } from "../../src/runtime/brain/conversation";
@@ -5,19 +6,26 @@ import type { HostBrain } from "../../src/runtime/brain/host";
 import { ViewerMemory } from "../../src/runtime/brain/memory";
 import type { TurnPlan, TurnRequest } from "../../src/runtime/brain/prompt";
 import type { Utterance } from "../../src/runtime/brain/sentences";
-import { TurnEngine } from "../../src/runtime/brain/turns";
+import { TurnEngine, type ContextBudget } from "../../src/runtime/brain/turns";
 import { SafetyGate } from "../../src/runtime/safety/gate";
 import { SpeechPipeline, type SpeechOutput } from "../../src/runtime/voice/pipeline";
 import { NoTts } from "../../src/runtime/voice/tts";
-import { chat, fakeClock, persona } from "./helpers";
+import { chat, fakeClock, gift, persona } from "./helpers";
 
 /** Says whatever the test queues up next, and remembers every request. */
 class ScriptHost implements HostBrain {
   readonly name = "script";
   requests: TurnRequest[] = [];
   replies: Utterance[][] = [];
+  /** Errors to throw instead of replying, one per turn, oldest first. */
+  errors: unknown[] = [];
+  /** What each request carries besides the conversation, when set. */
+  overhead: number | undefined;
+  requestOverheadBytes = () => this.overhead ?? 0;
   async *generate(turn: TurnRequest): AsyncGenerator<Utterance> {
     this.requests.push(turn);
+    const error = this.errors.shift();
+    if (error) throw error;
     for (const line of this.replies.shift() ?? [{ text: "Okay then.", emotion: "neutral" as const }]) yield line;
   }
   reconfigure(): void {}
@@ -25,7 +33,7 @@ class ScriptHost implements HostBrain {
 
 const silentStage: SpeechOutput = { play: () => new Promise(() => {}), interrupt: () => {} };
 
-function setup(options: { chronicler?: Chronicler; budget?: { softTokens: number; hardTokens: number; keepTurns: number } } = {}) {
+function setup(options: { chronicler?: Chronicler; budget?: ContextBudget } = {}) {
   const clock = fakeClock();
   const memory = new ViewerMemory({ now: clock.now });
   const speech = new SpeechPipeline(new NoTts(), new SafetyGate({ blocklist: [] }), silentStage, {}, clock.now);
@@ -50,6 +58,15 @@ function setup(options: { chronicler?: Chronicler; budget?: { softTokens: number
     ...partial,
   });
   return { clock, memory, speech, host, engine, plan, summaries };
+}
+
+function apiError(message: string) {
+  return new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message } }, message, new Headers());
+}
+
+/** What the API said when a live request body was cut short. */
+function bodyError() {
+  return apiError("The request body is not valid JSON: unexpected end of hex escape at line 1 column 39960");
 }
 
 describe("TurnEngine", () => {
@@ -199,6 +216,107 @@ describe("TurnEngine", () => {
     engine.maintain(Date.now(), true);
     await engine.run(plan());
     expect(host.requests.at(-1)?.context.history).toHaveLength(3);
+  });
+
+  it("compacts harder each time the API refuses the request body in a row", async () => {
+    const { engine, host, plan } = setup({ budget: { softTokens: 1_000_000, hardTokens: 1_000_000, keepTurns: 4 } });
+    for (let i = 0; i < 8; i++) {
+      host.replies.push([{ text: `Line number ${i} about something new.`, emotion: "neutral" }]);
+      await engine.run(plan());
+    }
+    host.errors.push(bodyError(), bodyError());
+    expect((await engine.run(plan())).ok).toBe(false);
+    expect(host.requests.at(-1)?.context.history).toHaveLength(8);
+    expect((await engine.run(plan())).ok).toBe(false);
+    expect(host.requests.at(-1)?.context.history).toHaveLength(2);
+    host.replies.push([{ text: "Back on the air now.", emotion: "neutral" }]);
+    expect((await engine.run(plan())).ok).toBe(true);
+    const context = host.requests.at(-1)!.context;
+    expect(context.history).toHaveLength(1);
+    // What left is recapped, not forgotten.
+    expect(context.head).toContain('<earlier turns="7">');
+    expect(context.head).toContain("Line number 6 about something new.");
+  });
+
+  it("recaps who talked, who gave and what was asked when turns leave without a summary", async () => {
+    const { engine, host, plan } = setup({ budget: { softTokens: 1_000_000, hardTokens: 1_000_000, keepTurns: 1 } });
+    engine.conversation.add({ at: 0, kind: "viewer", event: chat("ana", "oi gente") as never });
+    engine.conversation.add({ at: 0, kind: "viewer", event: { ...chat("cai", "qual é o seu nome?"), kind: "question" } as never });
+    engine.conversation.add({ at: 0, kind: "support", event: gift("bia", "Rose", 5) as never });
+    engine.conversation.add({ at: 0, kind: "show", text: "The quiz started." });
+    host.replies.push([{ text: "Oi Ana, obrigada Bia!", emotion: "happy" }]);
+    await engine.run(plan());
+    host.errors.push(bodyError());
+    await engine.run(plan());
+    await engine.run(plan());
+    const { head, history } = host.requests.at(-1)!.context;
+    expect(history).toHaveLength(0);
+    expect(head).toContain("Talked with: cai, ana.");
+    expect(head).toContain("Gifts: bia 1x Rose.");
+    expect(head).toContain('Questions asked: "cai: qual é o seu nome?".');
+    expect(head).toContain("On the show: The quiz started.");
+    expect(head).toContain('Your last line then: "[happy] Oi Ana, obrigada Bia!"');
+  });
+
+  it("compacts before sending a request bigger than the request size budget", async () => {
+    const max = 4_000;
+    const { engine, host, plan } = setup({ budget: { softTokens: 1_000_000, hardTokens: 1_000_000, keepTurns: 6, maxRequestBytes: max } });
+    host.overhead = 1_500;
+    for (let i = 0; i < 30; i++) {
+      host.replies.push([{ text: `Fala ${i}: ${Array.from({ length: 30 }, (_, j) => `palavra${i}x${j}`).join(" ")}.`, emotion: "neutral" }]);
+      expect((await engine.run(plan())).ok).toBe(true);
+      const { head, history, room, brief } = host.requests.at(-1)!.context;
+      const text = [head, room, brief, ...history.flatMap((e) => [e.room, e.brief, e.reply])].join("");
+      expect(Buffer.byteLength(text) + host.overhead).toBeLessThanOrEqual(max);
+    }
+    expect(host.requests.at(-1)!.context.head).toContain("<earlier");
+  });
+
+  it("caps what the chronicler reads at once, newest turns first", async () => {
+    const seen: Exchange[][] = [];
+    const chronicler: Chronicler = {
+      update: async (_previous, exchanges) => {
+        seen.push([...exchanges]);
+        return { summary: "A long show.", notes: [] };
+      },
+    };
+    const { engine, host, plan } = setup({ chronicler, budget: { softTokens: 200, hardTokens: 1_000_000_000, keepTurns: 2, maxRequestBytes: 1_000_000_000 } });
+    for (let i = 0; i < 10; i++) {
+      host.replies.push([{ text: `${Array.from({ length: 400 }, (_, j) => `w${i}_${j}`).join(" ")}.`, emotion: "neutral" }]);
+      await engine.run(plan());
+    }
+    engine.maintain(Date.now(), true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const read = seen[0]!;
+    expect(read.length).toBeGreaterThan(0);
+    expect(read.length).toBeLessThan(10);
+    expect(read.at(-1)!.reply).toContain("w9_0");
+  });
+
+  it("keeps the conversation when the API refuses for another reason", async () => {
+    const { engine, host, plan } = setup({ budget: { softTokens: 1_000_000, hardTokens: 1_000_000, keepTurns: 2 } });
+    for (let i = 0; i < 8; i++) {
+      host.replies.push([{ text: `Line number ${i} about something new.`, emotion: "neutral" }]);
+      await engine.run(plan());
+    }
+    host.errors.push(apiError("role 'system' is not supported on this model"));
+    expect((await engine.run(plan())).ok).toBe(false);
+    await engine.run(plan());
+    expect(host.requests.at(-1)?.context.history).toHaveLength(8);
+  });
+
+  it("keeps the conversation small enough for the API's request body over a long show", async () => {
+    const { engine, host, plan } = setup();
+    for (let i = 0; i < 60; i++) {
+      host.replies.push([{ text: `Resposta número ${i}, que bom ter vocês aqui hoje, muito obrigada pelo carinho de todos.`, emotion: "happy" }]);
+      await engine.run(plan({ items: [], kind: "react" }));
+      engine.maintain(Date.now(), true);
+    }
+    const next = await engine.run(plan());
+    expect(next.ok).toBe(true);
+    const bytes = new TextEncoder().encode(JSON.stringify(host.requests.at(-1)?.context)).length;
+    // The system prompt and tools add about 10 KB on top, under the API's 40 KB limit.
+    expect(bytes).toBeLessThan(30_000);
   });
 
   it("opens a new stream with what happened on the last one", async () => {

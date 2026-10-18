@@ -1,10 +1,11 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { viewerName, type LiveEvent, type Persona } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import { escapeForPrompt } from "../safety/gate";
 import { containsBlockedTerm } from "../safety/rules";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
-import { Conversation, type Draft, type UnsaidReason } from "./conversation";
+import { Conversation, type Draft, type Exchange, type UnsaidReason } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
 import type { ViewerMemory } from "./memory";
 import { buildBrief, type BriefRefs, type TurnKind, type TurnPlan, type TurnRequest } from "./prompt";
@@ -16,8 +17,23 @@ import type { QueueItem } from "./triage";
  * next chronicle, keeping `keepTurns` turns word for word; past `hardTokens`
  * old turns go even without a summary. Kept small: every turn reads the
  * whole conversation (from the cache, but still).
+ *
+ * The request body also carries the system prompt and tools (about 10 KB) and
+ * this turn's room and brief. A live request was cut off at 39,960 bytes
+ * ("unexpected end of hex escape"), so keep the conversation near 18 KB and
+ * 24 KB of Portuguese text (three characters per token), well under that.
  */
-const CONTEXT_BUDGET = { softTokens: 14_000, hardTokens: 28_000, keepTurns: 6 };
+const CONTEXT_BUDGET: ContextBudget = { softTokens: 6_000, hardTokens: 8_000, keepTurns: 6, maxRequestBytes: 32_000 };
+
+export interface ContextBudget {
+  softTokens: number;
+  hardTokens: number;
+  keepTurns: number;
+  /** The most a whole request may weigh (conversation, room, brief, system prompt, tools); a turn compacts first rather than send more. */
+  maxRequestBytes?: number;
+}
+/** What the chronicler reads at most per update, so its own request stays small too. */
+const CHRONICLE_MAX_BYTES = 20_000;
 /** The chronicler runs at most this often for viewer notes and the show summary, and only with enough new turns. */
 const CHRONICLE_EVERY_MS = 4 * 60_000;
 const CHRONICLE_MIN_TURNS = 6;
@@ -41,7 +57,7 @@ export interface TurnEngineOptions {
   /** How the last stream went, for the first turn of this one. */
   lastStream?: string;
   /** When to fold the conversation, and how many turns to keep word for word (tests shrink it). */
-  budget?: { softTokens: number; hardTokens: number; keepTurns: number };
+  budget?: ContextBudget;
   onTurn?(turn: { id: string; kind: TurnKind; items: number }): void;
   /** The show summary changed (the runtime keeps it with the stream session). */
   onSummary?(summary: string): void;
@@ -74,7 +90,9 @@ export class TurnEngine {
   private chronicledAt: number;
   private chronicling: AbortController | null = null;
   private chronicleRetryAt = 0;
-  private readonly budget: { softTokens: number; hardTokens: number; keepTurns: number };
+  private readonly budget: ContextBudget;
+  /** Requests refused in a row for their size: each one keeps fewer turns word for word. */
+  private squeeze = 0;
   private readonly now: () => number;
 
   constructor(private readonly options: TurnEngineOptions) {
@@ -112,12 +130,18 @@ export class TurnEngine {
     this.options.onTurn?.({ id: turnId, kind: plan.kind, items: plan.items.length });
 
     const focus = new Set<LiveEvent>(plan.items.flatMap((item) => item.events));
-    const draft = this.conversation.draft(focus);
-    const brief = buildBrief(plan, this.refs(plan.items, draft), {
-      maxSentences: persona.maxSentences,
-      stillSpeaking: speech.upcoming().length > 0,
-      lastStream: plan.kind === "opening" && this.lastStream !== "",
-    });
+    const compose = () => {
+      const draft = this.conversation.draft(focus);
+      const brief = buildBrief(plan, this.refs(plan.items, draft), {
+        maxSentences: persona.maxSentences,
+        stillSpeaking: speech.upcoming().length > 0,
+        lastStream: plan.kind === "opening" && this.lastStream !== "",
+      });
+      return { draft, brief };
+    };
+    let { draft, brief } = compose();
+    // Compact before sending a request the API would refuse; the brief is rebuilt, as it may point at turns that left.
+    if (this.fit(draft.room, brief)) ({ draft, brief } = compose());
     const { originAt, ...rest } = plan;
     const request: TurnRequest = { ...rest, context: this.conversation.context(draft, brief) };
 
@@ -150,6 +174,15 @@ export class TurnEngine {
       if (!abort.signal.aborted) error = err;
     } finally {
       if (this.current?.abort === abort) this.current = null;
+    }
+    // The uncommitted room would be sent again unchanged, and the API would refuse it again: shrink what the next
+    // turn carries, harder each time in a row (6 turns kept, then 3, 1, none: the summary and recap only).
+    if (error !== undefined && bodyRejected(error)) {
+      this.squeeze += 1;
+      const dropped = this.compact(this.budget.keepTurns >> this.squeeze);
+      this.options.log?.warn(`the Claude API refused the request body; compacted ${dropped} turns (attempt ${this.squeeze})`);
+    } else if (error === undefined) {
+      this.squeeze = 0;
     }
     const at = this.now();
     if (repeats.length) this.conversation.add({ at, kind: "unsaid", why: "repeat", lines: repeats });
@@ -186,7 +219,7 @@ export class TurnEngine {
       if (tokens > this.budget.hardTokens) this.dropOldTurns();
       return;
     }
-    const covered = fresh.slice(-CHRONICLE_MAX_TURNS);
+    const covered = newestWithin(fresh.slice(-CHRONICLE_MAX_TURNS), CHRONICLE_MAX_BYTES);
     const through = (covered.at(-1) as (typeof covered)[number]).id;
     const blocklist = this.options.blocklist();
     const abort = new AbortController();
@@ -254,10 +287,40 @@ export class TurnEngine {
     return this.lastStream ? `<last_stream>\n${escapeForPrompt(this.lastStream)}\n</last_stream>` : "";
   }
 
-  /** Without a summary to fold into, the oldest turns just leave the conversation. */
+  /** Past the hard limit, old turns leave even if the chronicler hasn't caught up. */
   private dropOldTurns(): void {
-    const dropped = this.conversation.roll(null, this.conversation.lastExchangeId(), this.budget.keepTurns);
+    const dropped = this.compact(this.budget.keepTurns);
     if (dropped) this.options.log?.debug(`dropped ${dropped} old turns from the conversation`);
+  }
+
+  /**
+   * Keeps the newest `keep` turns word for word. Older turns the summary
+   * covers fold into it; the rest go into the conversation's recap, so
+   * nothing that happened is forgotten outright. Returns how many left.
+   */
+  private compact(keep: number): number {
+    let dropped = 0;
+    if (this.summary) dropped += this.conversation.roll(`<earlier>\n${escapeForPrompt(this.summary)}\n</earlier>`, this.chronicledThrough, keep);
+    dropped += this.conversation.roll(null, this.conversation.lastExchangeId(), keep);
+    return dropped;
+  }
+
+  /** The whole request's size in bytes, as the API will receive it (near enough: JSON framing is small). */
+  private requestBytes(room: string, brief: string): number {
+    return this.conversation.bytes() + Buffer.byteLength(room) + Buffer.byteLength(brief) + (this.options.host.requestOverheadBytes?.() ?? 0);
+  }
+
+  /** Compacts until the request fits under `maxRequestBytes`, fewer turns kept each step. Returns true if anything left. */
+  private fit(room: string, brief: string): boolean {
+    const max = this.budget.maxRequestBytes;
+    if (max === undefined || this.requestBytes(room, brief) <= max) return false;
+    let dropped = 0;
+    for (let keep = Math.min(this.budget.keepTurns, this.conversation.turnCount() - 1); keep >= 0; keep = keep > 1 ? keep >> 1 : keep - 1) {
+      dropped += this.compact(keep);
+      if (this.requestBytes(room, brief) <= max) break;
+    }
+    if (dropped) this.options.log?.info(`compacted ${dropped} turns to keep the request under ${Math.round(max / 1000)} KB`);
+    return dropped > 0;
   }
 
   /** The brief's references for a turn's events, in the plan's order; only events the model can read. */
@@ -287,6 +350,25 @@ export class TurnEngine {
     const words = new Set(key.split(" "));
     return this.said.some((entry) => entry.at >= cutoff && (entry.key === key || (words.size >= 6 && jaccard(words, entry.words) >= 0.9)));
   }
+}
+
+/** The newest exchanges whose text fits in `maxBytes` (always at least one), oldest first. */
+function newestWithin(exchanges: readonly Exchange[], maxBytes: number): Exchange[] {
+  let bytes = 0;
+  let from = exchanges.length;
+  while (from > 0) {
+    const exchange = exchanges[from - 1] as Exchange;
+    bytes += Buffer.byteLength(exchange.room) + Buffer.byteLength(exchange.brief) + Buffer.byteLength(exchange.reply);
+    if (bytes > maxBytes && from < exchanges.length) break;
+    from -= 1;
+  }
+  return exchanges.slice(from);
+}
+
+/** The API refused the request body itself (too large, or cut short on the way): the same conversation will be refused again. */
+function bodyRejected(err: unknown): boolean {
+  if (!(err instanceof Anthropic.APIError)) return false;
+  return err.status === 413 || (err.status === 400 && /request body/i.test(err.message));
 }
 
 /** The model refers to events by id (e12) in its head, never out loud. */

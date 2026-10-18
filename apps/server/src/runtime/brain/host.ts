@@ -29,6 +29,8 @@ export interface HostBrain {
   reconfigure(update: { persona?: Persona; safety?: SafetySettings; speechLanguage?: string | null }): void;
   /** Prompt cache health, for the studio. */
   contextStats?(): ContextStats | null;
+  /** Bytes every request carries besides the conversation (system prompt, tools), for the request size budget. */
+  requestOverheadBytes?(): number;
 }
 
 /** Longest reply when chat is busy (the brief asks for one or two sentences). */
@@ -134,6 +136,11 @@ export class ClaudeHost implements HostBrain {
         throw err;
       }
     }
+  }
+
+  requestOverheadBytes(): number {
+    const music = this.options.persona.sound?.music !== false;
+    return Buffer.byteLength(JSON.stringify({ system: this.system, ...(music ? { tools: [PLAY_MUSIC_TOOL] } : {}) }));
   }
 
   private buildSystem(): string {

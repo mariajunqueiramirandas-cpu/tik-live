@@ -86,9 +86,11 @@ export class TikTokSource implements EventSource {
     } catch (err) {
       this.connected = false;
       this.live = false;
-      if (err instanceof UserOfflineError) {
+      if (err instanceof UserOfflineError || noLiveRoom(err)) {
+        // Not live (yet): check again at a steady pace, so the host is there soon after the stream starts.
         const wait = this.options.offlineRetryMs ?? 30_000;
-        this.detail = `@${this.options.username} não está ao vivo; tentando de novo em ${Math.round(wait / 1000)} s`;
+        const why = err instanceof UserOfflineError ? "não está ao vivo" : "não tem uma live aberta (ou o nome de usuário está errado)";
+        this.detail = `@${this.options.username} ${why}; tentando de novo em ${Math.round(wait / 1000)} s`;
         this.options.log.info(this.detail);
         this.scheduleRetry(wait);
       } else {
@@ -131,6 +133,8 @@ export class TikTokSource implements EventSource {
       forward({ kind: "stream_end", at: Date.now(), reason: "stream ended" });
     });
     events.on(ControlEvent.ERROR, (err: unknown) => {
+      // A failed connect is reported once, by connectLoop, with when it tries again.
+      if (this.connection !== connection || !this.connected) return;
       this.options.log.warn("connection error", err instanceof Error ? err.message : err);
     });
     events.on(ControlEvent.DISCONNECTED, () => {
@@ -147,4 +151,9 @@ export class TikTokSource implements EventSource {
 
     return connection;
   }
+}
+
+/** The connector found no room for the handle: it isn't live, or there's no such account. */
+function noLiveRoom(err: unknown): boolean {
+  return err instanceof Error && /retrieve room id/i.test(err.message);
 }
