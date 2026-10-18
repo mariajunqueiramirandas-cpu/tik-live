@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { gameConfigSchema } from "./game";
+import { segmentGameSchema } from "./game";
 // Installs the pt-BR messages wherever schemas are used. A bare import kept here, not in
 // index.ts: bundlers skip the barrel and go straight to the module that defines a symbol.
 import "./zod-pt-br";
@@ -100,7 +100,7 @@ export const segmentSchema = z.object({
   /** What the host should do to fill time during this segment when chat is quiet. */
   prompt: z.string().trim().min(1).max(600),
   /** A chat minigame the host runs during this segment (ADR-0023). */
-  game: gameConfigSchema.optional(),
+  game: segmentGameSchema.optional(),
 });
 
 export type Segment = z.infer<typeof segmentSchema>;

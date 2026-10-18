@@ -1,11 +1,13 @@
 import {
   clip,
+  GAME_KINDS,
   GAME_LABELS,
   LEADER_BOARDS,
   LEADERS_MAX,
   UP_NEXT_MAX,
   type Effect,
   type GameConfig,
+  type GameKind,
   type GiftAsks,
   type LeaderBoard,
   type LeaderRow,
@@ -272,6 +274,8 @@ export class Director {
   private cooldownUntil = 0;
   private failures = 0;
   private segmentIndex = 0;
+  /** The kind drawn for each "random" segment, kept until the show moves on so the preview and the game agree. */
+  private readonly segmentDraws = new Map<number, GameKind>();
   private segmentStartedAt: number;
   private forcedSegment: number | undefined;
   private startedAt: number;
@@ -927,6 +931,7 @@ export class Director {
       this.finalGame = null;
     }
     this.segmentIndex = nextIndex;
+    this.segmentDraws.clear();
     this.segmentStartedAt = now;
     this.options.stage.segment(nextSegment);
     this.options.hooks?.onSegment?.(nextSegment);
@@ -1023,7 +1028,19 @@ export class Director {
   private segmentGame(index: number): GameConfig | undefined {
     const segments = this.persona.segments;
     if (index === segments.length - 1 && this.finalGame) return this.finalGame;
-    return segments[index]?.game;
+    const game = segments[index]?.game;
+    if (!game) return undefined;
+    return { ...game, kind: game.kind === "random" ? this.drawGame(index) : game.kind };
+  }
+
+  /** Draws the kind for a "random" segment once, and keeps it until the show moves on. */
+  private drawGame(index: number): GameKind {
+    let kind = this.segmentDraws.get(index);
+    if (!kind) {
+      kind = GAME_KINDS[Math.floor(Math.random() * GAME_KINDS.length)] ?? "trivia";
+      this.segmentDraws.set(index, kind);
+    }
+    return kind;
   }
 
   /** Opens the vote on the last segment's game near the end of the second-to-last segment (ADR-0029). */
@@ -1168,7 +1185,7 @@ export class Director {
 }
 
 /** "Hora do quiz · Quiz", or just the title when it already names its game. */
-function segmentTitle(segment: Segment, config = segment.game): string {
+function segmentTitle(segment: Segment, config: GameConfig | undefined): string {
   if (!config) return segment.title;
   const game = gameTitle(config);
   const named = segment.title.toLowerCase().includes(GAME_LABELS[config.kind].toLowerCase());

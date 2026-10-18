@@ -136,6 +136,9 @@ describe("running a channel end to end", () => {
     studio.send({ v: 1, t: "command", id: "m2", command: { kind: "music_stop" } });
     await stage.next((m) => m.t === "music" && m.track === null);
 
+    studio.send({ v: 1, t: "command", id: "r1", command: { kind: "reset" } });
+    expect(await studio.next((m) => m.t === "ack" && m.id === "r1")).toMatchObject({ ok: true });
+
     await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "streamer" });
     stage.close();
     studio.close();

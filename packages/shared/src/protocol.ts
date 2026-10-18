@@ -290,6 +290,8 @@ export const studioCommandSchema = z.discriminatedUnion("kind", [
     prompt: z.string().trim().min(1).max(120).optional(),
   }),
   z.object({ kind: z.literal("music_stop") }),
+  /** Clears the stage (speech, game, podium, music) and restarts the stream's counters and leaderboards. */
+  z.object({ kind: z.literal("reset") }),
 ]);
 
 export type StudioCommand = z.infer<typeof studioCommandSchema>;

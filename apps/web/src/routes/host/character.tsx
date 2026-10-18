@@ -1,11 +1,11 @@
-import { EMOTIONS, GAME_KINDS, GAME_LABELS, PLANS, personaSchema, type Emotion, type GameConfig, type GameKind, type Look, type Persona, type Segment, type VoiceSettings } from "@tik-live/shared";
+import { EMOTIONS, GAME_KINDS, GAME_LABELS, PLANS, personaSchema, type Emotion, type GameKind, type Look, type Persona, type Segment, type SegmentGame, type VoiceSettings } from "@tik-live/shared";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { Tabs } from "radix-ui";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { CharacterPreview, type PreviewLine } from "../../components/CharacterPreview";
 import { SaveIndicator } from "../../components/SaveIndicator";
-import { GAME_HOW, TOPIC_PLACEHOLDER } from "../../lib/games";
+import { GAME_HOW, RANDOM_GAME_HOW, TOPIC_PLACEHOLDER } from "../../lib/games";
 import { useUpdateChannel, useVoices } from "../../lib/query";
 import { browserTimeZone, timeIn, timeZoneLabel, timeZoneOptions } from "../../lib/timezone";
 import { useAutosave } from "../../lib/use-autosave";
@@ -92,7 +92,7 @@ function issuesByPath(persona: Persona): Record<string, string> {
 
 function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; onChange: (s: Segment[]) => void; errors: Record<string, string> }) {
   const update = (i: number, patch: Partial<Segment>) => onChange(segments.map((seg, j) => (j === i ? { ...seg, ...patch } : seg)));
-  const setGame = (i: number, game: GameConfig | null) =>
+  const setGame = (i: number, game: SegmentGame | null) =>
     onChange(
       segments.map((seg, j) => {
         if (j !== i) return seg;
@@ -100,10 +100,10 @@ function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; on
         return game ? { ...rest, game } : rest;
       }),
     );
-  const patchGame = (i: number, patch: Partial<GameConfig>) => {
+  const patchGame = (i: number, patch: Partial<SegmentGame>) => {
     const current = segments[i]?.game;
     if (!current) return;
-    const next: GameConfig = { ...current, ...patch };
+    const next: SegmentGame = { ...current, ...patch };
     if (!next.topic) delete next.topic;
     setGame(i, next);
   };
@@ -128,17 +128,18 @@ function SegmentEditor({ segments, onChange, errors }: { segments: Segment[]; on
               </Field>
             </div>
             <div className={s.gameRow}>
-              <Field label="Minijogo" optional hint={segment.game ? GAME_HOW[segment.game.kind] : "O apresentador pode fazer um jogo com o chat durante este quadro."} className={s.gameKind}>
+              <Field label="Minijogo" optional hint={segment.game ? (segment.game.kind === "random" ? RANDOM_GAME_HOW : GAME_HOW[segment.game.kind]) : "O apresentador pode fazer um jogo com o chat durante este quadro."} className={s.gameKind}>
                 {(props) => (
                   <Select
                     {...props}
                     value={segment.game?.kind ?? ""}
                     onChange={(e) => {
-                      const kind = e.target.value as GameKind | "";
+                      const kind = e.target.value as GameKind | "random" | "";
                       setGame(i, kind ? { ...(segment.game ?? { rounds: 5 }), kind } : null);
                     }}
                   >
                     <option value="">Nenhum</option>
+                    <option value="random">Aleatório</option>
                     {GAME_KINDS.map((kind) => (
                       <option key={kind} value={kind}>
                         {GAME_LABELS[kind]}

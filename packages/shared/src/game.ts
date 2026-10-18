@@ -38,6 +38,12 @@ export const gameConfigSchema = z.object({
 });
 export type GameConfig = z.infer<typeof gameConfigSchema>;
 
+/** A segment's game. "random" draws one of the kinds each time the segment comes around (each loop). */
+export const segmentGameSchema = gameConfigSchema.extend({
+  kind: z.enum([...GAME_KINDS, "random"] as const),
+});
+export type SegmentGame = z.infer<typeof segmentGameSchema>;
+
 /**
  * Gift power-ups (ADR-0029): gifts during an open round add up, and each
  * threshold unlocks a boost for everyone playing, never for the gifter

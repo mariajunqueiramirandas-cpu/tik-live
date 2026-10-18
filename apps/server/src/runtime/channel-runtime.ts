@@ -396,6 +396,16 @@ export class ChannelRuntime {
       case "music_stop":
         this.stopMusic();
         return { ok: true };
+      case "reset":
+        // Clears what's on stage without ending the stream: the line being said, any game or podium, the music,
+        // and the counters and leaderboards of this stream session (viewer memory is kept).
+        this.speech.stop();
+        this.games.stop();
+        this.ranking.stop();
+        this.stopMusic();
+        this.director.resetSession();
+        this.notice("info", "reset", "Live reiniciada: palco limpo e placares zerados.");
+        return { ok: true };
     }
   }
 
