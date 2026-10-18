@@ -12,6 +12,9 @@ export const GAME_HOW: Record<GameKind, string> = {
   fastest: "Digite a palavra que aparece na tela. Ganha quem for mais rápido.",
 };
 
+/** The hint for a segment set to "random": one of the games, drawn each time the segment comes around. */
+export const RANDOM_GAME_HOW = "Sorteia um dos jogos toda vez que o quadro entra, em cada volta.";
+
 /** What one entry from chat is called, per game: "12 votos", "3 palpites". */
 export const ANSWER_WORD: Record<GameKind, [one: string, many: string]> = {
   trivia: ["resposta", "respostas"],

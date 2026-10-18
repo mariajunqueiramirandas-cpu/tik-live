@@ -586,7 +586,7 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
                       <span className={s.segmentGame}>
                         <Gamepad2 aria-hidden />
                         <span className="visually-hidden">, jogo: </span>
-                        {GAME_LABELS[game]}
+                        {game === "random" ? "Aleatório" : GAME_LABELS[game]}
                       </span>
                     )}
                   </button>
