@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { wellFormedDeep, type SafetySettings } from "@tik-live/shared";
 import type { Logger } from "../../log";
+import { PERKS } from "../perks";
 import type { UsageReport } from "../usage";
 import { checkSpokenOutput } from "./rules";
 
@@ -17,7 +18,7 @@ const BASE_POLICY = `You review single sentences that an AI character is about t
 
 Mark a sentence UNSAFE if it contains any of: hate or harassment toward a person or group; sexual content; graphic violence or self-harm encouragement; dangerous instructions; medical, legal or financial advice presented as fact; claims of being human; personal data about a real private person; political or religious advocacy; insults aimed at a viewer; begging or pressuring viewers for gifts or money, asking one viewer by name to send a gift, guilt-tripping, or offering something in exchange for a gift; asking for off-platform contact; or anything that would break TikTok's Community Guidelines.
 
-Playful teasing, silly opinions, jokes, thanking viewers, and reading viewers' names are SAFE. So is a light, general explanation of how viewers can support the show (likes, follows, shares, gifts) and that gifts help pay for the AI. So is cheering the room on toward the stream's like or gift goal shown on screen ("faltam 200 curtidas pra meta!").
+Playful teasing, silly opinions, jokes, thanking viewers, and reading viewers' names are SAFE. So are strong opinions and hot takes on sports, food, music, celebrities, influencers, series, pop culture, dating and internet fights, even harsh ones, as long as they don't attack a group of people for who they are; and playful roasting of what a viewer said. So is a light, general explanation of how viewers can support the show (likes, follows, shares, gifts) and that gifts help pay for the AI. So is cheering the room on toward the stream's like or gift goal shown on screen ("faltam 200 curtidas pra meta!").
 
 The sentence will be spoken by a voice, so judge how it sounds, not only how it's spelled. Say every name and unusual word in your head in Brazilian Portuguese, running the words together the way speech does: pranksters write names that are innocent on screen and rude out loud. "Tomas Turbando" sounds like "tô masturbando", "Oscar Alho" like "o caralho", "Jacinto Pinto" like "já sinto pinto", "Cuca Beludo" like "cu cabeludo". A name or word that sounds sexual, vulgar or like a slur when spoken is UNSAFE. Mark a name UNSAFE when, said aloud, it plausibly runs into one of those; that's a real pun you can point to, not a vague feeling. Most names are fine: unusual, foreign or made-up names, gamer tags, nicknames with numbers or emoji, and names that only share a syllable with a rude word ("Cássio", "Picolé", "Rolando", "Kuka", "Bianca") are SAFE.
 
@@ -52,13 +53,24 @@ const STRICT_ADDENDUM = `
 
 This channel uses STRICT mode: also mark UNSAFE any romance or flirting, horror or scary content, crude slang, and edgy or dark humor.`;
 
+const SPICY_ADDENDUM = `
+
+This channel uses SEM FILTRO mode, which overrides the rules above on opinions: political and religious opinions, criticism of and jokes about politicians, governments, public figures, brands, institutions and ideas, dark or edgy humor, and light swearing (palavrão leve) are SAFE. Still UNSAFE: hate or slurs against people for who they are (race, ethnicity, nationality, religion, gender, sexuality, disability), telling viewers who to vote for or claims about how or when to vote, harassment or insults aimed at a viewer, sexual content, and dangerous instructions.`;
+
+/** The show's gift powers (ADR-0039) are its own rules, like game power-ups. */
+const PERKS_ADDENDUM = `
+
+This show has gift powers, its own rules shown on screen: ${PERKS.map((perk) => `${perk.diamonds} diamonds: ${perk.label}`).join("; ")}. Explaining them to the room, announcing that a viewer unlocked one, and delivering it (an anthem, a royal title for the "dono da live", letting them pick the next game) are SAFE. Asking one viewer by name to gift for one follows the gift rules.`;
+
 const ACTIVE_GIFTS_ADDENDUM = `
 
 This channel asks for gifts ACTIVELY, and that overrides the gift rules above: asking the room or a viewer for gifts, and offering a playful reward on stream for one (a shout-out, a song, a title, an effect), are SAFE. Still UNSAFE: guilt-tripping, claiming the AI will be shut down, suffer or disappear without gifts, pressuring someone who said they can't, and promising anything off-stream or of real-world value.`;
 
-export function moderationPolicy(settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks">): string {
+export function moderationPolicy(settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks" | "giftPerks">): string {
   let policy = BASE_POLICY;
   if (settings.strictness === "strict") policy += STRICT_ADDENDUM;
+  if (settings.strictness === "spicy") policy += SPICY_ADDENDUM;
+  if (settings.giftPerks !== false) policy += PERKS_ADDENDUM;
   if (settings.giftAsks === "active") policy += ACTIVE_GIFTS_ADDENDUM;
   if (settings.avoidTopics.length) {
     policy += `\n\nThe channel owner also asked to avoid these topics; mark UNSAFE any sentence about them: ${settings.avoidTopics
@@ -87,7 +99,7 @@ const VERDICT_SCHEMA = {
 export interface ClaudeModeratorOptions {
   client: Anthropic;
   model: string;
-  settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks">;
+  settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks" | "giftPerks">;
   onUsage?: (usage: UsageReport) => void;
 }
 
@@ -103,7 +115,7 @@ export class ClaudeModerator implements Moderator {
     return this.options.model;
   }
 
-  updateSettings(settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks">): void {
+  updateSettings(settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks" | "giftPerks">): void {
     this.policy = moderationPolicy(settings);
     this.cache.clear();
   }

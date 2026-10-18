@@ -298,7 +298,7 @@ export class ClaudeHost implements HostBrain {
 /** Where a reply is cut off: one sentence past what the brief asked for. */
 function sentenceCap(turn: TurnRequest, maxSentences: number): number {
   // A game turn reads a question and its options, so it gets a little more room.
-  if (turn.kind === "game") return maxSentences + 3;
+  if (turn.kind === "game" || turn.kind === "perk") return maxSentences + 3;
   const chat = turn.items.filter((item) => item.event.kind === "chat" || item.event.kind === "question").length;
   // An answer to chat is kept as short as the brief asked: people are waiting on it.
   if (turn.kind === "react" && chat) return reactionSentences(chat, turn.items.length - chat, maxSentences) + 1;
@@ -338,6 +338,8 @@ export class ScriptedHost implements HostBrain {
         return [`[excited] ${turn.line ?? "Conseguimos"}! Vocês são demais.`];
       case "game":
         return [`[excited] ${turn.line ?? "Hora do jogo!"}`];
+      case "perk":
+        return [`[love] ${turn.line ?? "Esse presente merece!"}`];
       case "request":
         return ["[happy] Pode deixar, já vai!"];
       case "show":

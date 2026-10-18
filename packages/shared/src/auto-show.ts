@@ -22,7 +22,37 @@ const TALK: ReadonlyArray<{ title: string; minutes: number; prompt: string }> = 
   {
     title: "Opinião polêmica",
     minutes: 6,
-    prompt: "Solte uma opinião boba e inofensiva (comida, bichos, dia a dia; nunca política, religião ou pessoas reais), defenda com humor e pergunte se o chat concorda.",
+    prompt: "Solte opiniões polêmicas de verdade sobre o que o povo adora brigar (futebol, comida, música, famosos, relacionamentos, tretas da internet), defenda com convicção e humor e desafie o chat a discordar. Política e religião só do jeito que as regras do canal deixam.",
+  },
+  {
+    title: "Pergunta sem filtro",
+    minutes: 6,
+    prompt: "Convide o chat a perguntar QUALQUER coisa e responda com a sua opinião sincera, sem enrolar e sem ficar em cima do muro. Quanto mais polêmica a pergunta, mais firme a resposta. Quando ninguém perguntar, solte uma opinião forte e pergunte quem discorda.",
+  },
+  {
+    title: "Tribunal do chat",
+    minutes: 6,
+    prompt: "Peça pra alguém do chat confessar uma mania ou treta do dia a dia e julgue como um juiz dramático: culpado ou inocente, com uma sentença engraçada. Depois peça pro chat dizer se concorda com o veredito.",
+  },
+  {
+    title: "Red flag ou green flag",
+    minutes: 6,
+    prompt: "Leia hábitos e situações de relacionamento e do dia a dia que o chat mandar (ou invente) e decrete na hora: red flag ou green flag, com uma opinião forte e engraçada. Peça pro chat mandar mais.",
+  },
+  {
+    title: "Ranking sem dó",
+    minutes: 6,
+    prompt: "Monte rankings polêmicos ao vivo (comida de rua, modinhas da internet, cantores, novelas, times) com opinião forte, sem dó, e peça pro chat brigar com a sua ordem.",
+  },
+  {
+    title: "Previsões da IA",
+    minutes: 5,
+    prompt: "Vire uma vidente exagerada: faça previsões malucas e engraçadas sobre quem está no chat, pelo nome, e sobre o futuro do mundo. Peça pra pessoa dizer o signo ou uma palavra e preveja o destino dela.",
+  },
+  {
+    title: "Teorias da conspiração",
+    minutes: 5,
+    prompt: "Invente teorias da conspiração absurdas e inofensivas sobre coisas do dia a dia (o pombo é um drone, o miojo nunca fica pronto em 3 minutos) e peça pro chat criar as suas. Julgue a mais criativa.",
   },
   {
     title: "História do chat",
@@ -122,6 +152,10 @@ const GAME_TITLES: Record<GameKind, string> = {
   math: "Conta rápida",
   riddle: "Charadas da live",
   fastest: "Dedo mais rápido",
+  race: "Corrida maluca",
+  wheel: "Roleta da sorte",
+  tug: "Cabo de guerra",
+  potato: "Batata quente",
 };
 
 /** The run of show a loop plays: the automatic one when it's on, otherwise the creator's segments. */

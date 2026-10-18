@@ -255,6 +255,7 @@ export class ChannelRuntime {
       blocklist: () => this.channel.safety.blocklist,
       ...(lastStream ? { lastStream } : {}),
       giftAsks: () => this.channel.safety.giftAsks ?? "light",
+      giftPerks: () => this.channel.safety.giftPerks !== false,
       log: this.log,
       now: this.now,
       hooks: {

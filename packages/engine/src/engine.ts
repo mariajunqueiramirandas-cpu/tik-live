@@ -433,6 +433,15 @@ export class Engine implements StageEngine {
       case "support":
         this.text.card.setSupport(message.card, this.time, this.scale);
         break;
+      case "perks":
+        this.text.card.setPerks(message.card, this.time, this.scale);
+        break;
+      case "boss":
+        this.text.boss.set(message.boss, this.time, this.scale);
+        break;
+      case "challenge":
+        this.text.challenge.set(message.challenge, this.time, this.scale);
+        break;
       case "goals":
         this.text.goals.set(message.goals, this.time, this.scale);
         break;
@@ -823,15 +832,27 @@ export class Engine implements StageEngine {
   }
 }
 
-/** The highlighted end of an alert: "<name> enviou Rose ×5", "<name> começou a seguir". */
+/** The highlighted end of an alert: "<name> enviou Rose ×5", "<name> começou a seguir", "<name> desbloqueou Fura-fila!". */
 export function alertDetail(message: Extract<StageServerPayload, { t: "alert" }>): string {
   if (message.kind === "gift") {
     // TikTok's own convention: the gift's name (as TikTok sends it), then the combo count.
     const count = message.count ?? 1;
     return `${message.giftName || "um presente"}${count > 1 ? ` ×${count}` : ""}`;
   }
-  if (message.kind === "level") return `subiu pro nível ${message.level ?? 2}!`;
-  return message.kind === "follow" ? "começou a seguir" : "compartilhou a live";
+  switch (message.kind) {
+    case "level":
+      return `subiu pro nível ${message.level ?? 2}!`;
+    case "crown":
+      return "assumiu o topo dos presentes!";
+    case "perk":
+      return `${message.perk || "um poder"}!`;
+    case "raffle":
+      return "ganhou o sorteio!";
+    case "follow":
+      return "começou a seguir";
+    default:
+      return "compartilhou a live";
+  }
 }
 
 /**

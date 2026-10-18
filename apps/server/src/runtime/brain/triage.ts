@@ -12,11 +12,28 @@ export interface QueueItem {
   queuedAt: number;
   /** Arrival order, to cover events in the order they happened. */
   seq: number;
+  /** What the brief says about it besides its kind: "VIP", "unlocked Dono da live". Trusted text from the director, never a viewer's. */
+  tags?: string[];
 }
 
-/** A message that asks something: a TikTok question, or chat with a question mark. */
+/**
+ * How a question starts when chat doesn't bother with the question mark,
+ * which in Brazilian chat is most of the time: "qual seu time", "oq vc acha
+ * do neymar", "me fala uma curiosidade", "opina sobre pizza doce".
+ */
+const ASKS =
+  /^(?:e\s+)?(?:qual|quais|quem|como|onde|cade|quando|quanto|quanta|quantos|quantas|por\s?que|pq|porque|o\s?que|oq|oque|sera|(?:o\s?que|oq|vc|voce|tu|ce)\s+(?:acha|achou|pensa|prefere|gosta|curte|faria|ja|sabe|conhece|tem|torce)|me\s+(?:fala|diz|conta|explica|responde|da)|fala\s+(?:sobre|uma|um|ai|a[ií])|conta\s+(?:uma|um|sobre|ai)|opina|da\s+(?:sua|tua)\s+opiniao|sua\s+opiniao|tem\s+como|sabe\s+(?:o|a|qual|quem|como|se)|pode\s+(?:me|falar|cantar|fazer|dar)|consegue|explica|what|who|how|why|when|where|do\s+you|are\s+you|can\s+you|tell\s+me)(?:\s|$)/;
+
+/** Lowercase, no accents: how ASKS reads a message. */
+function plain(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
+}
+
+/** A message that asks something: a TikTok question, chat with a question mark, or one that reads as a question without it. */
 export function isQuestion(event: LiveEvent): boolean {
-  return event.kind === "question" || (event.kind === "chat" && event.text.includes("?"));
+  if (event.kind === "question") return true;
+  if (event.kind !== "chat") return false;
+  return event.text.includes("?") || ASKS.test(plain(event.text));
 }
 
 export type TriageResult =
@@ -72,7 +89,7 @@ const FLOOD_WINDOW_MS = 15_000;
 const FLOOD_MAX_MESSAGES = 3;
 const DUPLICATE_WINDOW_MS = 60_000;
 /** Expired questions kept for the director to come back to. */
-const LAPSED_MAX = 5;
+const LAPSED_MAX = 8;
 /** A viewer who shares again this soon isn't thanked again: one thank-you per sharer, not one per tap. */
 const SHARE_THANKS_MS = 5 * 60_000;
 
@@ -88,11 +105,43 @@ export class Triage {
   private seq = 0;
   private readonly history = new Map<string, Array<{ text: string; at: number }>>();
   private readonly shared = new Map<string, number>();
+  /** Viewers whose messages go first for a while (gift powers, ADR-0039), and until when. */
+  private readonly promoted = new Map<string, { rank: "boss" | "vip"; until: number }>();
   private readonly now: () => number;
   readonly dropped = new Map<string, number>();
 
   constructor(private readonly options: TriageOptions) {
     this.now = options.now ?? Date.now;
+  }
+
+  /**
+   * A gift power: this viewer's messages go first until `until`, and the
+   * brief marks them, so the host knows who's who. The "dono da live" ranks
+   * above someone who cut the line.
+   */
+  promote(viewerId: string, rank: "boss" | "vip", until: number): void {
+    const now = this.now();
+    const current = this.promoted.get(viewerId);
+    const keep = current && current.until > now && current.rank === "boss" && rank === "vip";
+    this.promoted.set(viewerId, keep ? { rank: "boss", until: Math.max(current.until, until) } : { rank, until: Math.max(until, current?.rank === rank ? current.until : 0) });
+    if (this.promoted.size > 5_000) this.promoted.delete(this.promoted.keys().next().value as string);
+  }
+
+  /** A "dono da live" lost the crown: they still cut the line until their time runs out. */
+  demote(viewerId: string): void {
+    const entry = this.promoted.get(viewerId);
+    if (entry?.rank === "boss") this.promoted.set(viewerId, { rank: "vip", until: entry.until });
+  }
+
+  /** "boss", "vip", or undefined for everyone else. */
+  rankOf(viewerId: string): "boss" | "vip" | undefined {
+    const entry = this.promoted.get(viewerId);
+    if (!entry) return undefined;
+    if (entry.until <= this.now()) {
+      this.promoted.delete(viewerId);
+      return undefined;
+    }
+    return entry.rank;
   }
 
   /** Applies new safety settings or a renamed host without restarting the show. */
@@ -104,13 +153,14 @@ export class Triage {
   ingest(event: LiveEvent): TriageResult {
     const priority = this.score(event);
     if (typeof priority === "string") return this.drop(priority);
-    // A TikTok "question" is always for the host; plain chat may be for someone else.
-    if (event.kind === "chat" && !this.mentionsHost(event)) {
+    const rank = "viewer" in event && (event.kind === "chat" || event.kind === "question") ? this.rankOf(event.viewer.id) : undefined;
+    // A TikTok "question" is always for the host; plain chat may be for someone else. A VIP's message is always for the host.
+    if (event.kind === "chat" && !rank && !this.mentionsHost(event)) {
       const aside = asideReason(event.text);
       if (aside) return this.drop(aside, true);
     }
 
-    const ttl = TTL_MS[isQuestion(event) || this.mentionsHost(event) ? "question" : event.kind];
+    const ttl = TTL_MS[isQuestion(event) || this.mentionsHost(event) || rank ? "question" : event.kind];
     if (ttl === undefined) return this.drop("not queueable");
 
     if ((event.kind === "chat" || event.kind === "question") && this.isDuplicateQueued(event.text)) {
@@ -122,7 +172,15 @@ export class Triage {
       if (merged) return { queued: true, item: merged };
     }
 
-    const item: QueueItem = { event, events: [event], priority, expiresAt: this.now() + ttl, queuedAt: this.now(), seq: ++this.seq };
+    const item: QueueItem = {
+      event,
+      events: [event],
+      priority,
+      expiresAt: this.now() + ttl,
+      queuedAt: this.now(),
+      seq: ++this.seq,
+      ...(rank ? { tags: [rank === "boss" ? "the dono da live" : "VIP: cut the line"] } : {}),
+    };
     this.queue.push(item);
     this.queue.sort((a, b) => b.priority - a.priority);
     const max = this.options.maxQueue ?? 50;
@@ -222,6 +280,11 @@ export class Triage {
         const flood = this.checkFlood(event.viewer.id, event.text);
         if (flood) return flood;
         let priority = event.kind === "question" ? 70 : 40;
+        // A question without its "?" is still a question.
+        if (event.kind === "chat" && !event.text.includes("?") && isQuestion(event)) priority += 15;
+        // A gift power: their messages go before everyone else's chat (gifts still come first).
+        const rank = this.rankOf(event.viewer.id);
+        if (rank) priority += rank === "boss" ? 55 : 45;
         const text = event.text.toLowerCase();
         if (text.includes("?")) priority += 15;
         if (this.mentionsHost(event)) priority += 15;
@@ -269,6 +332,7 @@ export class Triage {
       expiresAt: this.now() + ttl,
       queuedAt: item.queuedAt,
       seq: item.seq,
+      ...(item.tags ? { tags: item.tags } : {}),
     };
     this.queue[index] = merged;
     this.queue.sort((a, b) => b.priority - a.priority);

@@ -24,6 +24,10 @@ export const PALETTES: Record<GameSceneKind, Palette> = {
   math: { primary: "#4DD9A0", secondary: "#E8F07A", background: "#04140E", accent: "#E8F07A" },
   riddle: { primary: "#A46CFF", secondary: "#4FC3FF", background: "#0D0626", accent: "#C7A6FF" },
   fastest: { primary: "#FFE14D", secondary: "#FF4D6A", background: "#190A00", accent: "#FFE14D" },
+  race: { primary: "#FF8A3D", secondary: "#3DDC84", background: "#0F1A06", accent: "#FFB15C" },
+  wheel: { primary: "#FFD15C", secondary: "#4FA3FF", background: "#100620", accent: "#FFD15C" },
+  tug: { primary: "#FF5FA2", secondary: "#4FC3FF", background: "#120B24", accent: "#FFE08A" },
+  potato: { primary: "#FF7A2E", secondary: "#FF3D3D", background: "#1E0702", accent: "#FFB347" },
   scoreboard: { primary: "#FFD15C", secondary: "#B16CFF", background: "#130722", accent: "#FFD15C" },
   podium: { primary: "#FFD15C", secondary: "#FF5FA2", background: "#140518", accent: "#FFD15C" },
 };
@@ -52,6 +56,15 @@ export function sceneIdentity(scene: GameScene): string {
       return `riddle|${scene.round}|${scene.riddle}`;
     case "fastest":
       return `fastest|${scene.round}|${scene.word}`;
+    // Betting rounds update in place from the bets through the race (or spin) to the finish.
+    case "race":
+      return `race|${scene.round}|${scene.racers.map((racer) => racer.name).join("|")}`;
+    case "wheel":
+      return `wheel|${scene.round}|${scene.strip.join(",")}|${scene.sectors.map((sector) => sector.label).join("|")}`;
+    case "tug":
+      return `tug|${scene.round}|${scene.teams.map((team) => team.name).join("|")}`;
+    case "potato":
+      return `potato|${scene.round}`;
     case "scoreboard":
       return `scoreboard|${scene.title}`;
     case "podium":
@@ -102,6 +115,15 @@ function contentKey(scene: GameScene): string {
       return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.riddle, scene.hint, scene.answer, scene.winner]);
     case "fastest":
       return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.word, scene.winner, scene.winnerMs]);
+    // Progress, bets, the rope, the holder and the heat are live: labels and springs.
+    case "race":
+      return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.stage, scene.racers.map((r) => [r.name, r.odds]), scene.winner]);
+    case "wheel":
+      return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.stage, scene.sectors.map((s) => [s.label, s.odds]), scene.strip, scene.result]);
+    case "tug":
+      return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.teams.map((t) => t.name), scene.winner]);
+    case "potato":
+      return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.exploded]);
     case "scoreboard":
       return JSON.stringify([scene.kind, scene.title, scene.rows]);
     case "podium":
@@ -263,4 +285,62 @@ export function countOf(n: number, one: string, many = `${one}s`): string {
 export function letterList(letters: readonly string[]): string {
   if (letters.length <= 1) return letters.join("");
   return `${letters.slice(0, -1).join(", ")} ou ${letters[letters.length - 1]}`;
+}
+
+// ---- the wheel's strip (ADR-0038) ---------------------------------------------------
+
+/**
+ * How many times the strip's tiles repeat on the board so that it always
+ * covers the window with no gap as it wraps around: at least `minTiles`.
+ */
+export function stripRepeats(length: number, minTiles: number): number {
+  return Math.max(1, Math.ceil(minTiles / Math.max(1, length)));
+}
+
+/** `a` modulo `n`, always in [0, n). */
+export function wrap(a: number, n: number): number {
+  return n > 0 ? ((a % n) + n) % n : 0;
+}
+
+/**
+ * Where tile `index`'s center sits relative to the pointer, for a strip
+ * scrolled by `offset` (the strip position under the pointer): in
+ * [-total/2, total/2), so every tile is drawn exactly once.
+ */
+export function stripPosition(index: number, offset: number, tileW: number, total: number): number {
+  const pos = wrap(index * tileW + tileW / 2 - offset, total);
+  return pos >= total / 2 ? pos - total : pos;
+}
+
+/** The offset that puts tile `landing` under the pointer, `turns` whole loops past `from`. */
+export function stripTarget(from: number, landing: number, tileW: number, total: number, turns: number): number {
+  return from + turns * total + wrap(landing * tileW + tileW / 2 - from, total);
+}
+
+/** Fast at first, crawling at the end: the last tiles creep past the pointer. */
+export function easeOutQuart(p: number): number {
+  const x = Math.max(0, Math.min(1, p));
+  return 1 - (1 - x) ** 4;
+}
+
+/** The strip's offset at `t` for a spin from `from` (at `start`) to `to` (at `end`), local clock seconds. */
+export function stripOffsetAt(t: number, from: number, to: number, start: number, end: number): number {
+  if (t >= end || end <= start) return to;
+  if (t <= start) return from;
+  return from + (to - from) * easeOutQuart((t - start) / (end - start));
+}
+
+/** Whole loops for a spin of `spinMs`: more loops for a longer spin, at least two. */
+export function spinTurns(spinMs: number): number {
+  return Math.max(2, Math.ceil(spinMs / 2500));
+}
+
+/** Seconds since `since` on the local clock, whole and never negative ("segurando há 7 s"). */
+export function heldSeconds(now: number, since: number): number {
+  return Math.max(0, Math.floor(now - since + 1e-6));
+}
+
+/** Where a value from -1 to 1 (the tug-of-war rope) sits on a 0..1 track. */
+export function ropePosition(rope: number): number {
+  return Math.max(0, Math.min(1, (rope + 1) / 2));
 }

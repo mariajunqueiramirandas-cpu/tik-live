@@ -13,8 +13,15 @@ import "./zod-pt-br";
  * - math: solve the sum; the first right answer wins.
  * - riddle: answer the riddle; the first right answer wins.
  * - fastest: type the word on screen; the fastest typer wins.
+ *
+ * Games of chance and parties (ADR-0038), made up in code:
+ * - race: bet on a racer (type its number); the long shots pay the most.
+ * - wheel: bet on a color (type its number); the strip spins and stops on one.
+ * - tug: join a team (type 1 or 2); likes, "puxa" and gifts pull the rope.
+ * - potato: type "pega" to grab the hot potato; points for every second you
+ *   hold it, and whoever holds it when it blows up loses them all.
  */
-export const GAME_KINDS = ["trivia", "poll", "scramble", "number", "truefalse", "math", "riddle", "fastest"] as const;
+export const GAME_KINDS = ["trivia", "poll", "scramble", "number", "truefalse", "math", "riddle", "fastest", "race", "wheel", "tug", "potato"] as const;
 export type GameKind = (typeof GAME_KINDS)[number];
 
 export const GAME_LABELS: Record<GameKind, string> = {
@@ -26,7 +33,15 @@ export const GAME_LABELS: Record<GameKind, string> = {
   math: "Conta rápida",
   riddle: "Charadas",
   fastest: "Dedo mais rápido",
+  race: "Corrida maluca",
+  wheel: "Roleta da sorte",
+  tug: "Cabo de guerra",
+  potato: "Batata quente",
 };
+
+/** Games made up in code on the spot: no questions to write, nothing to moderate. */
+export const GENERATED_KINDS = ["number", "math", "race", "wheel", "tug", "potato"] as const satisfies readonly GameKind[];
+export type GeneratedKind = (typeof GENERATED_KINDS)[number];
 
 /** How a game is set up: by the creator in a segment, or from the studio. */
 export const gameConfigSchema = z.object({
@@ -71,6 +86,14 @@ const round = {
   /** Power-ups gifts unlocked for this round. */
   boosts: z.array(z.enum(BOOST_KINDS)).max(3).optional(),
 };
+
+/**
+ * Where a betting round is (ADR-0038): chat is betting, the race is on (or
+ * the strip spins), or it's over. The round's phase is "open" while chat
+ * bets and "reveal" from the start.
+ */
+export const BET_STAGES = ["bets", "running", "finish"] as const;
+export type BetStage = (typeof BET_STAGES)[number];
 
 /** What the stage draws for a game. Each kind has its own scene. */
 export const gameSceneSchema = z.discriminatedUnion("kind", [
@@ -159,6 +182,108 @@ export const gameSceneSchema = z.discriminatedUnion("kind", [
     /** How long the winner took, from the word appearing. */
     winnerMs: z.number().int().min(0).nullable(),
   }),
+  /**
+   * A race chat bets on: five racers, each with the multiplier it pays.
+   * Progress goes from 0 at the start to 1 at the finish line; the server
+   * sends it a few times a second while the race runs.
+   */
+  z.object({
+    kind: z.literal("race"),
+    ...round,
+    stage: z.enum(BET_STAGES),
+    racers: z
+      .array(
+        z.object({
+          name: z.string().max(20),
+          /** What a right bet pays: points are three times this. */
+          odds: z.number().int().min(2).max(50),
+          /** Bets on this racer so far. */
+          bets: z.number().int().min(0),
+          progress: z.number().min(0).max(1),
+        }),
+      )
+      .min(2)
+      .max(5),
+    bets: z.number().int().min(0),
+    /** The racer that won, at the finish. */
+    winner: z.number().int().min(0).max(4).nullable(),
+    /** Who bet on the winner, first bets first. */
+    winners: z.array(name).max(5),
+    /** The latest moment in the race ("Faísca assumiu a ponta!"), while it runs. */
+    event: z.string().max(60).nullable(),
+  }),
+  /**
+   * A strip of colored tiles that spins under a pointer (ADR-0038). Chat bets
+   * on a color; rarer colors pay more. From the spin on, `landing` is the
+   * tile it stops on and `spinLeftMs` how long the spin has left, relative
+   * to receipt, so the stage animates it on its own.
+   */
+  z.object({
+    kind: z.literal("wheel"),
+    ...round,
+    stage: z.enum(BET_STAGES),
+    sectors: z
+      .array(
+        z.object({
+          label: z.string().max(20),
+          /** What a right bet pays: points are four times this. */
+          odds: z.number().int().min(2).max(100),
+          bets: z.number().int().min(0),
+        }),
+      )
+      .min(2)
+      .max(4),
+    /** The strip's tiles, as sector indexes, in order (it repeats around). */
+    strip: z.array(z.number().int().min(0).max(3)).min(4).max(24),
+    /** The tile (index into `strip`) the spin stops on; null while chat bets. */
+    landing: z.number().int().min(0).max(23).nullable(),
+    spinMs: z.number().min(0),
+    spinLeftMs: z.number().min(0),
+    bets: z.number().int().min(0),
+    /** The sector it stopped on, at the finish. */
+    result: z.number().int().min(0).max(3).nullable(),
+    winners: z.array(name).max(5),
+  }),
+  /**
+   * Tug of war (ADR-0038): two teams, a rope between them. `rope` goes from
+   * -1 (team 1 pulled it all the way) to 1 (team 2).
+   */
+  z.object({
+    kind: z.literal("tug"),
+    ...round,
+    teams: z
+      .array(
+        z.object({
+          name: z.string().max(24),
+          members: z.number().int().min(0),
+          pulls: z.number().int().min(0),
+        }),
+      )
+      .length(2),
+    rope: z.number().min(-1).max(1),
+    /** The team that won, at the reveal; null before it and on a tie. */
+    winner: z.number().int().min(0).max(1).nullable(),
+    /** Who pulled the most for the winning team. */
+    mvp: name.nullable(),
+  }),
+  /**
+   * Hot potato (ADR-0038): the fuse is secret, so `durationMs` is 0 and the
+   * board shows no timer, only how hot it's getting.
+   */
+  z.object({
+    kind: z.literal("potato"),
+    ...round,
+    holder: name.nullable(),
+    /** How long the holder has had it, when the message was sent. */
+    heldMs: z.number().min(0),
+    /** 0 to 1: time since the round opened over the longest fuse there is (never the real one). */
+    heat: z.number().min(0).max(1),
+    grabs: z.number().int().min(0),
+    /** Seconds held so far, most first. */
+    leaders: z.array(z.object({ name, seconds: z.number().int().min(0) })).max(3),
+    /** At the reveal: who held it when it blew up, and the points that cost them. */
+    exploded: z.object({ name, lost: z.number().int().min(0) }).nullable(),
+  }),
   z.object({
     kind: z.literal("scoreboard"),
     title: z.string().max(60),
@@ -180,12 +305,15 @@ export const gameSceneSchema = z.discriminatedUnion("kind", [
 export type GameScene = z.infer<typeof gameSceneSchema>;
 export type GameSceneKind = GameScene["kind"];
 
+export const GAME_SOURCES = ["segment", "studio", "pick"] as const;
+export type GameSource = (typeof GAME_SOURCES)[number];
+
 /** The game as the studio sees it. */
 export interface GameStatus {
   kind: GameKind;
   topic: string | null;
-  /** "preparing": writing the questions; "results": showing the final scores. */
-  phase: "preparing" | "open" | "reveal" | "results";
+  /** "preparing": writing the questions; "running": a race or a spin is on (bets are closed); "results": showing the final scores. */
+  phase: "preparing" | "open" | "running" | "reveal" | "results";
   round: number;
   rounds: number;
   /** The current question or prompt, as shown on stage. */
@@ -197,8 +325,8 @@ export interface GameStatus {
   /** Power-ups gifts unlocked for the round on screen. */
   boosts: BoostKind[];
   leaderboard: Array<{ name: string; points: number }>;
-  /** Started by a segment (ends with it) or by the creator from the studio. */
-  source: "segment" | "studio";
+  /** Started by a segment (ends with it), by the creator from the studio, or picked by a viewer (a gift or the raffle, ADR-0039). */
+  source: GameSource;
 }
 
 /** Points across every game in one loop of the run of show (all segments), reset once its podium is revealed. */

@@ -26,6 +26,7 @@ charging other people.
 | 11 | [Accept the ADRs](#11-accept-the-adrs) | All "Proposed" | Nothing |
 | 12 | [Pre-launch checks only the owner can run](#12-pre-launch-checks-only-the-owner-can-run) | Not done | Paid launch |
 | 13 | [Voice provider and voice rights](#13-voice-provider-and-voice-rights) | Fish Audio Drama 3 through OpenRouter, six designed voices from Fish's public library (Bia by default) | Paid launch |
+| 14 | [Gift powers, challenges and "sem filtro"](#14-gift-powers-challenges-and-sem-filtro) | Gift powers and challenges on; "sem filtro" off | Nothing |
 
 ## 1. Prices, hours and AI models per plan
 
@@ -290,3 +291,27 @@ taken down. Drama 3 is a preview model.
 **Recommendation:** keep Drama 3. Before charging anyone, design two or
 three voices in a Fish account you own, so the default voice can't
 disappear, and set a monthly spend limit on the OpenRouter key.
+
+## 14. Gift powers, challenges and "sem filtro"
+
+**Today:** gift powers ([ADR-0039](adr/0039-gift-powers.md)) are on for
+every channel: 5, 30, 99 and 199 diamonds unlock cutting the line, picking
+the next game, an anthem and "dono da live". Room challenges and the free
+raffle ([ADR-0040](adr/0040-room-challenges-and-opinions.md)) run every six
+minutes. The "Sem filtro" opinion mode is off; creators pick it on the
+safety page. The new games of chance ([ADR-0038](adr/0038-games-of-chance-and-party-games.md))
+are free to play and pay points only.
+
+**To decide:**
+
+- Whether the gift-power thresholds fit TikTok's gift prices in Brazil
+  (`PERKS` in `apps/server/src/runtime/perks.ts`), and whether the powers
+  should stay on by default for creators in light gift mode.
+- Whether "Sem filtro" should be offered on every plan. It takes on
+  politics and religion, which draws reports; it keeps out hate, slurs,
+  harassment, sexual content and electoral campaigning.
+- How often challenges run on very big streams.
+
+**Recommendation:** keep the defaults, and watch the first real streams'
+analytics (likes and messages a minute around a challenge, gifts around the
+powers card) before changing the numbers.

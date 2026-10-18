@@ -133,4 +133,45 @@ describe("StageHub pacing", () => {
     expect(late.sent.find((m) => m.t === "goals")).toMatchObject({ goals: goals(520, 1_000, 2) });
     after();
   });
+  it("sends gift powers, the dono da live and challenges, and replays what's still up with its clock moved on", () => {
+    const { hub, attach, clock, after } = setup();
+    const obs = attach("obs", "program");
+    const card = { title: "Poderes do presente", rows: [{ diamonds: 5, text: "Fura-fila" }, { diamonds: 199, text: "Dono da live" }] };
+    hub.perks(card);
+    hub.boss({ name: "mari", leftMs: 300_000 });
+    hub.crown("caio");
+    hub.perk("duda", "Fura-fila");
+    hub.raffleWinner("lu");
+    hub.vote({ title: "Próximo jogo", options: ["Corrida maluca", "Roleta da sorte"], tally: [0, 0], by: "mari" });
+    const challenge = { kind: "likes" as const, title: "DESAFIO DAS CURTIDAS", detail: "toque na tela", value: 10, target: 500, remainingMs: 45_000, durationMs: 45_000, result: null, winner: null };
+    hub.challenge(challenge);
+    expect(obs.sent.filter((m) => m.t === "alert")).toEqual([
+      { v: 1, t: "alert", kind: "crown", name: "caio" },
+      { v: 1, t: "alert", kind: "perk", name: "duda", perk: "Fura-fila" },
+      { v: 1, t: "alert", kind: "raffle", name: "lu" },
+    ]);
+    clock.advance(20_000);
+    const late = attach("late", "program");
+    expect(late.sent.find((m) => m.t === "perks")).toMatchObject({ card });
+    expect(late.sent.find((m) => m.t === "boss")).toMatchObject({ boss: { name: "mari", leftMs: 280_000 } });
+    expect(late.sent.find((m) => m.t === "challenge")).toMatchObject({ challenge: { value: 10, remainingMs: 25_000 } });
+    expect(late.sent.find((m) => m.t === "vote")).toMatchObject({ vote: { by: "mari" } });
+    expect(late.sent.some((m) => m.t === "alert")).toBe(false);
+
+    // A result is replayed for a moment, then it's old news; a reign that ran out isn't replayed.
+    hub.challenge({ ...challenge, value: 520, remainingMs: 0, result: "won" });
+    clock.advance(2_000);
+    expect(attach("soon", "program").sent.find((m) => m.t === "challenge")).toMatchObject({ challenge: { result: "won" } });
+    clock.advance(10_000);
+    expect(attach("later", "program").sent.some((m) => m.t === "challenge")).toBe(false);
+    clock.advance(300_000);
+    const gone = attach("gone", "program");
+    expect(gone.sent.some((m) => m.t === "boss")).toBe(false);
+    hub.perks(null);
+    hub.boss(null);
+    hub.challenge(null);
+    const cleared = attach("cleared", "program");
+    expect(cleared.sent.some((m) => m.t === "perks" || m.t === "boss" || m.t === "challenge")).toBe(false);
+    after();
+  });
 });

@@ -58,7 +58,11 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
 - **Minigames**: trivia, this-or-that, word scramble, guess the number,
   true or false, quick math, riddles and fastest finger. Viewers answer in
   chat, the game keeps score, and each game has its own scene on stage
-  ([ADR-0023](docs/adr/0023-chat-minigames.md)). Run them from a segment or
+  ([ADR-0023](docs/adr/0023-chat-minigames.md)). Plus party games of luck
+  ([ADR-0038](docs/adr/0038-games-of-chance-and-party-games.md)): a horse
+  race chat bets on, a spinning wheel, a tug of war pulled by likes, and a
+  hot potato that blows up on whoever holds it. Bets are free and pay
+  points. Run them from a segment or
   start one from the studio. Every game's points add up over a loop of the
   run of show, and when the last segment ends the top three are revealed on
   a podium, one place at a time, before the ranking starts over.
@@ -78,6 +82,18 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   it's an AI whose voice and brain cost money; each channel picks whether
   the host asks for gifts lightly or actively
   ([ADR-0032](docs/adr/0032-gifts-and-supporting-the-show.md)).
+- **Gift powers**: a gift unlocks something on the spot: 5 diamonds cut
+  the line, 30 pick the next game, 99 get a personal anthem, 199 make the
+  gifter "dono da live" for five minutes, with a crown on stage. Taking
+  first place among the gifters gets its own alert
+  ([ADR-0039](docs/adr/0039-gift-powers.md)).
+- **Challenges for the room**: every few minutes a like rush, a comment
+  rush or a free raffle (type EU; the winner picks a game), with a banner
+  and a prize when the room wins. The host welcomes first-timers by name,
+  runs roll calls and interviews, answers questions without a "?", and has
+  an opinion about everything, with a "sem filtro" mode that takes on
+  politics and religion too
+  ([ADR-0040](docs/adr/0040-room-challenges-and-opinions.md)).
 - **Fan levels and calls to passers-by**: every viewer climbs fan levels by
   coming back, chatting, following, sharing and gifting, across streams;
   level-ups get an alert and a shout-out. Every few minutes, and after a

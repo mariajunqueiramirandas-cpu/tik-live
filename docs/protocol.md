@@ -105,11 +105,15 @@ waiting to be spoken are discarded, and the caption clears at once.
 { "v": 1, "t": "alert", "kind": "gift", "name": "Theo", "giftName": "Rose", "count": 5, "diamonds": 5 }
 ```
 
-An on-screen alert. `kind` is `gift`, `follow`, `share` or `level`; gift
-alerts also carry `giftName`, `count` and `diamonds`, and `level` alerts
-(a viewer reached a new fan level, [ADR-0037](adr/0037-fan-levels-and-passers-by.md))
-carry `level`. Up to four alerts stack on screen; each stays about six
-seconds.
+An on-screen alert. `kind` is `gift`, `follow`, `share`, `level`, `crown`,
+`perk` or `raffle`; gift alerts also carry `giftName`, `count` and
+`diamonds`, and `level` alerts (a viewer reached a new fan level,
+[ADR-0037](adr/0037-fan-levels-and-passers-by.md)) carry `level`. `crown`:
+the viewer just took first place among the gifters; `perk`: a gift just
+unlocked a gift power, named in `perk` ("Dono da live",
+[ADR-0039](adr/0039-gift-powers.md)); `raffle`: the viewer won the raffle
+([ADR-0040](adr/0040-room-challenges-and-opinions.md)). Up to four alerts
+stack on screen; each stays about six seconds.
 
 #### `segment`
 
@@ -161,8 +165,10 @@ from [`alert`](#alert) and [`stats`](#stats) on its own.
 A chat minigame's scene ([ADR-0023](adr/0023-chat-minigames.md)), or
 `"scene": null` to return to the show's normal stage. Each game kind has its
 own scene (`gameSceneSchema` in `packages/shared/src/game.ts`): `trivia`,
-`poll`, `scramble`, `number`, `truefalse`, `math`, `riddle`, `fastest`,
-`scoreboard` at the end of a game, and `podium` at the end of a loop of the
+`poll`, `scramble`, `number`, `truefalse`, `math`, `riddle`, `fastest`, the
+party games `race`, `wheel`, `tug` and `potato`
+([ADR-0038](adr/0038-games-of-chance-and-party-games.md)), `scoreboard` at
+the end of a game, and `podium` at the end of a loop of the
 run of show ([ADR-0028](adr/0028-up-next-likes-and-loop-ranking.md)): the
 top three of the loop's ranking, with `places` (first place first) null
 until each is revealed and `suspense` naming the place the drumroll is
@@ -173,6 +179,17 @@ unlocked, see [`boost`](#boost)), and a quiz may carry `removed` (options a
 `remainingMs` and `durationMs` are relative to when the message arrives;
 answers are never in the scene before `phase` is `reveal`. A stage that
 connects mid-game gets the current scene right after `hello`.
+
+The party games: in `race` and `wheel`, `stage` is `bets` while chat bets
+(`phase` `open`), then `running` while the race runs or the strip spins and
+`finish` at the result (both `phase` `reveal`). A race's `racers[].progress`
+(0 to 1) comes a few times a second while it runs. A wheel's `landing` (the
+`strip` tile it stops on) and `spinLeftMs` (relative to receipt) arrive
+with the first `running` scene, so the stage animates the spin on its own
+and lands on that tile. In `tug`, `rope` goes from -1 (team 1 pulled it all
+the way) to 1 (team 2). In `potato`, `durationMs` is 0: the fuse is secret,
+so the board shows no timer, only `heat` (time so far over the longest fuse)
+and how long the `holder` has had it (`heldMs`, counted up on stage).
 
 #### `boost`
 
@@ -201,6 +218,11 @@ most once a second). Viewers type the number. The stage's ranking card shows
 the vote instead of the rankings while it's open; `"vote": null` when it
 closes. Sent right after `hello` to a stage that connects mid-vote.
 
+With `by`, it's one viewer's pick of the next game instead (a gift power or
+the raffle's prize, [ADR-0039](adr/0039-gift-powers.md)): only that viewer
+chooses, so `tally` is empty and the card names them. A pick goes over
+chat's vote while it's open.
+
 #### `support`
 
 ```json
@@ -213,6 +235,47 @@ or `gift`) that picks its icon. The stage's ranking card shows it for about
 20 seconds every few minutes, and while the host explains it; an open
 `vote` stays on top. `"card": null` puts the rankings back. Sent right
 after `hello` to a stage that connects while it's up.
+
+#### `perks`
+
+```json
+{ "v": 1, "t": "perks", "card": { "title": "PODERES DO PRESENTE", "rows": [{ "diamonds": 5, "text": "fura-fila no chat" }, { "diamonds": 30, "text": "escolhe o próximo jogo" }, { "diamonds": 99, "text": "ganha um hino da IA" }, { "diamonds": 199, "text": "dono da live por 5 min" }] } }
+```
+
+The gift powers on offer ([ADR-0039](adr/0039-gift-powers.md)): what a gift
+of so many diamonds unlocks, cheapest first, up to five rows of about 22
+characters. The stage's ranking card shows it for about 18 seconds every
+few minutes; it shares the slot with `support` (the latest wins) and an
+open `vote` stays on top. `"card": null` puts the rankings back. Sent right
+after `hello` to a stage that connects while it's up.
+
+#### `boss`
+
+```json
+{ "v": 1, "t": "boss", "boss": { "name": "duda", "leftMs": 300000 } }
+```
+
+Who's the "dono da live" ([ADR-0039](adr/0039-gift-powers.md)): a gold badge
+with a crown, the name and a countdown from `leftMs` (relative to receipt),
+which steps aside while a game board is up. `"boss": null` when the reign
+ends. A new one replaces the badge. Sent right after `hello`, with the time
+left from then, to a stage that connects during a reign.
+
+#### `challenge`
+
+```json
+{ "v": 1, "t": "challenge", "challenge": { "kind": "likes", "title": "DESAFIO DAS CURTIDAS", "detail": "toque na tela sem parar", "value": 312, "target": 500, "remainingMs": 28000, "durationMs": 45000, "result": null, "winner": null } }
+```
+
+A challenge for the whole room ([ADR-0040](adr/0040-room-challenges-and-opinions.md)):
+`likes` (likes to `target` before the clock runs out), `chat` (messages
+with a word) or `raffle` (chat enters by typing a word; `target` is 0 and
+`value` counts entries). A banner under the character with a bar and a
+countdown from `remainingMs`; the hook banner steps aside while it's up, and
+both give way to a game board. New counts come at most four times a
+second. When it ends, `result` is `won` or `lost` (and a raffle names its
+`winner`) for a few seconds, then `"challenge": null` takes it down. Sent
+right after `hello` to a stage that connects while it's up.
 
 #### `hook`
 

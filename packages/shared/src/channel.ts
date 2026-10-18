@@ -17,14 +17,20 @@ export const voiceSettingsSchema = z.object({
 });
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
 
-export const STRICTNESS = ["standard", "strict"] as const;
+/**
+ * "spicy" ("sem filtro", ADR-0040): the host has a strong opinion about
+ * everything, politics and religion included, roasts and swears a little.
+ * Hate, slurs and electoral campaigning stay out in every mode.
+ */
+export const STRICTNESS = ["standard", "strict", "spicy"] as const;
+export type Strictness = (typeof STRICTNESS)[number];
 export const GIFT_ASKS = ["light", "active"] as const;
 export type GiftAsks = (typeof GIFT_ASKS)[number];
 
 export const safetySettingsSchema = z.object({
   /** Terms that are never read from chat and never spoken. Case-insensitive. */
   blocklist: z.array(z.string().trim().toLowerCase().min(1).max(60)).max(500).default([]),
-  /** "strict" also steers away from romance, horror, slang and edgy humor. */
+  /** "strict" also steers away from romance, horror, slang and edgy humor; "spicy" opens up opinions on everything. */
   strictness: z.enum(STRICTNESS).default("standard"),
   /** Extra topics the host should steer away from. */
   avoidTopics: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
@@ -35,6 +41,12 @@ export const safetySettingsSchema = z.object({
    * rewards on stream for them.
    */
   giftAsks: z.enum(GIFT_ASKS).optional(),
+  /**
+   * Gift powers (ADR-0039): a gift of so many diamonds unlocks something on
+   * the show (cut the line, pick the next game, an anthem, "dono da live").
+   * On when unset.
+   */
+  giftPerks: z.boolean().optional(),
 });
 export type SafetySettings = z.infer<typeof safetySettingsSchema>;
 

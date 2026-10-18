@@ -180,6 +180,7 @@ function GameRunning({ game, store, disabled }: { game: GameStatus; store: Studi
           Parar jogo
         </Button>
         {game.source === "segment" && <span className={s.paneHint}>Iniciado pelo quadro</span>}
+        {game.source === "pick" && <span className={s.paneHint}>Escolhido por um espectador</span>}
       </div>
     </div>
   );

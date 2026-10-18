@@ -30,6 +30,8 @@ class FakeHost implements HostBrain {
 }
 
 const stage: StageNotifier = { alert: () => {}, segment: () => {}, stats: () => {} };
+/** Gift powers would turn every gift here into a pick or an anthem; extras.test.ts covers them. */
+const noPerks = () => false;
 const instantOutput: SpeechOutput = { play: async () => {}, interrupt: () => {} };
 
 function setup(options: { startInStandby?: boolean; streamDelayMs?: number; persona?: Persona; stage?: StageNotifier } = {}) {
@@ -45,7 +47,7 @@ function setup(options: { startInStandby?: boolean; streamDelayMs?: number; pers
     memory,
     speech,
     stage,
-    deadAirMs: 7_000,
+    deadAirMs: 7_000, giftPerks: noPerks,
     now: clock.now,
     ...options,
   });
@@ -234,7 +236,7 @@ function liveSetup() {
   const events = { onSpoken: (cue: { text: string }) => director.noteSpoken(cue.text) };
   const speech = new SpeechPipeline(new NoTts(), new SafetyGate({ blocklist: [] }), output, events, clock.now);
   const host = new ChattyHost();
-  const director: Director = new Director({ persona, host, triage, memory, speech, stage, deadAirMs: 7_000, now: clock.now });
+  const director: Director = new Director({ persona, host, triage, memory, speech, stage, deadAirMs: 7_000, giftPerks: noPerks, now: clock.now });
   const flush = async () => {
     for (let i = 0; i < 30; i++) await new Promise((r) => setImmediate(r));
   };
@@ -338,7 +340,7 @@ describe("Director with games and context", () => {
       timezone: "America/Sao_Paulo",
       segments: [{ id: "quiz", title: "Quiz", minutes: 10, prompt: "Banter between rounds.", game: { kind: "number" as const, rounds: 2 } }],
     };
-    const director = new Director({ persona: gamePersona, host, triage, memory, speech, stage: stageWithFx, games, deadAirMs: 7_000, now: clock.now });
+    const director = new Director({ persona: gamePersona, host, triage, memory, speech, stage: stageWithFx, games, deadAirMs: 7_000, giftPerks: noPerks, now: clock.now });
     const step = async (ms = 0) => {
       clock.advance(ms);
       await director.tick();
@@ -474,7 +476,7 @@ describe("Director ordering", () => {
     await step();
     director.pause();
     director.handleEvent(chat("lumy", "gato ou cachorro?"));
-    await step(95_000); // the show was busy for over a minute and a half
+    await step(125_000); // the show was busy for over two minutes
     director.resume();
     await step(2_000);
     expect(host.turns.some((turn) => turn.items.some((item) => "viewer" in item.event && item.event.viewer.handle === "lumy"))).toBe(false);
@@ -792,7 +794,7 @@ describe("Director: up next titles", () => {
       memory,
       speech: new SpeechPipeline(new NoTts(), new SafetyGate({ blocklist: [] }), instantOutput, {}, clock.now),
       stage,
-      deadAirMs: 7_000,
+      deadAirMs: 7_000, giftPerks: noPerks,
       now: clock.now,
     });
     expect(director.upNext().map((item) => item.title)).toEqual(["Charadas", "Perguntas · Quiz", "Chat"]);
@@ -814,7 +816,7 @@ describe("Director support card", () => {
       memory,
       speech,
       stage: { ...stage, support: (card) => cards.push(card ? card.title : null) },
-      deadAirMs: 7_000,
+      deadAirMs: 7_000, giftPerks: noPerks,
       giftAsks: () => giftAsks,
       now: clock.now,
     });

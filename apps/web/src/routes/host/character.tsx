@@ -459,7 +459,7 @@ export default function Character() {
             />
             {persona.autoShow ? (
               <p className={s.note}>
-                Cada volta tem seis quadros: conversa, opinião polêmica, história com o chat, perguntas e desafios, intercalados com minijogos, e termina com um jogo e o pódio. Você continua podendo trocar de quadro pelo estúdio.
+                Cada volta tem seis quadros: papo, opinião polêmica, pergunta sem filtro, tribunal do chat, red flag ou green flag, rankings e outros, intercalados com minijogos (quiz, corrida de apostas, roleta, cabo de guerra, batata quente…), e termina com um jogo e o pódio. Você continua podendo trocar de quadro pelo estúdio.
               </p>
             ) : (
               <>
@@ -475,6 +475,12 @@ export default function Character() {
               checked={persona.finalVote ?? true}
               disabled={!persona.autoShow && persona.segments.length < 2}
               onChange={(finalVote) => set("finalVote", finalVote)}
+            />
+            <Switch
+              label="Desafios e sorteios"
+              hint="A cada poucos minutos, um desafio para a sala toda: curtidas até a meta antes do tempo acabar, chuva de comentários ou um sorteio grátis (quem digitar EU participa, e quem ganhar escolhe o próximo jogo). Só com gente assistindo e fora dos minijogos."
+              checked={persona.challenges ?? true}
+              onChange={(challenges) => set("challenges", challenges)}
             />
             <Switch
               label="Mostrar como apoiar a live"
