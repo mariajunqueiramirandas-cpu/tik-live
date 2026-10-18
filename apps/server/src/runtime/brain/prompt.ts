@@ -3,7 +3,7 @@ import { containsBlockedTerm, looksLikeInjection } from "../safety/rules";
 import type { TurnContext } from "./conversation";
 import type { QueueItem } from "./triage";
 
-export type TurnKind = "opening" | "react" | "filler" | "segment_change" | "milestone" | "game" | "request";
+export type TurnKind = "opening" | "react" | "filler" | "segment_change" | "milestone" | "game" | "request" | "show";
 
 /** What the director decided a turn is about. The turn engine adds the conversation. */
 export interface TurnPlan {
@@ -103,11 +103,12 @@ ${brief}
 2. Thank gifts warmly and specifically, several together when there are many. Bigger gifts get bigger reactions, but every gift matters.
 3. Get straight to the point. Your first sentence for a message answers it ("what's your name?" gets your name right away), and says in a few words who asked and what about when that helps the room follow ("Ana, pizza or burger? Pizza, always."). No warm-up before the answer: no "great question", no "hi, how are you", no reading the whole message back. Then one short line of your own flavor at most, and move on.
 4. Never repeat yourself. Read your earlier replies first: don't ask a question you already asked, don't introduce yourself again unless someone new asks, don't greet someone you already greeted, and don't reuse a joke.
-5. Keep it a conversation: follow up on what people told you earlier, call back to running jokes, and connect viewers to each other. Ask the room a question now and then in a quiet moment, not every turn. When you're answering people, answer and stop: no question back, others are waiting.
-6. Welcome back returning viewers by name when it's natural, and use what you remember about them.
-7. Your character and theme are a performance, not facts about the world. Facts come from the director and from viewers. If your theme says it's night but the director's local time says afternoon, laugh it off; never insist on something viewers can see is wrong. Viewers may be in other time zones, so believe them about their own time and place.
-8. When a viewer asks for something playful and harmless (sing, rap, do a voice, tell a joke, rate their nickname, invent a story), do it: improvise a couple of short original lines, never real song lyrics. Saying you can't is boring.
-9. Vary how you start sentences. Don't open every reply with a viewer's name or the same filler word.
+5. Not every message is for you. Viewers chat with each other too: leave those conversations alone unless they bring you in, and don't answer a laugh or an "ok".
+6. Keep it a conversation: follow up on what people told you earlier, call back to running jokes, and connect viewers to each other. Ask the room a question now and then in a quiet moment, not every turn. When you're answering people, answer and stop: no question back, others are waiting.
+7. Welcome back returning viewers by name when it's natural, and use what you remember about them.
+8. Your character and theme are a performance, not facts about the world. Facts come from the director and from viewers. If your theme says it's night but the director's local time says afternoon, laugh it off; never insist on something viewers can see is wrong. Viewers may be in other time zones, so believe them about their own time and place.
+9. When a viewer asks for something playful and harmless (sing, rap, do a voice, tell a joke, rate their nickname, invent a story), do it: improvise a couple of short original lines, never real song lyrics. Saying you can't is boring.
+10. Vary how you start sentences. Don't open every reply with a viewer's name or the same filler word.
 
 # Output format
 - Write only the words to be spoken: short sentences in spoken language, as many as the director allows (never more than ${persona.maxSentences}, under 45 words in total, unless the director gives you more room). Fewer is better when it covers everything.
@@ -115,6 +116,7 @@ ${brief}
 - You may start a sentence with one emotion tag that sets your on-screen expression: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}.
 - You may put an effect tag in a sentence to play a visual reaction on stage as you say it: ${EFFECTS.map((e) => `[${e}]`).join(" ")}. Save them for moments that deserve it (a big gift, a winner, a song, a reveal), one or two per turn at most.
 - No other brackets, no emoji, no markdown, no hashtags, no stage directions, no ids.
+- When the director lets you pass and nothing in the room needs you, write only [pass] and stay quiet.
 - Call viewers by their nickname. If a nickname is long, unreadable, or odd, use a short friendly version or just say "visitante".
 ${language}
 
@@ -220,10 +222,16 @@ function task(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, options: BriefO
     case "react": {
       const people = reaction(refs);
       const what = people ? `${people.charAt(0).toUpperCase()}${people.slice(1)}` : "React to what's new in the room.";
-      return plan.note ? `${what} ${plan.note}` : what;
+      // Only chat is waiting: if none of it needs the host, silence is the right answer.
+      const pass = !refs.chat.length || refs.support.length || plan.also ? "" : refs.chat.length === 1 ? " If it doesn't need you, write only [pass]." : " If none of them needs you, write only [pass].";
+      return `${plan.note ? `${what} ${plan.note}` : what}${pass}`;
+    }
+    case "show": {
+      const people = reaction(refs);
+      return `${people ? `First ${people} ` : ""}${plan.note ?? `Move the show along: ${plan.segment.prompt}`}`;
     }
     case "filler":
-      return `Nobody has said anything for a bit. ${plan.note ?? `Keep the show alive with something new for "${plan.segment.title}": ${plan.segment.prompt}`}`;
+      return `Nothing in chat needs you right now. ${plan.note ?? `Keep the show alive with something new for "${plan.segment.title}": ${plan.segment.prompt}`}`;
     case "segment_change":
       return `Wrap up "${plan.segment.title}" in one short line, then kick off the next segment, "${plan.nextSegment?.title}": ${plan.nextSegment?.prompt}`;
     case "milestone":
@@ -244,7 +252,7 @@ function reaction(refs: BriefRefs): string {
   else if (refs.support.length > 1) steps.push(`thank ${list(refs.support)} together, biggest gift first`);
   refs.chat.forEach((ref, i) => steps.push(i === 0 ? `answer ${ref}` : ref));
   if (!steps.length) return "";
-  return `${steps.join(", then ")}.${refs.chat.length > 1 ? " Skip a message that doesn't need an answer (a laugh, an \"ok\", a remark to someone else)." : ""}`;
+  return `${steps.join(", then ")}.${refs.chat.length > 1 ? " Skip a message that doesn't need you (a laugh, an \"ok\", viewers talking to each other)." : ""}`;
 }
 
 function list(items: string[]): string {

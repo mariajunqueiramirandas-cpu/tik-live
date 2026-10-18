@@ -113,6 +113,12 @@ const MIN_GAME_WINDOW_MS = 90_000;
 /** Viewer events one reaction covers: a few messages, plus the gifts and follows waiting. */
 const REACT_CHAT = 3;
 const REACT_SUPPORT = 6;
+/**
+ * After this many reactions to chat in a row, the next turn moves the show
+ * forward instead: a busy chat can't keep the host answering one person after
+ * another forever.
+ */
+const CHAT_STREAK_TURNS = 4;
 /** A segment this late moves on even while chat keeps the host busy. */
 const SEGMENT_OVERDUE_MS = 30_000;
 /** Questions the host moved past (or that expired while it was busy) come back at the next free moment, if they're this fresh. */
@@ -137,6 +143,7 @@ const SUPPORT_KINDS: ReadonlyArray<LiveEvent["kind"]> = ["gift", "follow", "shar
 export const TURN_PRIORITY: Record<TurnKind, number> = {
   filler: 10,
   segment_change: 20,
+  show: 20,
   milestone: 30,
   opening: 40,
   game: 45,
@@ -203,12 +210,17 @@ export interface DirectorState {
  * 1. the opening, once per stream;
  * 2. game moments, in the order they happened (a round, its answer, the next round);
  * 3. what the channel owner asked for from the studio;
- * 4. a segment change that is overdue (a busy chat can't hold the show in one segment forever);
+ * 4. a segment change that is overdue (a busy chat can't hold the show in one segment forever),
+ *    and after a few reactions to chat in a row, a turn that moves the show along;
  * 5. reactions: gifts and follows first, then messages oldest first; a like milestone rides along;
  * 6. a like milestone on its own;
  * 7. a question the host moved past, or that expired while it was busy;
  * 8. the segment change, on time, in a quiet moment;
  * 9. dead-air filler.
+ *
+ * Not every message is for the host: viewers talking to each other (an
+ * @mention) and laughs are in the room it sees but never queued for a reply,
+ * and the host may pass on a reaction when nothing in it needs an answer.
  *
  * The host moves forward through chat: once it answers a message, older
  * messages it didn't pick are passed over (they're still in the room it
@@ -254,6 +266,8 @@ export class Director {
   /** Questions passed over on a busy stretch. */
   private owed: Array<{ event: LiveEvent; at: number }> = [];
   private fillerBeat = 0;
+  /** Reactions to chat since the host last moved the show along. */
+  private chatStreak = 0;
   /** The host's last line asked the room something. */
   private askedRoom = false;
   private recentChat: string[] = [];
@@ -364,6 +378,7 @@ export class Director {
       this.setStandby(true);
       this.opened = false;
       this.owed = [];
+      this.chatStreak = 0;
       // What was waiting belongs to the stream that ended.
       this.options.triage.clear();
       this.options.games?.stop();
@@ -457,6 +472,11 @@ export class Director {
     }
     const result = this.options.triage.ingest(event);
     this.options.hooks?.onEvent?.(event, result);
+    if (!result.queued && result.overheard && (event.kind === "chat" || event.kind === "question")) {
+      // Viewers talking to each other, or a laugh: the host hears it, but nobody asks it to answer.
+      this.remember({ at: event.at, kind: "viewer", event });
+      this.recentChat = [...this.recentChat, event.text].slice(-CHAT_SAMPLE);
+    }
     if (result.queued) {
       // Only chat that passed triage's rules reaches the host's conversation.
       if (event.kind === "chat" || event.kind === "question") {
@@ -734,6 +754,12 @@ export class Director {
     if (this.forcedSegment !== undefined) return this.changeSegment(now, base);
     if (heldUp && !this.reactOnly()) return this.advance(now, base);
 
+    // The host has answered chat for a while: give the show a turn before anyone else.
+    if (this.chatStreak >= CHAT_STREAK_TURNS && triage.pending() > 0 && !this.reactOnly()) {
+      if (segmentDue) return this.advance(now, base);
+      return this.moveOn(base);
+    }
+
     if (triage.pending() > 0) {
       const focus = this.takeFocus();
       if (focus.items.length) {
@@ -866,6 +892,27 @@ export class Director {
     this.options.hooks?.onSegment?.(nextSegment);
     this.remember({ at: now, kind: "show", text: `New segment: ${nextSegment.title}` });
     return { ...base, segment: previous, kind: "segment_change", items: [], nextSegment };
+  }
+
+  /**
+   * A turn for the show on a busy stretch: thank whoever sent gifts, nod to the
+   * room as a whole and get on with the segment (or the game). Plain chat that
+   * piled up meanwhile is let go: it's in the room the host sees, but nobody
+   * waits on an answer. Questions stay queued for the next reaction.
+   */
+  private moveOn(base: Omit<TurnPlan, "kind" | "items">): TurnPlan {
+    const triage = this.options.triage;
+    const support = triage.takeKinds(SUPPORT_KINDS, REACT_SUPPORT).sort((a, b) => a.event.at - b.event.at || a.seq - b.seq);
+    triage.discard((item) => item.event.kind === "chat" && !isQuestion(item.event));
+    const segment = this.segment();
+    const game = this.options.games?.fillerNote();
+    const next = game ?? `get on with "${segment.title}": ${segment.prompt}`;
+    return {
+      ...base,
+      kind: "show",
+      items: support,
+      note: `Chat is busy and you've been answering people one after another. Don't answer anyone by name this time: one quick line to the whole room, then ${next}`,
+    };
   }
 
   /** What a quiet moment is about: the game, or the next idea in rotation. */
@@ -1008,6 +1055,8 @@ export class Director {
   private async runTurn(plan: TurnPlan): Promise<void> {
     this.lastTurnAt = this.now();
     this.skipGap = false;
+    const answersChat = plan.kind === "react" && plan.items.some((item) => item.event.kind === "chat" || item.event.kind === "question");
+    this.chatStreak = answersChat ? this.chatStreak + 1 : plan.kind === "react" ? this.chatStreak : 0;
     const result = await this.engine.run(plan);
     if (result.scrolledBy.length) {
       // The host never saw these, so no later turn may ask it to answer them.

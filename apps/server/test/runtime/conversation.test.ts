@@ -187,7 +187,7 @@ describe("the director's brief", () => {
       [
         "Stream: local time Friday 14:05 (afternoon), on air 12 min, 1,234 watching, 56,789 likes.",
         'Segment: "Segment A", 3 min left.',
-        "Now: Thank e3 (gift) and e4 (follow) together, biggest gift first, then answer e5 (question), then e8 (chat). Skip a message that doesn't need an answer (a laugh, an \"ok\", a remark to someone else).",
+        "Now: Thank e3 (gift) and e4 (follow) together, biggest gift first, then answer e5 (question), then e8 (chat). Skip a message that doesn't need you (a laugh, an \"ok\", viewers talking to each other).",
         "Length: 1 to 3 short sentences, under 45 words. Answer right away, no warm-up.",
       ].join("\n"),
     );

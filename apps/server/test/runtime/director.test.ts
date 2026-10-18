@@ -469,11 +469,60 @@ describe("Director ordering", () => {
     }
     const change = kinds().indexOf("segment_change");
     expect(change).toBeGreaterThan(0);
-    // 5:40 into a 5-minute segment: the first turn more than 30 s past the end, then back to chat.
     expect(kinds().slice(0, change).every((kind) => kind !== "filler")).toBe(true);
-    expect(change).toBe(17);
+    // At 5:00, right on time: the host had been answering chat in a row, so the show's turn came up just as the segment ran out.
+    expect(change).toBe(15);
+    expect(kinds().slice(0, change)).toContain("show");
     expect(kinds()[change + 1]).toBe("react");
     expect(director.segment().id).toBe("b");
+  });
+
+  it("lets viewers talk to each other without answering, but keeps it in the room", async () => {
+    const { director, step, kinds, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.handleEvent(chat("ana", "@bia viu o jogo ontem?"));
+    director.handleEvent(chat("bia", "kkkkkk"));
+    await step(2_000);
+    expect(kinds()).toEqual(["opening"]);
+    await step(6_000);
+    expect(kinds()).toEqual(["opening", "filler"]);
+    expect(host.turns.at(-1)!.context.room).toContain("viu o jogo ontem?");
+  });
+
+  it("lets the host pass when the only message waiting doesn't need it", async () => {
+    const { director, step, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.handleEvent(chat("ana", "que dia longo"));
+    await step(2_000);
+    expect(host.turns.at(-1)!.context.brief).toContain("If it doesn't need you, write only [pass].");
+    director.handleEvent(gift("leo", "Rose", 1));
+    director.handleEvent(chat("bia", "boa noite"));
+    await step(2_000);
+    expect(host.turns.at(-1)!.context.brief).not.toContain("[pass]"); // a gift always gets its thank-you
+  });
+
+  it("moves the show along after answering chat several turns in a row", async () => {
+    const { director, step, kinds, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    for (let i = 1; i <= 4; i++) {
+      director.handleEvent(chat(`v${i}`, `message number ${i}`));
+      await step(2_000);
+    }
+    director.handleEvent(chat("ana", "more chat"));
+    director.handleEvent(chat("bia", "where are you from?"));
+    director.handleEvent(gift("leo", "Rose", 1));
+    await step(2_000);
+    expect(kinds()).toEqual(["opening", "react", "react", "react", "react", "show"]);
+    const show = host.turns.at(-1)!;
+    // The gift is still thanked, the plain chat is let go, and the question waits for the next reaction.
+    expect(show.items.map((item) => item.event.kind)).toEqual(["gift"]);
+    expect(show.context.brief).toContain("Don't answer anyone by name this time");
+    await step(2_000);
+    expect(kinds().at(-1)).toBe("react");
+    expect(host.turns.at(-1)!.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["bia"]);
   });
 
   it("folds a like milestone into a reaction instead of making it wait", async () => {

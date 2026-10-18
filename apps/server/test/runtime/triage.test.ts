@@ -102,6 +102,18 @@ describe("Triage", () => {
     expect(triage.takeLapsed()).toEqual([]);
   });
 
+  it("hears viewers talking to each other and laughs without queueing them for a reply", () => {
+    const { triage, ingest } = setup();
+    expect(ingest(chat("ana", "@bia kkk verdade"))).toEqual({ queued: false, reason: "talking to another viewer", overheard: true });
+    expect(ingest(chat("bia", "kkkkkk 😂"))).toEqual({ queued: false, reason: "no reply needed", overheard: true });
+    expect(ingest(chat("caio", "ok"))).toEqual({ queued: false, reason: "no reply needed", overheard: true });
+    // Bringing the host in, or saying something, still gets an answer.
+    expect(ingest(chat("dani", "@bia pergunta pro Blip"))).toMatchObject({ queued: true });
+    expect(ingest(chat("leo", "kkk que isso"))).toMatchObject({ queued: true });
+    expect(ingest(chat("rui", "hi"))).toMatchObject({ queued: true });
+    expect(triage.pending()).toBe(3);
+  });
+
   it("only queues joins from returning viewers", () => {
     const { triage, memory, ingest, clock } = setup();
     expect(ingest({ kind: "join", at: 0, viewer: viewer("new") }).queued).toBe(false);
