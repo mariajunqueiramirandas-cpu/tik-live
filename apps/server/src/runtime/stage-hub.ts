@@ -15,6 +15,7 @@ import {
   type BoostKind,
   type LeaderBoard,
   type LeaderRow,
+  type SupportCard,
   type UpNextItem,
 } from "@tik-live/shared";
 import type { Logger } from "../log";
@@ -86,6 +87,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
   private lastSchedule: { items: UpNextItem[]; at: number } | null = null;
   private readonly lastLeaders = new Map<LeaderBoard, { rows: LeaderRow[]; windowMin: number }>();
   private lastVote: VoteView | null = null;
+  private lastSupport: SupportCard | null = null;
   private statsSentAt = 0;
   private statsTimer: ReturnType<typeof setTimeout> | undefined;
   private telemetry: EngineTelemetry | null = null;
@@ -114,6 +116,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
     }
     for (const [board, last] of this.lastLeaders) if (last.rows.length) this.sendTo(peer, { t: "leaders", board, ...last });
     if (this.lastVote) this.sendTo(peer, { t: "vote", vote: this.lastVote });
+    if (this.lastSupport) this.sendTo(peer, { t: "support", card: this.lastSupport });
     // A piece that's nearly over isn't worth restarting from the top.
     if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
     this.options.log?.debug(`${role} stage connected`);
@@ -312,6 +315,11 @@ export class StageHub implements SpeechOutput, StageNotifier {
   vote(vote: VoteView | null): void {
     this.lastVote = vote;
     this.broadcast({ t: "vote", vote });
+  }
+
+  support(card: SupportCard | null): void {
+    this.lastSupport = card;
+    this.broadcast({ t: "support", card });
   }
 
   boost(boost: BoostKind, by: string): void {

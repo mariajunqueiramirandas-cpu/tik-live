@@ -17,7 +17,32 @@ export function isQuestion(event: LiveEvent): boolean {
   return event.kind === "question" || (event.kind === "chat" && event.text.includes("?"));
 }
 
-export type TriageResult = { queued: true; item: QueueItem } | { queued: false; reason: string };
+export type TriageResult =
+  | { queued: true; item: QueueItem }
+  /** `overheard`: chat that passed the rules but doesn't need the host. It's in the room for context; nobody asks the host to answer it. */
+  | { queued: false; reason: string; overheard?: true };
+
+/** Laughter in Portuguese and English: kkkk, hahaha, rsrs, hehe, lol. */
+const LAUGH = /^(?:k{2,}|a?(?:ha|he|hi|hu|ah|eh){2,}h?|(?:rs){2,}|lo+l|lmao|kk+j*)$/;
+/** One-word acknowledgements that don't ask anything of the host. */
+const ACKS = new Set(["ok", "okay", "okk", "blz", "aff", "affs", "uau", "wow", "omg", "slk", "nss"]);
+
+/**
+ * Why a chat message doesn't need an answer from the host, or undefined when
+ * it might: viewers talking to each other (an @mention of someone else), or
+ * a message that's only laughter, emoji, punctuation or an "ok".
+ */
+export function asideReason(text: string): string | undefined {
+  if (/(^|\s)@[\p{L}\p{N}._]+/u.test(text)) return "talking to another viewer";
+  const words = text
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter(Boolean);
+  if (words.every((word) => LAUGH.test(word))) return "no reply needed";
+  if (words.length === 1 && ACKS.has(words[0] as string)) return "no reply needed";
+  return undefined;
+}
 
 export interface TriageOptions {
   blocklist: readonly string[];
@@ -77,6 +102,11 @@ export class Triage {
   ingest(event: LiveEvent): TriageResult {
     const priority = this.score(event);
     if (typeof priority === "string") return this.drop(priority);
+    // A TikTok "question" is always for the host; plain chat may be for someone else.
+    if (event.kind === "chat" && !this.mentionsHost(event)) {
+      const aside = asideReason(event.text);
+      if (aside) return this.drop(aside, true);
+    }
 
     const ttl = TTL_MS[isQuestion(event) || this.mentionsHost(event) ? "question" : event.kind];
     if (ttl === undefined) return this.drop("not queueable");
@@ -166,9 +196,9 @@ export class Triage {
     return (event.kind === "chat" || event.kind === "question") && event.text.toLowerCase().includes(this.options.hostName.toLowerCase());
   }
 
-  private drop(reason: string): TriageResult {
+  private drop(reason: string, overheard = false): TriageResult {
     this.dropped.set(reason, (this.dropped.get(reason) ?? 0) + 1);
-    return { queued: false, reason };
+    return overheard ? { queued: false, reason, overheard } : { queued: false, reason };
   }
 
   /** Returns a priority, or a string explaining why the event is dropped. */

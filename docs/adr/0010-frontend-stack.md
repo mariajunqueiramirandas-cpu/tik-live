@@ -65,7 +65,8 @@ hero runs the real engine in demo mode.
 - First dashboard route: under 200 KB gzipped JS. The engine chunk loads
   lazily on routes that show a preview.
 - Landing page: LCP under 2.0 s on a mid-range phone over 4G (lab measurement).
-- CI fails the build when a budget is exceeded.
+- These are targets. The build used to fail past them; that check was
+  removed on 2026-10-18 at the owner's request.
 
 ## Options Considered
 

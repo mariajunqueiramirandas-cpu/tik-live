@@ -1,4 +1,4 @@
-import type { LeaderBoard, LeaderRow, UpNextItem } from "@tik-live/shared";
+import type { LeaderBoard, LeaderRow, SupportCard, SupportWay, UpNextItem } from "@tik-live/shared";
 import { Spring, SPRINGS } from "../anim/spring";
 import type { Gl } from "../gl/gl";
 import { FONT_FAMILY, GOLD, HAZE, INK, measureWith, roundRect, TextSprite, truncate, withAlpha } from "./sprites";
@@ -7,7 +7,8 @@ import { FONT_FAMILY, GOLD, HAZE, INK, measureWith, roundRect, TextSprite, trunc
  * The show's heads-up panels (ADR-0028, ADR-0029), a narrow column top left
  * under the disclosure badge: a slim "A seguir" pill with a countdown, and
  * one ranking card that takes turns between the top likers and the top
- * gifters (or shows a vote while one is open). The column stays left of the
+ * gifters (or shows a vote while one is open, or for a moment how to
+ * support the show, ADR-0032). The column stays left of the
  * character (x 375 at rest, 430 during games) and ends above where a game
  * board starts (y 560), clear of TikTok's header, right rail and comments.
  * Painted when content changes; the countdown repaints once a second and
@@ -278,12 +279,48 @@ export interface HudVote {
   tally: number[];
 }
 
-/** One card that takes turns between the top likers and the top gifters, or shows an open vote. */
+/** A small glyph for each way to support the show. */
+function wayMark(ctx: Canvas2D, way: SupportWay, x: number, y: number, color: string): void {
+  switch (way) {
+    case "like":
+      heart(ctx, x, y, 17, color);
+      return;
+    case "gift":
+      diamond(ctx, x, y + 1, 16, color);
+      return;
+    case "follow":
+    case "share":
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      if (way === "follow") {
+        ctx.moveTo(x - 8, y);
+        ctx.lineTo(x + 8, y);
+        ctx.moveTo(x, y - 8);
+        ctx.lineTo(x, y + 8);
+      } else {
+        // An arrow out of the corner.
+        ctx.moveTo(x - 7, y + 7);
+        ctx.lineTo(x + 7, y - 7);
+        ctx.moveTo(x - 2, y - 7);
+        ctx.lineTo(x + 7, y - 7);
+        ctx.lineTo(x + 7, y + 2);
+      }
+      ctx.stroke();
+      return;
+  }
+}
+
+const WAY_COLORS: Record<SupportWay, string> = { like: HEART, follow: "#B16CFF", share: "#7CF5FF", gift: GOLD };
+
+/** One card that takes turns between the top likers and the top gifters, or shows an open vote, or how to support the show. */
 export class LeaderCard {
   readonly sprite: TextSprite;
   private readonly boards: Record<LeaderBoard, Board> = { likes: { rows: [], windowMin: 15 }, gifts: { rows: [], windowMin: 60 } };
   private showing: LeaderBoard | null = null;
   private vote: HudVote | null = null;
+  private support: SupportCard | null = null;
   private turnedAt = 0;
   private visible = false;
   private readonly top = new Spring(TOP, SPRINGS.snappy);
@@ -294,7 +331,7 @@ export class LeaderCard {
 
   set(board: LeaderBoard, rows: readonly LeaderRow[], windowMin: number, now: number, scale: number): void {
     this.boards[board] = { rows: rows.slice(0, 3), windowMin };
-    if (this.vote) return;
+    if (this.vote || this.support) return;
     const current = this.showing && this.has(this.showing) ? this.showing : null;
     // The other ranking waits its turn.
     if (current && current !== board) return;
@@ -313,9 +350,18 @@ export class LeaderCard {
     this.paint(scale, crossfade, now);
   }
 
+  /** Shows how to support the show in the rankings' place (null: back to the rankings). An open vote stays on top. */
+  setSupport(card: SupportCard | null, now: number, scale: number): void {
+    const crossfade = this.visible;
+    this.support = card;
+    if (!card && !this.vote) this.showing = nextBoard(null, (b) => this.has(b));
+    this.turnedAt = now;
+    this.paint(scale, crossfade, now);
+  }
+
   /** `above` is the room the pill takes over this card. */
   update(dt: number, now: number, above: number, scale: number): void {
-    if (!this.vote && this.showing && now - this.turnedAt >= TURN_S) {
+    if (!this.vote && !this.support && this.showing && now - this.turnedAt >= TURN_S) {
       const next = nextBoard(this.showing, (b) => this.has(b));
       this.turnedAt = now;
       if (next !== this.showing) {
@@ -340,8 +386,9 @@ export class LeaderCard {
   private paint(scale: number, crossfade: boolean, now: number): void {
     const wasHidden = !this.visible;
     const vote = this.vote;
+    const support = this.support;
     const board = this.showing && this.has(this.showing) ? this.showing : null;
-    if (!vote && !board) {
+    if (!vote && !support && !board) {
       this.visible = false;
       this.sprite.opacity.target = 0;
       return;
@@ -349,6 +396,7 @@ export class LeaderCard {
     this.visible = true;
     this.sprite.x = X;
     if (vote) this.paintVote(vote, scale, crossfade && !wasHidden, now);
+    else if (support) this.paintSupport(support, scale, crossfade && !wasHidden, now);
     else this.paintBoard(board as LeaderBoard, scale, crossfade && !wasHidden, now);
     enter(this.sprite, wasHidden);
   }
@@ -400,6 +448,44 @@ export class LeaderCard {
           ctx.textAlign = "left";
           if (gifts) diamond(ctx, WIDTH - PAD - countW - 14, cy + 1, 14, color);
           else heart(ctx, WIDTH - PAD - countW - 14, cy, 15, color);
+        });
+      },
+      crossfade,
+      now,
+    );
+  }
+
+  private paintSupport(card: SupportCard, scale: number, crossfade: boolean, now: number): void {
+    const headFont = `800 17px ${FONT_FAMILY}`;
+    const titleFont = `780 24px ${FONT_FAMILY}`;
+    const lineFont = `720 22px ${FONT_FAMILY}`;
+    const rowH = 36;
+    const lines = card.lines.slice(0, 4);
+    const height = 76 + lines.length * rowH + 8;
+    this.sprite.draw(
+      WIDTH,
+      height,
+      scale,
+      (ctx) => {
+        glass(ctx, WIDTH, height, GOLD, HEART, 20);
+        ctx.textBaseline = "alphabetic";
+        ctx.font = headFont;
+        ctx.fillStyle = GOLD;
+        ctx.fillText("APOIE A LIVE", PAD, 32);
+        ctx.font = titleFont;
+        ctx.fillStyle = INK;
+        ctx.fillText(fit(card.title, titleFont, WIDTH - PAD * 2), PAD, 61);
+        lines.forEach((line, i) => {
+          const cy = 76 + i * rowH + rowH / 2;
+          const color = WAY_COLORS[line.way];
+          ctx.fillStyle = withAlpha(color, 0.16);
+          ctx.beginPath();
+          ctx.arc(PAD + 14, cy, 15, 0, Math.PI * 2);
+          ctx.fill();
+          wayMark(ctx, line.way, PAD + 14, cy, color);
+          ctx.font = lineFont;
+          ctx.fillStyle = line.way === "gift" ? GOLD : INK;
+          ctx.fillText(fit(line.text, lineFont, WIDTH - PAD * 2 - 40), PAD + 40, cy + 8);
         });
       },
       crossfade,

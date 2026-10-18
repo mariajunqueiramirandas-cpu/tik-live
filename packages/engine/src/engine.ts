@@ -429,6 +429,9 @@ export class Engine implements StageEngine {
       case "vote":
         this.text.card.setVote(message.vote, this.time, this.scale);
         break;
+      case "support":
+        this.text.card.setSupport(message.card, this.time, this.scale);
+        break;
       case "schedule":
         this.text.upNext.set(message.items, this.time, this.scale);
         break;

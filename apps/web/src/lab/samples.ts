@@ -158,7 +158,19 @@ export const SCENES: Record<string, GameScene> = {
 };
 
 /** The heads-up panels: what's up next, and the top likers of the last 15 minutes. */
-export const HUD: { schedule: StageServerPayload; likes: StageServerPayload; gifts: StageServerPayload } = {
+export const HUD: { schedule: StageServerPayload; likes: StageServerPayload; gifts: StageServerPayload; support: StageServerPayload } = {
+  support: {
+    t: "support",
+    card: {
+      title: "Blip é uma IA ao vivo",
+      lines: [
+        { way: "like", text: "Curta a live" },
+        { way: "follow", text: "Siga para não perder" },
+        { way: "share", text: "Compartilhe com amigos" },
+        { way: "gift", text: "Presentes mantêm a live" },
+      ],
+    },
+  },
   schedule: {
     t: "schedule",
     items: [

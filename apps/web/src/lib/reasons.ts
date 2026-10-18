@@ -16,6 +16,8 @@ const SKIPPED: Record<string, string> = {
   "repeated message": "mensagem repetida",
   flooding: "mandando mensagens rápido demais",
   "duplicate of queued message": "já está na fila para resposta",
+  "talking to another viewer": "conversa entre espectadores",
+  "no reply needed": "não precisa de resposta",
 };
 
 const BLOCKED: Record<string, string> = {

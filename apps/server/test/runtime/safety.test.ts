@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type Anthropic from "@anthropic-ai/sdk";
-import { ClaudeModerator, SafetyGate, type Moderator } from "../../src/runtime/safety/gate";
+import { ClaudeModerator, moderationPolicy, SafetyGate, type Moderator } from "../../src/runtime/safety/gate";
 import { checkSpokenOutput, looksLikeInjection } from "../../src/runtime/safety/rules";
 
 describe("rules", () => {
@@ -116,5 +116,16 @@ describe("ClaudeModerator", () => {
     const sonnet: Array<Record<string, unknown>> = [];
     await new ClaudeModerator({ client: fakeClient(sonnet), model: "claude-sonnet-5-5", settings }).review("Oi, gente!");
     expect(sonnet[0]).not.toHaveProperty("thinking"); // Sonnet 5.5 rejects disabled thinking
+  });
+});
+
+describe("moderation policy for gifts", () => {
+  it("lets an active channel ask for gifts, but never guilt or threaten", () => {
+    const light = moderationPolicy({ strictness: "standard", avoidTopics: [] });
+    expect(light).toContain("begging or pressuring viewers for gifts or money");
+    expect(light).not.toContain("asks for gifts ACTIVELY");
+    const active = moderationPolicy({ strictness: "standard", avoidTopics: [], giftAsks: "active" });
+    expect(active).toContain("asks for gifts ACTIVELY");
+    expect(active).toContain("claiming the AI will be shut down");
   });
 });

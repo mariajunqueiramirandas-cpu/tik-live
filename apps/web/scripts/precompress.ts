@@ -2,7 +2,7 @@
  * Writes Brotli (.br) and gzip (.gz) copies of the built text assets, so the
  * server can send compressed files without compressing per request and
  * without relying on the reverse proxy (Traefik under Dokploy doesn't
- * compress; Caddy does). Runs after prerender, before the budgets check.
+ * compress; Caddy does). Runs after prerender.
  */
 import path from "node:path";
 import { brotliCompressSync, constants, gzipSync } from "node:zlib";

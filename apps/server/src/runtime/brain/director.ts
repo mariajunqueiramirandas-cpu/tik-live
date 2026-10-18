@@ -5,12 +5,14 @@ import {
   UP_NEXT_MAX,
   type Effect,
   type GameConfig,
+  type GiftAsks,
   type LeaderBoard,
   type LeaderRow,
   type LiveEvent,
   type Persona,
   type Segment,
   type Sound,
+  type SupportCard,
   type UpNextItem,
   type UpNextKind,
   type Viewer,
@@ -55,6 +57,8 @@ export interface StageNotifier {
   vote?(vote: { title: string; options: string[]; tally: number[] } | null): void;
   /** A ranking: the top likers over the last 15 minutes, or gifters over the last hour. */
   leaders?(board: LeaderBoard, rows: LeaderRow[], windowMin: number): void;
+  /** The "how to support the show" card, or null to put the rankings back (ADR-0032). */
+  support?(card: SupportCard | null): void;
 }
 
 /** Observability hooks for the studio feed and analytics. */
@@ -98,6 +102,8 @@ export interface DirectorOptions {
   blocklist?: () => readonly string[];
   /** How the channel's last stream went (its summary), for the opening. */
   lastStream?: string;
+  /** How actively the host asks for gifts (the channel's safety setting); "light" when unset. */
+  giftAsks?: () => GiftAsks;
   log?: Logger;
   now?: () => number;
 }
@@ -113,6 +119,12 @@ const MIN_GAME_WINDOW_MS = 90_000;
 /** Viewer events one reaction covers: a few messages, plus the gifts and follows waiting. */
 const REACT_CHAT = 3;
 const REACT_SUPPORT = 6;
+/**
+ * After this many reactions to chat in a row, the next turn moves the show
+ * forward instead: a busy chat can't keep the host answering one person after
+ * another forever.
+ */
+const CHAT_STREAK_TURNS = 4;
 /** A segment this late moves on even while chat keeps the host busy. */
 const SEGMENT_OVERDUE_MS = 30_000;
 /** Questions the host moved past (or that expired while it was busy) come back at the next free moment, if they're this fresh. */
@@ -128,6 +140,23 @@ const VOTE_LEAD_MS = 3 * 60_000;
 const VOTE_MIN_DELAY_MS = 20_000;
 const VOTE_TITLE = "Jogo do quadro final";
 const SUPPORT_KINDS: ReadonlyArray<LiveEvent["kind"]> = ["gift", "follow", "share", "join"];
+/**
+ * The "how to support the show" card (ADR-0032): first a few minutes in,
+ * then every few minutes, for long enough to read. The host explains it out
+ * loud far less often, in a quiet moment (or on a busy stretch's show turn).
+ */
+const SUPPORT_CARD_SHOW_MS = 20_000;
+/** When the card first goes up and how often after that, and the same for the host's explanation, by how actively the channel asks for gifts. */
+const SUPPORT_PACE: Record<GiftAsks, { cardFirst: number; cardEvery: number; talkFirst: number; talkEvery: number }> = {
+  light: { cardFirst: 3 * 60_000, cardEvery: 8 * 60_000, talkFirst: 6 * 60_000, talkEvery: 20 * 60_000 },
+  active: { cardFirst: 2 * 60_000, cardEvery: 5 * 60_000, talkFirst: 3 * 60_000, talkEvery: 8 * 60_000 },
+};
+const SUPPORT_TALK: Record<GiftAsks, string> = {
+  active:
+    "ask the room for gifts, with energy and humor, in two or three short sentences: you're an AI host, and gifts are what keep you on the air. Offer a playful reward you can give right away on stream (a shout-out, a song, a title, an effect) and say likes, follows and shares help too. No guilt, no claims you'll be shut down, and don't single out anyone who already said no. The card on screen shows the same.",
+  light:
+    "explain how this show works and how people can support it, in two or three short sentences in your own words: you're an AI host, and your voice and your brain cost real money every minute you're live. Likes, follows and shares help the live reach more people, and gifts help pay for the AI. Thank everyone who already helps. Keep it light and grateful, with no pressure: don't single anyone out, don't guilt anyone, don't say the show will end without help, and don't promise anything in exchange. The card on screen shows the same.",
+};
 
 /**
  * How much each kind of turn matters once it's under way (ADR-0022). A turn
@@ -137,6 +166,7 @@ const SUPPORT_KINDS: ReadonlyArray<LiveEvent["kind"]> = ["gift", "follow", "shar
 export const TURN_PRIORITY: Record<TurnKind, number> = {
   filler: 10,
   segment_change: 20,
+  show: 20,
   milestone: 30,
   opening: 40,
   game: 45,
@@ -203,12 +233,17 @@ export interface DirectorState {
  * 1. the opening, once per stream;
  * 2. game moments, in the order they happened (a round, its answer, the next round);
  * 3. what the channel owner asked for from the studio;
- * 4. a segment change that is overdue (a busy chat can't hold the show in one segment forever);
+ * 4. a segment change that is overdue (a busy chat can't hold the show in one segment forever),
+ *    and after a few reactions to chat in a row, a turn that moves the show along;
  * 5. reactions: gifts and follows first, then messages oldest first; a like milestone rides along;
  * 6. a like milestone on its own;
  * 7. a question the host moved past, or that expired while it was busy;
  * 8. the segment change, on time, in a quiet moment;
  * 9. dead-air filler.
+ *
+ * Not every message is for the host: viewers talking to each other (an
+ * @mention) and laughs are in the room it sees but never queued for a reply,
+ * and the host may pass on a reaction when nothing in it needs an answer.
  *
  * The host moves forward through chat: once it answers a message, older
  * messages it didn't pick are passed over (they're still in the room it
@@ -254,6 +289,8 @@ export class Director {
   /** Questions passed over on a busy stretch. */
   private owed: Array<{ event: LiveEvent; at: number }> = [];
   private fillerBeat = 0;
+  /** Reactions to chat since the host last moved the show along. */
+  private chatStreak = 0;
   /** The host's last line asked the room something. */
   private askedRoom = false;
   private recentChat: string[] = [];
@@ -274,6 +311,10 @@ export class Director {
   private voteCue: { note: string; line: string; history: string } | null = null;
   private voteKey = "";
   private voteSentAt = -Infinity;
+  /** When the support card next goes up, when it comes down, and when the host next explains it. */
+  private supportCardAt = Infinity;
+  private supportHideAt = Infinity;
+  private supportTalkAt = Infinity;
   private readonly engine: TurnEngine;
   private readonly now: () => number;
 
@@ -327,6 +368,13 @@ export class Director {
       this.finalGame = null;
     }
     this.persona = persona;
+    if (!this.supportOn()) {
+      this.hideSupport();
+      this.supportCardAt = Infinity;
+      this.supportTalkAt = Infinity;
+    } else if (this.opened && this.supportCardAt === Infinity) {
+      this.scheduleSupport(this.now());
+    }
     const index = persona.segments.findIndex((s) => s.id === currentId);
     if (index >= 0) {
       this.segmentIndex = index;
@@ -364,6 +412,10 @@ export class Director {
       this.setStandby(true);
       this.opened = false;
       this.owed = [];
+      this.chatStreak = 0;
+      this.hideSupport();
+      this.supportCardAt = Infinity;
+      this.supportTalkAt = Infinity;
       // What was waiting belongs to the stream that ended.
       this.options.triage.clear();
       this.options.games?.stop();
@@ -457,6 +509,11 @@ export class Director {
     }
     const result = this.options.triage.ingest(event);
     this.options.hooks?.onEvent?.(event, result);
+    if (!result.queued && result.overheard && (event.kind === "chat" || event.kind === "question")) {
+      // Viewers talking to each other, or a laugh: the host hears it, but nobody asks it to answer.
+      this.remember({ at: event.at, kind: "viewer", event });
+      this.recentChat = [...this.recentChat, event.text].slice(-CHAT_SAMPLE);
+    }
     if (result.queued) {
       // Only chat that passed triage's rules reaches the host's conversation.
       if (event.kind === "chat" || event.kind === "question") {
@@ -638,6 +695,7 @@ export class Director {
     this.options.ranking?.tick(idle);
     const now = this.now();
     this.maybeOpenVote(now);
+    this.maybeShowSupport(now);
     this.publishHud(now);
     if (this.paused || this.engine.inFlight) return;
     this.maybeStartSegmentGame(now);
@@ -701,6 +759,7 @@ export class Director {
 
     if (!this.opened) {
       this.opened = true;
+      this.scheduleSupport(now);
       // Whoever woke the show up gets greeted in the opening, not answered again right after it.
       const focus = this.takeFocus();
       return { ...base, kind: "opening", items: focus.items };
@@ -733,6 +792,12 @@ export class Director {
     const heldUp = segmentDue && now - segmentEndsAt >= SEGMENT_OVERDUE_MS && this.lastTurnAt >= segmentEndsAt;
     if (this.forcedSegment !== undefined) return this.changeSegment(now, base);
     if (heldUp && !this.reactOnly()) return this.advance(now, base);
+
+    // The host has answered chat for a while: give the show a turn before anyone else.
+    if (this.chatStreak >= CHAT_STREAK_TURNS && triage.pending() > 0 && !this.reactOnly()) {
+      if (segmentDue) return this.advance(now, base);
+      return this.moveOn(base);
+    }
 
     if (triage.pending() > 0) {
       const focus = this.takeFocus();
@@ -868,16 +933,89 @@ export class Director {
     return { ...base, segment: previous, kind: "segment_change", items: [], nextSegment };
   }
 
+  /**
+   * A turn for the show on a busy stretch: thank whoever sent gifts, nod to the
+   * room as a whole and get on with the segment (or the game). Plain chat that
+   * piled up meanwhile is let go: it's in the room the host sees, but nobody
+   * waits on an answer. Questions stay queued for the next reaction.
+   */
+  private moveOn(base: Omit<TurnPlan, "kind" | "items">): TurnPlan {
+    const triage = this.options.triage;
+    const support = triage.takeKinds(SUPPORT_KINDS, REACT_SUPPORT).sort((a, b) => a.event.at - b.event.at || a.seq - b.seq);
+    triage.discard((item) => item.event.kind === "chat" && !isQuestion(item.event));
+    const segment = this.segment();
+    const game = this.options.games?.fillerNote();
+    const next = game ?? (this.takeSupportTalk() ? SUPPORT_TALK[this.giftAsks()] : `get on with "${segment.title}": ${segment.prompt}`);
+    return {
+      ...base,
+      kind: "show",
+      items: support,
+      note: `Chat is busy and you've been answering people one after another. Don't answer anyone by name this time: one quick line to the whole room, then ${next}`,
+    };
+  }
+
   /** What a quiet moment is about: the game, or the next idea in rotation. */
   private fillerNote(): string {
     const games = this.options.games?.fillerNote();
     if (games) return games;
     if (this.options.ranking?.isRevealing()) return "The loop's podium is on screen. Celebrate the top players by name in a line or two and invite everyone to play in the next loop.";
     const segment = this.segment();
+    if (this.takeSupportTalk()) return `Keep the show alive for "${segment.title}". This time, ${SUPPORT_TALK[this.giftAsks()]}`;
     const chat = this.engine.conversation.hasViewerChat();
     let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     if (pick.needsChat && !chat) pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     return `Keep the show alive for "${segment.title}" (${segment.prompt}). This time, ${pick.beat}`;
+  }
+
+  private supportOn(): boolean {
+    return this.persona.support !== false;
+  }
+
+  private giftAsks(): GiftAsks {
+    return this.options.giftAsks?.() ?? "light";
+  }
+
+  private scheduleSupport(now: number): void {
+    if (!this.supportOn()) return;
+    const pace = SUPPORT_PACE[this.giftAsks()];
+    this.supportCardAt = now + pace.cardFirst;
+    this.supportTalkAt = now + pace.talkFirst;
+  }
+
+  /** Puts the support card up when it's due (not over an open vote: they share a place), and takes it down after a moment. */
+  private maybeShowSupport(now: number): void {
+    if (now >= this.supportHideAt) this.hideSupport();
+    if (now < this.supportCardAt || this.vote || this.standby) return;
+    this.showSupport(now);
+  }
+
+  private showSupport(now: number): void {
+    this.options.stage.support?.({
+      title: `${this.persona.name} é uma IA ao vivo`.slice(0, 60),
+      lines: [
+        { way: "like", text: "Curta a live" },
+        { way: "follow", text: "Siga para não perder" },
+        { way: "share", text: "Compartilhe com amigos" },
+        { way: "gift", text: "Presentes mantêm a live" },
+      ],
+    });
+    this.supportHideAt = now + SUPPORT_CARD_SHOW_MS;
+    this.supportCardAt = now + SUPPORT_PACE[this.giftAsks()].cardEvery;
+  }
+
+  private hideSupport(): void {
+    if (this.supportHideAt === Infinity) return;
+    this.supportHideAt = Infinity;
+    this.options.stage.support?.(null);
+  }
+
+  /** True when it's time for the host to explain how to support the show; the card goes up with it. */
+  private takeSupportTalk(): boolean {
+    const now = this.now();
+    if (now < this.supportTalkAt) return false;
+    this.supportTalkAt = now + SUPPORT_PACE[this.giftAsks()].talkEvery;
+    if (!this.vote) this.showSupport(now);
+    return true;
   }
 
   /** The game a segment plays: its own, or for the last segment, the one chat voted for. */
@@ -1008,6 +1146,8 @@ export class Director {
   private async runTurn(plan: TurnPlan): Promise<void> {
     this.lastTurnAt = this.now();
     this.skipGap = false;
+    const answersChat = plan.kind === "react" && plan.items.some((item) => item.event.kind === "chat" || item.event.kind === "question");
+    this.chatStreak = answersChat ? this.chatStreak + 1 : plan.kind === "react" ? this.chatStreak : 0;
     const result = await this.engine.run(plan);
     if (result.scrolledBy.length) {
       // The host never saw these, so no later turn may ask it to answer them.

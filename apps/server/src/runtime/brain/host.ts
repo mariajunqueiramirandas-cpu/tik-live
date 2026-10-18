@@ -333,6 +333,8 @@ export class ScriptedHost implements HostBrain {
         return [`[excited] ${turn.line ?? "Hora do jogo!"}`];
       case "request":
         return ["[happy] Pode deixar, já vai!"];
+      case "show":
+        return [`[excited] Que chat animado! Bora seguir com ${turn.segment.title}.`];
       case "filler": {
         const fillers = [
           "[thinking] Pergunta rápida pro chat: o que vocês comeram hoje?",

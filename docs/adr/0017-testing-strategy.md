@@ -23,7 +23,7 @@ new system needs coverage at every layer without slow or flaky suites.
 | End-to-end | `@playwright/test` (run with Node in CI) against the built app with PGlite and the simulator source | Open the dashboard (dev identity) → create channel → start → studio shows transcript → pause → stop; character editor autosave; stage page renders and acknowledges playback | PRs labeled `e2e`, and `main` |
 | Visual | Playwright screenshots of the engine in deterministic mode (`seed`, fixed clock, `renderAt(t)`) | Each emotion, alerts, captions, voice-line mode; compared with a tolerance against committed baselines | With E2E |
 | Engine robustness | Playwright | Context loss and restore (`WEBGL_lose_context`), no allocation growth in the frame loop (heap snapshots over 30 s), reconnect behavior | With E2E |
-| Performance budgets | Build script | Bundle sizes for stage, dashboard and landing | Every push |
+| Performance budgets | (removed 2026-10-18) | Bundle sizes for stage, dashboard and landing: no longer checked | — |
 | Load (manual, Phase 7) | A Bun script spawning N simulated channels and M stage and studio sockets | Event-loop lag, memory per channel, turn latency with a fake brain | Before launch and on major changes |
 
 **Rules**

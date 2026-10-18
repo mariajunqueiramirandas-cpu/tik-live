@@ -18,6 +18,8 @@ export const voiceSettingsSchema = z.object({
 export type VoiceSettings = z.infer<typeof voiceSettingsSchema>;
 
 export const STRICTNESS = ["standard", "strict"] as const;
+export const GIFT_ASKS = ["light", "active"] as const;
+export type GiftAsks = (typeof GIFT_ASKS)[number];
 
 export const safetySettingsSchema = z.object({
   /** Terms that are never read from chat and never spoken. Case-insensitive. */
@@ -26,6 +28,13 @@ export const safetySettingsSchema = z.object({
   strictness: z.enum(STRICTNESS).default("standard"),
   /** Extra topics the host should steer away from. */
   avoidTopics: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  /**
+   * How the host asks for gifts (ADR-0032). "light" (the default when
+   * unset): it explains now and then how people can support the show.
+   * "active": it asks for gifts directly and often, and offers playful
+   * rewards on stream for them.
+   */
+  giftAsks: z.enum(GIFT_ASKS).optional(),
 });
 export type SafetySettings = z.infer<typeof safetySettingsSchema>;
 

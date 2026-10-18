@@ -56,6 +56,7 @@ describe("toUtterance", () => {
 
   it("returns nothing when no speakable text remains", () => {
     expect(toUtterance("[happy] 🎉🎉")).toBeUndefined();
+    expect(toUtterance("[pass]")).toBeUndefined(); // the host chose to stay quiet
   });
 });
 

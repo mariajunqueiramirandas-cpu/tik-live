@@ -101,7 +101,7 @@ broadcaster allow autoplay.
 | Hidden preview tab or offscreen | Preview mode pauses rendering via `visibilitychange` and `IntersectionObserver`. Program and broadcast always render. |
 | Deploy with protocol change | `hello` with `reload: true` triggers a seamless reload ([ADR-0008](0008-realtime-protocol.md)). |
 
-### Budgets (enforced in CI where measurable)
+### Budgets (targets: the build's bundle size check was removed on 2026-10-18)
 
 - Engine plus stage page: **under 60 KB gzipped**.
 - **No allocations in the frame loop** (typed arrays preallocated; verified with a heap-snapshot test in the E2E suite).

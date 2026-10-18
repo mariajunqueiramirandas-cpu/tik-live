@@ -57,7 +57,7 @@ and the apps never import each other.
 | `bun test` | Unit and integration tests (server, engine, broadcaster, shared) |
 | `bun test apps/server/test/api` | One directory, or `bun test -t "name"` for one test |
 | `bun run typecheck` | `tsc` in every workspace, plus the e2e and script files |
-| `bun run build` | Builds the web app (prerender and bundle budgets included), the server and the broadcaster |
+| `bun run build` | Builds the web app (prerender included), the server and the broadcaster |
 | `bun run e2e` | Playwright against a built app; run `bun run --filter @tik-live/web build` first |
 | `bun scripts/load-test.ts --channels 50 --seconds 120` | Simulated hosts against a running server; reports event-loop lag, memory and CPU. Offline host and captions by default; `--allow-ai` makes real, paid Claude and voice calls. |
 | `bun run --filter @tik-live/server db:generate` | Generates a migration after a schema change in `apps/server/src/db/schema.ts` |
@@ -100,9 +100,7 @@ deterministic (inject the clock, the random source, `fetch`).
   with a stable `code` and a message written for the person reading it: what
   happened and what to do. See [docs/api.md](docs/api.md).
 - **The stage engine's frame loop doesn't allocate.** No closures, arrays or
-  objects created per frame; reuse buffers. The engine's bundle budget is
-  60 KB gzipped, the dashboard's 200 KB, the landing page's 120 KB; the
-  build fails past them.
+  objects created per frame; reuse buffers.
 - **UI copy** is Brazilian Portuguese ([ADR-0027](docs/adr/0027-brazilian-portuguese-product.md)):
   plain, sentence case, following the terms and tone in
   [docs/glossario.md](docs/glossario.md). Code, comments, logs and developer

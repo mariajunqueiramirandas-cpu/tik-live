@@ -187,7 +187,7 @@ describe("the director's brief", () => {
       [
         "Stream: local time Friday 14:05 (afternoon), on air 12 min, 1,234 watching, 56,789 likes.",
         'Segment: "Segment A", 3 min left.',
-        "Now: Thank e3 (gift) and e4 (follow) together, biggest gift first, then answer e5 (question), then e8 (chat). Skip a message that doesn't need an answer (a laugh, an \"ok\", a remark to someone else).",
+        "Now: Thank e3 (gift) and e4 (follow) together, biggest gift first, then answer e5 (question), then e8 (chat). Skip a message that doesn't need you (a laugh, an \"ok\", viewers talking to each other).",
         "Length: 1 to 3 short sentences, under 45 words. Answer right away, no warm-up.",
       ].join("\n"),
     );
@@ -214,6 +214,11 @@ describe("the director's brief", () => {
     expect(brief).toContain("Now: Answer e9 (chat).");
     expect(brief).toContain("Also: the stream just passed 1,000 likes");
     expect(brief).toContain("Length: 1 or 2 short sentences.");
+  });
+
+  it("makes a big gift the highlight of the turn", () => {
+    const brief = buildBrief({ ...plan, kind: "react" }, { support: ["e3 (big gift)", "e4 (gift)"], chat: [] }, { maxSentences: 3, stillSpeaking: false });
+    expect(brief).toContain("Now: Thank e3 (big gift) and e4 (gift) together, biggest gift first. Make e3 the highlight, with an effect tag.");
   });
 
   it("frames the segment change around the next segment", () => {

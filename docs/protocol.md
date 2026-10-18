@@ -199,6 +199,19 @@ most once a second). Viewers type the number. The stage's ranking card shows
 the vote instead of the rankings while it's open; `"vote": null` when it
 closes. Sent right after `hello` to a stage that connects mid-vote.
 
+#### `support`
+
+```json
+{ "v": 1, "t": "support", "card": { "title": "Blip é uma IA ao vivo", "lines": [{ "way": "like", "text": "Curta a live" }, { "way": "follow", "text": "Siga para não perder" }, { "way": "share", "text": "Compartilhe com amigos" }, { "way": "gift", "text": "Presentes mantêm a live" }] } }
+```
+
+How viewers can support the show ([ADR-0032](adr/0032-gifts-and-supporting-the-show.md)):
+a title and up to four lines, each with a `way` (`like`, `follow`, `share`
+or `gift`) that picks its icon. The stage's ranking card shows it for about
+20 seconds every few minutes, and while the host explains it; an open
+`vote` stays on top. `"card": null` puts the rankings back. Sent right
+after `hello` to a stage that connects while it's up.
+
 #### `schedule`
 
 ```json

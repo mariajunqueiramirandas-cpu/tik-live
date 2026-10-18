@@ -118,7 +118,7 @@ TikTok account. Responses carry a `ChannelDto` (`packages/shared/src/channel.ts`
   "source": "tiktok",
   "persona": { "name": "Blip", "tagline": "…", "description": "…", "style": "…", "catchphrases": [], "rules": [], "maxSentences": 3, "segments": [ … ], "look": { … } },
   "voice": { "provider": "elevenlabs", "voiceId": null },
-  "safety": { "blocklist": [], "strictness": "standard", "avoidTopics": [] },
+  "safety": { "blocklist": [], "strictness": "standard", "avoidTopics": [], "giftAsks": "light" },
   "broadcast": { "enabled": false, "rtmpUrl": null, "hasStreamKey": false, "streamKeyLast4": null },
   "desiredState": "stopped",
   "runtime": { "status": "stopped", "detail": "", "viewers": 0, "since": null },
