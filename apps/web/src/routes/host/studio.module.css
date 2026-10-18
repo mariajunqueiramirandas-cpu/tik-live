@@ -75,6 +75,9 @@
   .healthValue {
     font-weight: 700;
   }
+  .healthDetail {
+    color: var(--haze);
+  }
   .ok .healthDot {
     background: var(--glow);
   }

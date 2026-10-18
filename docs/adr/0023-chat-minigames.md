@@ -38,6 +38,16 @@ plain offline line comes with every cue for the scripted host.
   segment change until it ends) or from the studio (`game_start`).
 - Game turns have priority 45: above gifts' barge-in (35), below a reaction
   already under way (50).
+- **A round goes up when the host can read it.** The first round, and each
+  next round after a reveal, waits for the host to stop talking (at most
+  15 s for the first, 25 s after a reveal), and the director holds new turns
+  meanwhile so it isn't starved. The cue tells the host how much time is
+  left when it gets to the round, not the round's full length, and to just
+  hurry chat when less than 5 s remain.
+- **Rounds allow for the stream delay.** Viewers watch a few seconds behind
+  real time (`STREAM_DELAY_MS`, 5 s by default), so a round keeps taking
+  answers that long after its timer runs out: the on-screen clock shows
+  zero, and answers sent while a viewer's clock still showed time count.
 
 **Each game has its own stage scene** (`game` message, `gameSceneSchema`):
 the server sends the full scene on every change, throttled to four a second,

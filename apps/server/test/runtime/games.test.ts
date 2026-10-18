@@ -19,7 +19,7 @@ function seeded(seed = 7): () => number {
   };
 }
 
-function setup(options: { writer?: GameWriter | null; unsafe?: (text: string) => boolean } = {}) {
+function setup(options: { writer?: GameWriter | null; unsafe?: (text: string) => boolean; streamDelayMs?: number } = {}) {
   const clock = fakeClock();
   const scenes: Array<GameScene | null> = [];
   const sounds: Sound[] = [];
@@ -31,6 +31,7 @@ function setup(options: { writer?: GameWriter | null; unsafe?: (text: string) =>
     blocklist: () => ["badword"],
     language: () => "en",
     sounds: () => true,
+    ...(options.streamDelayMs !== undefined ? { streamDelayMs: options.streamDelayMs } : {}),
     now: clock.now,
     random: seeded(),
   });
@@ -92,6 +93,8 @@ describe("GameMaster", () => {
     expect(games.start({ kind: "trivia", rounds: 2 }, "studio")).toEqual({ ok: true });
     expect(games.start({ kind: "poll", rounds: 1 }, "studio").ok).toBe(false);
     await flush(); // the bank fills in
+    expect(scenes.at(-1)).toBeUndefined(); // ready, but the host is still talking
+    games.tick(true);
     const scene = scenes.at(-1);
     if (scene?.kind !== "trivia") throw new Error("expected a trivia scene");
     expect(scene.phase).toBe("open");
@@ -147,6 +150,7 @@ describe("GameMaster", () => {
     const { clock, games, flush } = setup();
     games.start({ kind: "fastest", rounds: 2 }, "studio");
     await flush();
+    games.tick(true);
     const word = games.status()!.answer!;
     // Someone wins before the host got to read the round out: the question is skipped, the answer isn't.
     games.handleChat(say("ana", word.toLowerCase()));
@@ -176,6 +180,7 @@ describe("GameMaster", () => {
   it("narrows the number range and ends the round on an exact guess", () => {
     const { clock, games, scenes } = setup();
     games.start({ kind: "number", rounds: 1 }, "studio");
+    games.tick(true);
     const secret = Number(games.status()?.answer);
     const low = Math.max(1, secret - 10);
     expect(games.handleChat(say("ana", String(low === secret ? secret + 1 : low)))).toBe(true);
@@ -199,6 +204,7 @@ describe("GameMaster", () => {
     const { games, flush } = setup();
     games.start({ kind: "scramble", rounds: 1 }, "studio");
     await flush();
+    games.tick(true);
     const word = games.status()!.answer!;
     expect(games.handleChat(say("joe", "oi"))).toBe(false);
     expect(games.handleChat(say("joe", "x".repeat(word.length)))).toBe(true);
@@ -223,6 +229,7 @@ describe("GameMaster", () => {
     const { clock, games, flush } = setup({ writer, unsafe: (text) => text.includes("Unsafe") });
     games.start({ kind: "trivia", rounds: 3, topic: "space" }, "studio", ["hello chat"]);
     await flush();
+    games.tick(true);
     expect(requests[0]).toMatchObject({ kind: "trivia", count: 5, topic: "space", language: "en", chatSample: ["hello chat"] });
     const seen: string[] = [];
     for (let round = 1; round <= 3; round++) {
@@ -245,6 +252,7 @@ describe("GameMaster", () => {
     const { clock, games, scenes, flush } = setup({ writer });
     games.start({ kind: "truefalse", rounds: 1 }, "studio");
     await flush();
+    games.tick(true);
     expect(games.status()?.phase).toBe("open");
     const truth = games.status()!.answer === "true" ? "T" : "F";
     games.handleChat({ kind: "chat", at: 0, viewer: { id: "x", handle: "x", nickname: "badword king" }, text: truth });
@@ -256,5 +264,54 @@ describe("GameMaster", () => {
     games.stop();
     expect(games.isActive()).toBe(false);
     expect(scenes.at(-1)).toBeNull();
+  });
+
+  it("opens the first round when the host stops talking, and tells the host how long is really left", async () => {
+    const { clock, games, flush } = setup();
+    games.start({ kind: "trivia", rounds: 1 }, "studio");
+    await flush();
+    games.tick(false);
+    expect(games.status()?.phase).toBe("preparing");
+    expect(games.wantsFloor()).toBe(true); // the director holds new turns
+    expect(games.hostContext()).toContain("goes up as soon as you finish talking");
+    clock.advance(2_000);
+    games.tick(true);
+    expect(games.status()?.phase).toBe("open");
+    expect(games.wantsFloor()).toBe(false);
+    // The host gets to it 10 s into a 25 s round.
+    clock.advance(10_000);
+    expect(games.takeCue()?.note).toContain("They have about 15 seconds left.");
+  });
+
+  it("doesn't wait forever for a host that keeps talking", async () => {
+    const { clock, games, flush } = setup();
+    games.start({ kind: "number", rounds: 1 }, "studio");
+    await flush();
+    clock.advance(15_000);
+    games.tick(false);
+    expect(games.status()?.phase).toBe("open");
+    clock.advance(57_000);
+    expect(games.takeCue()?.note).toContain("Time is almost up: tell them to answer right now.");
+  });
+
+  it("keeps taking answers for the stream delay after the timer runs out", async () => {
+    const { clock, games, scenes, flush } = setup({ streamDelayMs: 5_000 });
+    games.start({ kind: "truefalse", rounds: 1 }, "studio");
+    await flush();
+    games.tick(true);
+    const truth = games.status()!.answer === "true" ? "V" : "F";
+    clock.advance(19_000);
+    games.tick(false);
+    // Viewers see the stream 5 s late: their clock still shows time when this answer is sent.
+    expect(games.status()?.phase).toBe("open");
+    expect(games.status()?.remainingSec).toBe(0);
+    expect(games.hostContext()).toContain("Time is up on screen");
+    expect(games.handleChat(say("ana", truth))).toBe(true);
+    clock.advance(4_000);
+    games.tick(false);
+    const reveal = scenes.at(-1);
+    if (reveal?.kind !== "truefalse") throw new Error("expected a true/false reveal");
+    expect(reveal.phase).toBe("reveal");
+    expect(reveal.winners).toEqual(["ana"]);
   });
 });

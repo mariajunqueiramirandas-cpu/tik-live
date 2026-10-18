@@ -187,10 +187,19 @@ describe("the director's brief", () => {
       [
         "Stream: local time Friday 14:05 (afternoon), on air 12 min, 1,234 watching, 56,789 likes.",
         'Segment: "Segment A", 3 min left.',
-        "Now: Thank e3 (gift) and e4 (follow) together, biggest gift first, then answer e5 (question), then e8 (chat). You may skip a message that doesn't need an answer.",
-        "Length: 1 to 3 short sentences, under 45 words.",
+        "Now: Thank e3 (gift) and e4 (follow) together, biggest gift first, then answer e5 (question), then e8 (chat). Skip a message that doesn't need an answer (a laugh, an \"ok\", a remark to someone else).",
+        "Length: 1 to 3 short sentences, under 45 words. Answer right away, no warm-up.",
       ].join("\n"),
     );
+  });
+
+  it("keeps the answer to one question short, so the viewer isn't kept waiting", () => {
+    const brief = buildBrief(plan, { support: [], chat: ["e5 (question)"] }, { maxSentences: 4, stillSpeaking: false });
+    expect(brief).toContain("Now: Answer e5 (question).");
+    expect(brief).toContain("Length: 1 or 2 short sentences, under 30 words. Answer right away, no warm-up.");
+    // Thanks alone keep the persona's full room.
+    const thanks = buildBrief(plan, { support: ["e3 (gift)"], chat: [] }, { maxSentences: 4, stillSpeaking: false });
+    expect(thanks).toContain("Length: 1 to 4 short sentences, under 45 words.");
   });
 
   it("says when the last line is still playing, keeps busy turns short, and carries the game and extras", () => {

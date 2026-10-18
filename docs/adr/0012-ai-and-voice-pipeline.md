@@ -27,7 +27,7 @@ tenants.
 | Call | Default | Settings |
 |---|---|---|
 | Host turn | `claude-opus-5-5` | Streamed; `output_config.effort: "low"` (Opus 5.5 can't disable thinking, so effort is the latency control); `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`; stop after `maxSentences + 1` |
-| Moderation | `claude-opus-5-5` | `output_config.format` JSON schema `{ safe, reason }`; effort `low`; results cached per normalized sentence; a refusal counts as unsafe |
+| Moderation | `claude-opus-5-5` | `output_config.format` JSON schema `{ safe, reason }`; effort `low`; thinking off on models that allow it (Claude Haiku 5.5), since every line waits for the verdict; results cached per normalized sentence; a refusal counts as unsafe |
 
 The model for each call is a **per-plan setting** in `packages/shared/plans.ts`
 plus a deployment override, not a hard-coded constant. The defaults stay on
@@ -119,7 +119,11 @@ livestreams, where TikTok bans AI voices.
 | **Total** | **about 1.5–3 s** (p50 target under 2.5 s) |
 
 Each turn records these timestamps; the studio's health panel shows p50 and
-p95.
+p95, and the median of each stage of a reply: waiting for the host's turn,
+the model writing the first line, the safety check and voice for it, and
+waiting for the line before it to finish. `HOST_THINKING=off` turns the host
+model's thinking off where the model allows it (Claude Haiku 5.5), for a
+faster first word; it stays opt-in until the "IA" stage shows it's needed.
 
 ## Options Considered
 

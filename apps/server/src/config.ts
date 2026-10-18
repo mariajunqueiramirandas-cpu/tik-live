@@ -37,6 +37,19 @@ const envSchema = z.object({
   /** Deployment override for every plan's host model (ADR-0012); unset = each plan's own. */
   HOST_MODEL: z.string().optional(),
   HOST_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
+  /**
+   * "adaptive" lets the host's model think when a turn needs it; "off" skips
+   * thinking for a faster first word, on models that allow it (Claude Haiku
+   * 5.5 at low to high effort). Others keep adaptive thinking.
+   */
+  HOST_THINKING: z.enum(["adaptive", "off"]).default("adaptive"),
+  /**
+   * How far behind real time viewers watch the stream (TikTok LIVE is
+   * usually a few seconds). Game rounds keep taking answers this long after
+   * their timer runs out, and dead air after the host asks chat something
+   * waits this much longer.
+   */
+  STREAM_DELAY_MS: z.coerce.number().int().min(0).max(30_000).default(5_000),
   MODERATION_ENABLED: bool.default(true),
   /** Deployment override for every plan's moderator model; unset = each plan's own. */
   MODERATION_MODEL: z.string().optional(),

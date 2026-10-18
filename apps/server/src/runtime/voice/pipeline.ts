@@ -14,6 +14,10 @@ export interface CueMeta {
   originAt: number;
   /** True for the first line of a turn. */
   first: boolean;
+  /** When the turn started being written. */
+  startedAt?: number;
+  /** When the model finished writing this line. */
+  writtenAt?: number;
 }
 
 export interface SpeechCue {
@@ -28,6 +32,8 @@ export interface SpeechCue {
   audio: AudioClip | null;
   /** How long the cue should take; the stage may report completion earlier or later. */
   durationMs: number;
+  /** When it passed the safety gate and its audio was ready. */
+  readyAt?: number;
 }
 
 /** Where cues get performed: the stage server (browser source in OBS). */
@@ -154,12 +160,18 @@ export class SpeechPipeline {
   }
 
   /**
-   * Drops queued lines (never the one on stage) that match, and cancels their
+   * Drops queued lines that match, including the next one if it's still
+   * waiting for its audio (never the one on stage), and cancels their
    * synthesis. Returns the lines dropped, in order.
    */
   drop(match: (meta: CueMeta | undefined, operator: boolean) => boolean): DroppedLine[] {
     const kept: Pending[] = [];
     const dropped: DroppedLine[] = [];
+    // Not on stage yet: the drain loop skips it once its preparation settles.
+    if (this.head && !this.head.abort.signal.aborted && match(this.head.meta, this.head.operator)) {
+      this.head.abort.abort();
+      dropped.push(droppedLine(this.head));
+    }
     for (const item of this.queue) {
       if (match(item.meta, item.operator)) {
         item.abort.abort();
@@ -174,13 +186,18 @@ export class SpeechPipeline {
 
   /** What the host is saying and has queued to say next, in order. */
   upcoming(): string[] {
-    const now = this.current?.text ?? this.head?.text;
+    const now = this.current?.text ?? this.nextUp()?.text;
     return [...(now !== undefined ? [now] : []), ...this.queue.map((item) => item.text)];
   }
 
   /** The turn the line on stage (or, between lines, the next one) belongs to. */
   activeMeta(): CueMeta | undefined {
-    return this.current?.meta ?? this.head?.meta ?? this.queue[0]?.meta;
+    return this.current?.meta ?? this.nextUp()?.meta ?? this.queue[0]?.meta;
+  }
+
+  /** The line waiting for its audio before going on stage, unless it was dropped. */
+  private nextUp(): Pending | undefined {
+    return this.head && !this.head.abort.signal.aborted ? this.head : undefined;
   }
 
   /** Sentences waiting to be performed, not counting the one on stage. */
@@ -246,6 +263,7 @@ export class SpeechPipeline {
       emotion: utterance.emotion,
       audio,
       durationMs: audio?.durationMs ?? estimateSpeechMs(utterance.text),
+      readyAt: this.now(),
       ...(utterance.fx?.length ? { fx: utterance.fx } : {}),
       ...(meta ? { meta } : {}),
       ...(trusted ? { operator: true } : {}),
