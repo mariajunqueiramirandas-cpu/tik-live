@@ -356,9 +356,10 @@ export class TurnEngine {
       const ref = [...item.events].reverse().map((event) => this.conversation.ref(event, draft)).find(Boolean);
       if (!ref) continue;
       const kind = item.event.kind;
-      if (item.event.kind === "chat" || item.event.kind === "question") refs.chat.push(`${ref} (${asksForShoutout(item.event.text) ? "shout-out request" : kind})`);
-      else if (item.event.kind === "gift" && item.event.diamonds >= BIG_GIFT_DIAMONDS) refs.support.push(`${ref} (big gift)`);
-      else refs.support.push(`${ref} (${kind === "join" ? "returning viewer" : kind})`);
+      const tags = item.tags?.length ? `, ${item.tags.join(", ")}` : "";
+      if (item.event.kind === "chat" || item.event.kind === "question") refs.chat.push(`${ref} (${asksForShoutout(item.event.text) ? "shout-out request" : kind}${tags})`);
+      else if (item.event.kind === "gift" && item.event.diamonds >= BIG_GIFT_DIAMONDS) refs.support.push(`${ref} (big gift${tags})`);
+      else refs.support.push(`${ref} (${kind === "join" ? "returning viewer" : kind}${tags})`);
     }
     return refs;
   }

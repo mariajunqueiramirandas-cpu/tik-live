@@ -6,7 +6,7 @@ import { blockReason } from "../../lib/reasons";
 import { useSession, useSessions, useUpdateChannel } from "../../lib/query";
 import { useStudio } from "../../lib/studio";
 import { useAutosave } from "../../lib/use-autosave";
-import { Chips, Field, Segmented } from "../../ui/Field";
+import { Chips, Field, Segmented, Switch } from "../../ui/Field";
 import { Panel, Skeleton } from "../../ui/Display";
 import p from "../page.module.css";
 import { useHost } from "./context";
@@ -63,7 +63,9 @@ export default function Safety() {
           hint={
             safety.strictness === "strict"
               ? "O rigoroso também evita romance, terror, gírias e humor ácido. Melhor para público mais jovem."
-              : "O padrão permite brincadeiras e bloqueia tudo o que for ofensivo, sexual, perigoso ou de ódio."
+              : safety.strictness === "spicy"
+                ? "Sem filtro: opinião forte sobre tudo, inclusive política, religião e famosos, com humor ácido e palavrão leve. Continua bloqueando ódio, ofensa a grupos, conteúdo sexual, ataque a espectadores e propaganda eleitoral, que são o que derruba a live. Polêmica pode render denúncia no TikTok: o risco é seu."
+                : "O padrão tem opinião sobre tudo (futebol, comida, famosos, tretas da internet), permite brincadeiras e bloqueia tudo o que for ofensivo, sexual, perigoso ou de ódio. Em política e religião, brinca sem tomar partido."
           }
         >
           {() => (
@@ -74,6 +76,7 @@ export default function Safety() {
               options={[
                 { value: "standard", label: "Padrão" },
                 { value: "strict", label: "Rigoroso" },
+                { value: "spicy", label: "Sem filtro" },
               ]}
             />
           )}
@@ -99,6 +102,13 @@ export default function Safety() {
             />
           )}
         </Field>
+
+        <Switch
+          label="Poderes do presente"
+          hint="Cada presente libera algo na hora: 5 diamantes furam a fila do chat, 30 escolhem o próximo jogo, 99 ganham um hino da IA e 199 viram dono da live por 5 minutos, com coroa no palco. O palco mostra a tabela de vez em quando. No modo leve, o apresentador explica os poderes para todo mundo, sem pedir para ninguém."
+          checked={safety.giftPerks ?? true}
+          onChange={(giftPerks) => setSafety((v) => ({ ...v, giftPerks }))}
+        />
 
         <Field label="Palavras bloqueadas" optional hint="O apresentador nunca fala essas palavras, e mensagens do chat com elas são ignoradas. Aperte Enter depois de cada uma.">
           {(props) => <Chips {...props} values={safety.blocklist} onChange={(blocklist) => setSafety((v) => ({ ...v, blocklist }))} max={500} maxLength={60} placeholder="Adicione uma palavra ou frase" />}

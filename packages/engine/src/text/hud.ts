@@ -1,4 +1,4 @@
-import type { GoalKind, GoalView, LeaderBoard, LeaderRow, SupportCard, SupportWay, UpNextItem } from "@tik-live/shared";
+import type { Challenge, GoalKind, GoalView, LeaderBoard, LeaderRow, PerksCard, SupportCard, SupportWay, UpNextItem } from "@tik-live/shared";
 import { Spring, SPRINGS } from "../anim/spring";
 import type { Gl } from "../gl/gl";
 import { FONT_FAMILY, GOLD, HAZE, INK, measureWith, roundRect, TextSprite, truncate, withAlpha } from "./sprites";
@@ -8,7 +8,10 @@ import { FONT_FAMILY, GOLD, HAZE, INK, measureWith, roundRect, TextSprite, trunc
  * under the disclosure badge: a slim "A seguir" pill with a countdown, and
  * one ranking card that takes turns between the top likers and the top
  * gifters (or shows a vote while one is open, or for a moment how to
- * support the show, ADR-0032). The column stays left of the
+ * support the show, ADR-0032, or the gift powers on offer, ADR-0039). The
+ * "dono da live" badge (ADR-0039) sits just under the column, and a
+ * challenge or raffle (ADR-0040) takes the hook banner's place under the
+ * character. The column stays left of the
  * character (x 375 at rest, 430 during games) and ends above where a game
  * board starts (y 560), clear of TikTok's header, right rail and comments.
  * Painted when content changes; the countdown repaints once a second and
@@ -204,6 +207,14 @@ function fit(text: string, font: string, maxWidth: number): string {
   return truncate(text, max);
 }
 
+/** The font a line fits `maxWidth` in, shrinking from `size` down to `minSize`, and the text (cut only once it's as small as it goes). */
+export function shrinkToFit(text: string, weight: number, size: number, minSize: number, maxWidth: number): { font: string; text: string } {
+  let s = size;
+  while (s > minSize && measureWith(`${weight} ${s}px ${FONT_FAMILY}`)(text) > maxWidth) s -= 1;
+  const font = `${weight} ${s}px ${FONT_FAMILY}`;
+  return { font, text: fit(text, font, maxWidth) };
+}
+
 function enter(sprite: TextSprite, wasHidden: boolean): void {
   if (wasHidden) {
     sprite.opacity.snap(0);
@@ -333,11 +344,12 @@ interface Board {
   windowMin: number;
 }
 
-/** A chat vote shown in the card's place while it's open (ADR-0029). */
+/** A chat vote shown in the card's place while it's open (ADR-0029), or one viewer's pick (`by`, ADR-0039). */
 export interface HudVote {
   title: string;
   options: string[];
   tally: number[];
+  by?: string;
 }
 
 /** A small glyph for each way to support the show. */
@@ -374,6 +386,12 @@ function wayMark(ctx: Canvas2D, way: SupportWay, x: number, y: number, color: st
 }
 
 const WAY_COLORS: Record<SupportWay, string> = { like: HEART, follow: "#B16CFF", share: "#7CF5FF", gift: GOLD };
+const PERK_PINK = "#FF4FD8";
+
+/** "ESCOLHA DE DUDA": the header of a card where one viewer chooses. */
+export function pickHeader(by: string): string {
+  return `ESCOLHA DE ${by.toUpperCase()}`;
+}
 
 /**
  * One card that takes turns between the top likers and the top gifters, or
@@ -390,6 +408,7 @@ export class LeaderCard {
   private showing: LeaderBoard | null = null;
   private vote: HudVote | null = null;
   private support: SupportCard | null = null;
+  private perks: PerksCard | null = null;
   private turnedAt = 0;
   private visible = false;
   private readonly top = new Spring(TOP, SPRINGS.snappy);
@@ -408,7 +427,7 @@ export class LeaderCard {
   set(board: LeaderBoard, rows: readonly LeaderRow[], windowMin: number, now: number, scale: number): void {
     const before = this.boards[board].rows;
     this.boards[board] = { rows: rows.slice(0, 3), windowMin };
-    if (this.vote || this.support) return;
+    if (this.vote || this.support || this.perks) return;
     // A new gift cuts in, whatever was up: gifters are the show's VIPs.
     if (board === "gifts" && giftCameIn(before, this.boards.gifts.rows)) {
       const crossfade = this.visible && this.showing !== "gifts";
@@ -442,15 +461,32 @@ export class LeaderCard {
   setSupport(card: SupportCard | null, now: number, scale: number): void {
     const crossfade = this.visible;
     this.support = card;
-    if (!card && !this.vote) this.showing = nextBoard(null, (b) => this.has(b));
+    // It shares the place with the gift powers: the latest one wins.
+    if (card) this.perks = null;
+    if (!card && !this.vote && !this.perks) this.showing = nextBoard(null, (b) => this.has(b));
     this.turnedAt = now;
     this.paint(scale, crossfade, now);
+  }
+
+  /** Shows the gift powers on offer in the rankings' place (null: back to the rankings). An open vote stays on top. */
+  setPerks(card: PerksCard | null, now: number, scale: number): void {
+    const crossfade = this.visible;
+    this.perks = card;
+    if (card) this.support = null;
+    if (!card && !this.vote && !this.support) this.showing = nextBoard(null, (b) => this.has(b));
+    this.turnedAt = now;
+    this.paint(scale, crossfade, now);
+  }
+
+  /** Where the column ends (stage px): the bottom of this card, or of whatever is above it when it's hidden. */
+  bottom(above: number): number {
+    return this.visible ? this.top.target + this.sprite.height : TOP + above - (above ? GAP : 0);
   }
 
   /** `above` is the room the pill takes over this card. */
   update(dt: number, now: number, above: number, scale: number): void {
     const gifts = this.showsGifts();
-    if (!this.vote && !this.support && this.showing && now - this.turnedAt >= (gifts ? TURN_GIFTS_S : TURN_S)) {
+    if (!this.vote && !this.support && !this.perks && this.showing && now - this.turnedAt >= (gifts ? TURN_GIFTS_S : TURN_S)) {
       const next = nextBoard(this.showing, (b) => this.has(b));
       this.turnedAt = now;
       if (next !== this.showing) {
@@ -495,15 +531,16 @@ export class LeaderCard {
   }
 
   private showsGifts(): boolean {
-    return !this.vote && !this.support && this.showing === "gifts" && this.has("gifts");
+    return !this.vote && !this.support && !this.perks && this.showing === "gifts" && this.has("gifts");
   }
 
   private paint(scale: number, crossfade: boolean, now: number): void {
     const wasHidden = !this.visible;
     const vote = this.vote;
     const support = this.support;
+    const perks = this.perks;
     const board = this.showing && this.has(this.showing) ? this.showing : null;
-    if (!vote && !support && !board) {
+    if (!vote && !support && !perks && !board) {
       this.visible = false;
       this.sprite.opacity.target = 0;
       return;
@@ -511,6 +548,7 @@ export class LeaderCard {
     this.visible = true;
     this.sprite.x = X;
     if (vote) this.paintVote(vote, scale, crossfade && !wasHidden, now);
+    else if (perks) this.paintPerks(perks, scale, crossfade && !wasHidden, now);
     else if (support) this.paintSupport(support, scale, crossfade && !wasHidden, now);
     else this.paintBoard(board as LeaderBoard, scale, crossfade && !wasHidden, now);
     enter(this.sprite, wasHidden);
@@ -774,7 +812,110 @@ export class LeaderCard {
     );
   }
 
+  /** The gift powers on offer: the title in gold, then one row per power, a diamond chip with its price and what it does. */
+  private paintPerks(card: PerksCard, scale: number, crossfade: boolean, now: number): void {
+    const headFont = `850 19px ${FONT_FAMILY}`;
+    const chipFont = `850 18px ${FONT_FAMILY}`;
+    const rows = card.rows.slice(0, 5);
+    const headH = 50;
+    const rowH = 34;
+    const height = headH + rows.length * rowH + 12;
+    const prices = rows.map((row) => formatCount(row.diamonds));
+    // One chip width for every row, so the powers line up.
+    const chipW = Math.max(...prices.map((text) => measureWith(chipFont)(text))) + 38;
+    this.sprite.draw(
+      WIDTH,
+      height,
+      scale,
+      (ctx) => {
+        glass(ctx, WIDTH, height, GOLD, PERK_PINK, 20);
+        diamond(ctx, PAD + 11, 27, 20, DIAMOND);
+        ctx.textBaseline = "alphabetic";
+        ctx.font = headFont;
+        const title = ctx.createLinearGradient(0, 14, 0, 36);
+        title.addColorStop(0, "#FFF1B8");
+        title.addColorStop(1, GOLD);
+        ctx.fillStyle = title;
+        ctx.fillText(fit(card.title.toUpperCase(), headFont, WIDTH - PAD * 2 - 30), PAD + 30, 35);
+        rows.forEach((row, i) => {
+          const top = headH + i * rowH;
+          const cy = top + rowH / 2 - 2;
+          const best = i === rows.length - 1 && rows.length > 1;
+          ctx.fillStyle = withAlpha(best ? GOLD : DIAMOND, best ? 0.26 : 0.16);
+          roundRect(ctx, PAD, cy - 13, chipW, 26, 13);
+          ctx.fill();
+          diamond(ctx, PAD + 14, cy + 1, 13, best ? GOLD : DIAMOND);
+          ctx.font = chipFont;
+          ctx.fillStyle = best ? GOLD : INK;
+          ctx.fillText(prices[i] as string, PAD + 26, cy + 7);
+          // Long powers shrink a little before they're cut.
+          const line = shrinkToFit(row.text, 720, 21, 17, WIDTH - PAD * 2 - chipW - 10);
+          ctx.font = line.font;
+          ctx.fillStyle = best ? GOLD : INK;
+          ctx.fillText(line.text, PAD + chipW + 10, cy + 7);
+        });
+        if (rows.length > 1) sparkle(ctx, WIDTH - PAD - 4, headH + (rows.length - 1) * rowH + 4, 12, withAlpha("#FFF6D6", 0.85));
+      },
+      crossfade,
+      now,
+    );
+  }
+
+  /** One viewer chooses (a gift power or the raffle's prize): their name on top, the options numbered, no tally. */
+  private paintPick(vote: HudVote & { by: string }, scale: number, crossfade: boolean, now: number): void {
+    const headFont = `850 18px ${FONT_FAMILY}`;
+    const titleFont = `780 23px ${FONT_FAMILY}`;
+    const optionFont = `720 21px ${FONT_FAMILY}`;
+    const rowH = 34;
+    const options = vote.options.slice(0, 3);
+    const height = 74 + options.length * rowH + 34;
+    this.sprite.draw(
+      WIDTH,
+      height,
+      scale,
+      (ctx) => {
+        glass(ctx, WIDTH, height, GOLD, "#FF8A3D", 20);
+        crown(ctx, PAD + 11, 27, 22, GOLD);
+        ctx.textBaseline = "alphabetic";
+        ctx.font = headFont;
+        ctx.fillStyle = GOLD;
+        ctx.fillText(fit(pickHeader(vote.by), headFont, WIDTH - PAD * 2 - 28), PAD + 28, 33);
+        ctx.font = titleFont;
+        ctx.fillStyle = INK;
+        ctx.fillText(fit(vote.title, titleFont, WIDTH - PAD * 2), PAD, 60);
+        options.forEach((option, i) => {
+          const y = 72 + i * rowH;
+          ctx.fillStyle = "rgba(255,255,255,0.07)";
+          roundRect(ctx, PAD, y, WIDTH - PAD * 2, rowH - 6, 10);
+          ctx.fill();
+          // The number in a gold disc: that's what they type.
+          ctx.fillStyle = GOLD;
+          ctx.beginPath();
+          ctx.arc(PAD + 16, y + (rowH - 6) / 2, 11, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.font = `850 16px ${FONT_FAMILY}`;
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#1A0F33";
+          ctx.fillText(String(i + 1), PAD + 16, y + 20);
+          ctx.textAlign = "left";
+          ctx.font = optionFont;
+          ctx.fillStyle = INK;
+          ctx.fillText(fit(option, optionFont, WIDTH - PAD * 2 - 44), PAD + 36, y + 21);
+        });
+        ctx.font = `700 17px ${FONT_FAMILY}`;
+        ctx.fillStyle = HAZE;
+        ctx.fillText(fit(`${vote.by}, digite o número no chat`, ctx.font, WIDTH - PAD * 2), PAD, height - 18);
+      },
+      crossfade,
+      now,
+    );
+  }
+
   private paintVote(vote: HudVote, scale: number, crossfade: boolean, now: number): void {
+    if (vote.by) {
+      this.paintPick(vote as HudVote & { by: string }, scale, crossfade, now);
+      return;
+    }
     const headFont = `800 17px ${FONT_FAMILY}`;
     const titleFont = `780 23px ${FONT_FAMILY}`;
     const optionFont = `720 21px ${FONT_FAMILY}`;
@@ -985,10 +1126,10 @@ export class HookBanner {
     this.sprite.offsetY.target = 0;
   }
 
-  /** `game` is how far a game board has come in (0 to 1): the banner gives way to it. */
-  update(dt: number, now: number, game: number): void {
+  /** `away` (0 to 1) is how far a game board has come in, or 1 while a challenge has the spot: the banner gives way to them. */
+  update(dt: number, now: number, away: number): void {
     if (this.text) {
-      this.sprite.opacity.target = game > 0.05 ? 0 : 1;
+      this.sprite.opacity.target = away > 0.05 ? 0 : 1;
       if (now - this.shownAt > 0.6) this.sprite.offsetY.target = Math.sin((now - this.shownAt) * 3.2) * 5;
     }
     this.sprite.update(dt, now);
@@ -1045,5 +1186,467 @@ export class HookBanner {
       ctx.fillStyle = "#FFFFFF";
       ctx.fillText(shown, width / 2, height / 2 + 2);
     });
+  }
+}
+
+// ---- the "dono da live" ------------------------------------------------------------
+
+/**
+ * Where the "dono da live" badge sits (ADR-0039): left, under the HUD
+ * column (it follows the column's bottom, never above `minTop`), left of
+ * the character (its body starts at x 375) and above the hook banner
+ * (y 936). A game board covers that spot, so the badge gives way to it.
+ */
+const BOSS = { x: X, minTop: 600, gap: 16, width: 300, height: 104, glow: 24 };
+
+/** "4:32", "0:07": a short countdown that never says "já já". */
+export function formatClock(seconds: number): string {
+  const s = Math.max(0, Math.ceil(seconds - 1e-6));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** A loud gold badge: a crown, "DONO DA LIVE", the name, and how long the reign has left. */
+export class BossBadge {
+  readonly sprite: TextSprite;
+  private name: string | null = null;
+  /** When the reign ends, on the stage clock (seconds). */
+  private endsAt = 0;
+  private second = Number.NaN;
+  private shownAt = 0;
+  private now = 0;
+  private below = BOSS.minTop;
+  private readonly top = new Spring(BOSS.minTop, SPRINGS.snappy);
+
+  constructor(gl: Gl) {
+    this.sprite = new TextSprite(gl);
+  }
+
+  set(boss: { name: string; leftMs: number } | null, now: number, scale: number): void {
+    if (!boss || boss.leftMs <= 0) {
+      this.name = null;
+      this.sprite.opacity.target = 0;
+      return;
+    }
+    const wasHidden = this.name === null;
+    const changed = boss.name !== this.name;
+    this.now = now;
+    this.name = boss.name;
+    this.endsAt = now + boss.leftMs / 1000;
+    this.second = Number.NaN;
+    this.paint(now, scale);
+    if (wasHidden) this.top.snap(this.topFor(this.below));
+    if (wasHidden || changed) {
+      // A new reign (or the crown changing hands) drops in.
+      this.shownAt = now;
+      this.sprite.opacity.snap(0);
+      this.sprite.offsetY.snap(-22);
+      this.sprite.offsetY.target = 0;
+    }
+  }
+
+  /** `below` is where the HUD column ends; `away` (0 to 1) how far a game board has come in. */
+  update(dt: number, now: number, below: number, away: number, scale: number): void {
+    this.below = below;
+    this.now = now;
+    if (this.name) {
+      if (now >= this.endsAt) {
+        this.name = null;
+        this.sprite.opacity.target = 0;
+      } else {
+        this.paint(now, scale);
+        this.sprite.opacity.target = away > 0.05 ? 0 : 1;
+        if (now - this.shownAt > 0.6) this.sprite.offsetY.target = Math.sin((now - this.shownAt) * 2.4) * 3;
+      }
+    }
+    this.top.target = this.topFor(below);
+    this.top.step(dt);
+    this.sprite.x = BOSS.x - BOSS.glow;
+    this.sprite.y = this.top.value - BOSS.glow;
+    this.sprite.update(dt, now);
+  }
+
+  repaint(scale: number): void {
+    this.second = Number.NaN;
+    if (this.name) this.paint(this.now, scale);
+  }
+
+  private topFor(below: number): number {
+    return Math.max(BOSS.minTop, below + BOSS.gap);
+  }
+
+  /** Repaints when the second on the countdown changes. */
+  private paint(now: number, scale: number): void {
+    const left = Math.max(0, Math.ceil(this.endsAt - now - 1e-6));
+    if (left === this.second || !this.name) return;
+    this.second = left;
+    const name = this.name;
+    const { width, height, glow } = BOSS;
+    const clock = formatClock(left);
+    const headFont = `850 18px ${FONT_FAMILY}`;
+    const shown = shrinkToFit(name, 850, 31, 21, width - 90 - 16);
+    const clockFont = `800 18px ${FONT_FAMILY}`;
+    const clockW = measureWith(clockFont)(clock) + 22;
+    this.sprite.draw(width + glow * 2, height + glow * 2, scale, (ctx) => {
+      ctx.translate(glow, glow);
+      // A warm gold glow around a deep glass body that turns gold at the bottom.
+      ctx.save();
+      ctx.shadowColor = withAlpha(GOLD, 0.75);
+      ctx.shadowBlur = 16;
+      const body = ctx.createLinearGradient(0, 0, 0, height);
+      body.addColorStop(0, "rgba(40,14,66,0.94)");
+      body.addColorStop(1, "rgba(92,56,10,0.92)");
+      ctx.fillStyle = body;
+      roundRect(ctx, 0, 0, width, height, 24);
+      ctx.fill();
+      ctx.restore();
+      const edge = ctx.createLinearGradient(0, 0, width, height);
+      edge.addColorStop(0, "#FFF1B8");
+      edge.addColorStop(0.5, GOLD);
+      edge.addColorStop(1, "#FF8A3D");
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 3;
+      roundRect(ctx, 1.5, 1.5, width - 3, height - 3, 23);
+      ctx.stroke();
+      // The crown, big, in a soft gold disc.
+      ctx.fillStyle = withAlpha(GOLD, 0.2);
+      ctx.beginPath();
+      ctx.arc(46, height / 2, 32, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.shadowColor = withAlpha(GOLD, 0.9);
+      ctx.shadowBlur = 12;
+      crown(ctx, 46, height / 2 + 2, 40, GOLD);
+      ctx.restore();
+      sparkle(ctx, 66, height / 2 - 22, 12, "#FFF6D6");
+      ctx.textBaseline = "alphabetic";
+      ctx.font = headFont;
+      ctx.fillStyle = GOLD;
+      ctx.fillText("DONO DA LIVE", 90, 36);
+      // The countdown in a chip, top right.
+      ctx.fillStyle = withAlpha(GOLD, left <= 30 ? 0.34 : 0.18);
+      roundRect(ctx, width - 14 - clockW, 16, clockW, 28, 14);
+      ctx.fill();
+      ctx.font = clockFont;
+      ctx.textAlign = "center";
+      ctx.fillStyle = left <= 30 ? "#FFF1B8" : GOLD;
+      ctx.fillText(clock, width - 14 - clockW / 2, 36);
+      ctx.textAlign = "left";
+      ctx.save();
+      ctx.shadowColor = withAlpha(GOLD, 0.85);
+      ctx.shadowBlur = 14;
+      ctx.font = shown.font;
+      ctx.fillStyle = "#FFF1B8";
+      ctx.fillText(shown.text, 90, 77);
+      ctx.restore();
+    });
+  }
+}
+
+// ---- challenges and the raffle -------------------------------------------------------
+
+/**
+ * A challenge for the room or a raffle (ADR-0040), in the hook banner's
+ * place under the character: it sits a little higher and is taller than
+ * the hook (visible y 916 to 1040), above where the caption's first line
+ * starts (y ~1070), and the hook steps aside while it's up.
+ */
+const CHALLENGE = { centerX: 540, top: 904, width: 920, height: 148, margin: 12 };
+const CHALLENGE_COLORS: Record<Challenge["kind"], readonly [string, string]> = {
+  likes: [HEART, GOLD],
+  chat: ["#7CF5FF", "#B16CFF"],
+  raffle: ["#4DFF9A", "#7CF5FF"],
+};
+/** The bar repaints at most this often while it moves. */
+const BAR_FRAME_S = 1 / 30;
+
+/** How full a challenge's bar is, 0 to 1: full once it's won; a raffle has no bar. */
+export function challengeFraction(challenge: Pick<Challenge, "kind" | "value" | "target" | "result">): number {
+  if (challenge.kind === "raffle") return 0;
+  if (challenge.result === "won") return 1;
+  return challenge.target > 0 ? Math.max(0, Math.min(1, challenge.value / challenge.target)) : 0;
+}
+
+/** The banner's big line and its second line, for each state: running, won, lost. */
+export function challengeHeadline(challenge: Pick<Challenge, "kind" | "title" | "value" | "target" | "result" | "winner">): { title: string; line: string } {
+  const count = `${formatCount(challenge.value)} / ${formatCount(challenge.target)}`;
+  if (challenge.kind === "raffle") {
+    const entries = `${formatCount(challenge.value)} ${challenge.value === 1 ? "participante" : "participantes"}`;
+    if (challenge.result === "won") return { title: `GANHOU: ${challenge.winner ?? "alguém"}`, line: entries };
+    if (challenge.result === "lost") return { title: "NINGUÉM PARTICIPOU", line: challenge.title };
+    return { title: challenge.title, line: entries };
+  }
+  if (challenge.result === "won") return { title: "CONSEGUIMOS!", line: count };
+  if (challenge.result === "lost") return { title: "QUASE!", line: count };
+  return { title: challenge.title, line: count };
+}
+
+/** The challenge banner: a title, how to take part, a bar to the target (or the raffle's entries) and a countdown. */
+export class ChallengeBanner {
+  readonly sprite: TextSprite;
+  readonly timer: TextSprite;
+  private challenge: Challenge | null = null;
+  private deadline = 0;
+  private second = Number.NaN;
+  private shownAt = 0;
+  private readonly bar = new Spring(0, SPRINGS.gentle);
+  private barPainted = -1;
+  private barPaintedAt = 0;
+
+  constructor(gl: Gl) {
+    this.sprite = new TextSprite(gl);
+    this.timer = new TextSprite(gl);
+  }
+
+  /** A challenge is up (the hook banner steps aside). */
+  get active(): boolean {
+    return this.challenge !== null;
+  }
+
+  set(challenge: Challenge | null, now: number, scale: number): void {
+    const before = this.challenge;
+    this.challenge = challenge;
+    if (!challenge) {
+      this.sprite.opacity.target = 0;
+      this.timer.opacity.target = 0;
+      return;
+    }
+    const fresh = !before || before.kind !== challenge.kind || before.title !== challenge.title || (before.result !== null && challenge.result === null);
+    this.deadline = now + challenge.remainingMs / 1000;
+    this.second = Number.NaN;
+    this.bar.target = challengeFraction(challenge);
+    if (fresh) {
+      this.bar.snap(0);
+      this.bar.target = challengeFraction(challenge);
+      this.shownAt = now;
+      this.sprite.opacity.snap(0);
+      this.sprite.offsetY.snap(46);
+      this.sprite.offsetY.target = 0;
+      this.timer.opacity.snap(0);
+      this.timer.offsetY.snap(46);
+      this.timer.offsetY.target = 0;
+    } else if (challenge.result !== null && before?.result === null) {
+      // It just ended: a hop for the result.
+      this.shownAt = now;
+      this.sprite.offsetY.snap(-18);
+      this.sprite.offsetY.target = 0;
+    }
+    this.paint(scale, now);
+    this.paintTimer(now, scale);
+  }
+
+  /** `game` (0 to 1) is how far a game board has come in: the banner gives way to it. */
+  update(dt: number, now: number, game: number, scale: number): void {
+    const challenge = this.challenge;
+    if (challenge) {
+      const show = game > 0.05 ? 0 : 1;
+      this.sprite.opacity.target = show;
+      this.timer.opacity.target = challenge.result === null ? show : 0;
+      if (now - this.shownAt > 0.6) {
+        const bob = Math.sin((now - this.shownAt) * 3.2) * 4;
+        this.sprite.offsetY.target = bob;
+        this.timer.offsetY.target = bob;
+      }
+      this.bar.step(dt);
+      const moved = Math.abs(this.bar.value - this.barPainted) > 0.004;
+      if (moved && now - this.barPaintedAt >= BAR_FRAME_S) this.paint(scale, now);
+      this.paintTimer(now, scale);
+    }
+    this.sprite.update(dt, now);
+    this.timer.update(dt, now);
+  }
+
+  repaint(scale: number): void {
+    if (!this.challenge) return;
+    this.paint(scale, this.barPaintedAt);
+    this.second = Number.NaN;
+  }
+
+  private paint(scale: number, now: number): void {
+    const challenge = this.challenge as Challenge;
+    const { width, height, margin } = CHALLENGE;
+    const [a, b] = challenge.result === "won" ? ([GOLD, "#FF8A3D"] as const) : challenge.result === "lost" ? (["#FF7A8A", "#B16CFF"] as const) : CHALLENGE_COLORS[challenge.kind];
+    const { title, line } = challengeHeadline(challenge);
+    const fraction = Math.max(0, Math.min(1, this.bar.value));
+    this.barPainted = this.bar.value;
+    this.barPaintedAt = now;
+    const running = challenge.result === null;
+    const raffle = challenge.kind === "raffle";
+    const titleFont = `900 36px ${FONT_FAMILY}`;
+    const detailFont = `700 24px ${FONT_FAMILY}`;
+    const lineFont = `850 25px ${FONT_FAMILY}`;
+    // Room on the right of the title row for the countdown chip.
+    const timerRoom = running ? 120 : 0;
+    this.sprite.x = CHALLENGE.centerX - width / 2;
+    this.sprite.y = CHALLENGE.top;
+    this.sprite.draw(width, height, scale, (ctx) => {
+      const w = width - margin * 2;
+      const h = height - margin * 2;
+      ctx.translate(margin, margin);
+      ctx.save();
+      ctx.shadowColor = withAlpha(a, 0.6);
+      ctx.shadowBlur = margin;
+      const body = ctx.createLinearGradient(0, 0, w, h);
+      body.addColorStop(0, "rgba(22,8,46,0.92)");
+      body.addColorStop(1, challenge.result === "won" ? "rgba(84,52,10,0.92)" : "rgba(12,6,30,0.9)");
+      ctx.fillStyle = body;
+      roundRect(ctx, 0, 0, w, h, 30);
+      ctx.fill();
+      ctx.restore();
+      const edge = ctx.createLinearGradient(0, 0, w, 0);
+      edge.addColorStop(0, a);
+      edge.addColorStop(1, b);
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 3;
+      roundRect(ctx, 1.5, 1.5, w - 3, h - 3, 29);
+      ctx.stroke();
+
+      // Title row: the kind's mark, the title, and (while it runs) how to take part.
+      const markX = 40;
+      const rowY = 38;
+      ctx.fillStyle = withAlpha(a, 0.2);
+      ctx.beginPath();
+      ctx.arc(markX, rowY, 22, 0, Math.PI * 2);
+      ctx.fill();
+      challengeMark(ctx, challenge, markX, rowY, a);
+      ctx.textBaseline = "middle";
+      const titleRoom = w - 76 - 24 - timerRoom;
+      const shownTitle = fit(title, titleFont, titleRoom);
+      ctx.font = titleFont;
+      ctx.save();
+      ctx.shadowColor = withAlpha(a, 0.7);
+      ctx.shadowBlur = 14;
+      const fill = ctx.createLinearGradient(0, rowY - 18, 0, rowY + 18);
+      fill.addColorStop(0, "#FFFFFF");
+      fill.addColorStop(1, challenge.result === "won" ? GOLD : withAlpha(a, 1));
+      ctx.fillStyle = fill;
+      ctx.fillText(shownTitle, 76, rowY + 2);
+      ctx.restore();
+      const titleW = measureWith(titleFont)(shownTitle);
+      if (running && !raffle && challenge.detail) {
+        ctx.font = detailFont;
+        ctx.fillStyle = HAZE;
+        const room = titleRoom - titleW - 18;
+        if (room > 60) ctx.fillText(fit(`· ${challenge.detail}`, detailFont, room), 76 + titleW + 14, rowY + 3);
+      }
+
+      // Second row: the bar to the target, or the raffle's entry word and count.
+      const barX = 24;
+      const barY = 74;
+      const barW = w - 48;
+      const barH = 38;
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
+      roundRect(ctx, barX, barY, barW, barH, barH / 2);
+      ctx.fill();
+      if (raffle) {
+        if (running && challenge.detail) {
+          // The word to type, big and bright, then the entries on the right.
+          ctx.font = `900 24px ${FONT_FAMILY}`;
+          const word = fit(challenge.detail.toUpperCase(), ctx.font, barW * 0.55);
+          const pillW = measureWith(ctx.font)(word) + 36;
+          ctx.fillStyle = withAlpha(a, 0.9);
+          roundRect(ctx, barX + 4, barY + 4, pillW, barH - 8, (barH - 8) / 2);
+          ctx.fill();
+          ctx.fillStyle = "#06240F";
+          ctx.fillText(word, barX + 22, barY + barH / 2 + 1);
+          ctx.font = lineFont;
+          ctx.textAlign = "right";
+          ctx.fillStyle = INK;
+          ctx.fillText(fit(line, lineFont, barW - pillW - 40), barX + barW - 18, barY + barH / 2 + 1);
+          ctx.textAlign = "left";
+        } else {
+          ctx.font = lineFont;
+          ctx.textAlign = "center";
+          ctx.fillStyle = challenge.result === "won" ? GOLD : INK;
+          ctx.fillText(fit(line, lineFont, barW - 40), barX + barW / 2, barY + barH / 2 + 1);
+          ctx.textAlign = "left";
+        }
+      } else {
+        if (fraction > 0) {
+          const bar = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+          bar.addColorStop(0, withAlpha(a, challenge.result === "lost" ? 0.45 : 0.85));
+          bar.addColorStop(1, withAlpha(b, challenge.result === "lost" ? 0.45 : 1));
+          ctx.fillStyle = bar;
+          roundRect(ctx, barX, barY, Math.max(barH, barW * fraction), barH, barH / 2);
+          ctx.fill();
+          // Light along the top of the fill.
+          ctx.fillStyle = "rgba(255,255,255,0.22)";
+          roundRect(ctx, barX + 6, barY + 4, Math.max(barH - 12, barW * fraction - 12), barH / 2 - 4, (barH / 2 - 4) / 2);
+          ctx.fill();
+        }
+        ctx.font = lineFont;
+        ctx.textAlign = "center";
+        ctx.lineWidth = 5;
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "rgba(10,4,26,0.7)";
+        ctx.strokeText(line, barX + barW / 2, barY + barH / 2 + 1);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillText(line, barX + barW / 2, barY + barH / 2 + 1);
+        ctx.textAlign = "left";
+      }
+      if (challenge.result === "won") {
+        sparkle(ctx, w - 30, 22, 22, "#FFF6D6");
+        sparkle(ctx, w - 62, 48, 13, "#FFF6D6");
+        sparkle(ctx, 24, 18, 14, "#FFF6D6");
+      }
+    });
+  }
+
+  /** The countdown chip at the right end of the title row, repainted when its second changes. */
+  private paintTimer(now: number, scale: number): void {
+    const challenge = this.challenge;
+    if (!challenge) return;
+    const left = Math.max(0, Math.ceil(this.deadline - now - 1e-6));
+    if (left === this.second) return;
+    this.second = left;
+    const text = formatClock(left);
+    const font = `850 26px ${FONT_FAMILY}`;
+    const width = Math.max(84, measureWith(font)(text) + 30);
+    const height = 44;
+    const soon = left <= 5;
+    const color = soon ? "#FF5C6C" : CHALLENGE_COLORS[challenge.kind][0];
+    const { margin } = CHALLENGE;
+    this.timer.x = CHALLENGE.centerX + CHALLENGE.width / 2 - margin - 22 - width;
+    this.timer.y = CHALLENGE.top + margin + 38 - height / 2;
+    this.timer.draw(width, height, scale, (ctx) => {
+      ctx.fillStyle = withAlpha(color, soon ? 0.32 : 0.2);
+      roundRect(ctx, 0, 0, width, height, height / 2);
+      ctx.fill();
+      ctx.strokeStyle = withAlpha(color, 0.8);
+      ctx.lineWidth = 2;
+      roundRect(ctx, 1, 1, width - 2, height - 2, (height - 2) / 2);
+      ctx.stroke();
+      ctx.font = font;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = soon ? "#FFD6DA" : INK;
+      ctx.fillText(text, width / 2, height / 2 + 1);
+    });
+  }
+}
+
+/** The challenge's mark: a heart for likes, a speech bubble for chat, a ticket star for the raffle, a crown once it's won. */
+function challengeMark(ctx: Canvas2D, challenge: Challenge, x: number, y: number, color: string): void {
+  if (challenge.result === "won") {
+    crown(ctx, x, y + 1, 26, color);
+    return;
+  }
+  switch (challenge.kind) {
+    case "likes":
+      heart(ctx, x, y + 1, 24, color);
+      return;
+    case "chat":
+      ctx.fillStyle = color;
+      roundRect(ctx, x - 12, y - 10, 24, 17, 6);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x - 6, y + 6);
+      ctx.lineTo(x - 9, y + 13);
+      ctx.lineTo(x + 1, y + 6);
+      ctx.closePath();
+      ctx.fill();
+      return;
+    case "raffle":
+      sparkle(ctx, x, y, 28, color);
+      return;
   }
 }

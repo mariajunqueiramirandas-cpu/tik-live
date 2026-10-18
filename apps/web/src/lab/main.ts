@@ -1,5 +1,5 @@
 import { createEngine, startDemo, type StageEngine } from "@tik-live/engine";
-import { EFFECTS, EMOTIONS, MUSIC_LIBRARY, musicTrackSchema, SOUNDS, type Effect, type Emotion, type GameScene, type Look, type Sound, type StageServerPayload } from "@tik-live/shared";
+import { EFFECTS, EMOTIONS, MUSIC_LIBRARY, musicTrackSchema, SOUNDS, type Challenge, type Effect, type Emotion, type GameScene, type Look, type PerksCard, type Sound, type StageServerPayload } from "@tik-live/shared";
 import "../stage/stage.css";
 import { HUD, SCENES, tick } from "./samples";
 
@@ -11,7 +11,10 @@ import { HUD, SCENES, tick } from "./samples";
  * `?gift=galaxy`, `?emotion=shy`, `?music=lofi-night`, `?caption=0` (no
  * sample caption with scenes), `?hud` (up next and top likers), `?support`
  * (the "apoie a live" card), `?goals` (the stream's goals), `?hook` (the call
- * to people scrolling past), `?bare` (no control panel).
+ * to people scrolling past), `?perks` (the gift powers), `?boss` (the "dono
+ * da live"), `?pick` (one viewer's choice), `?challenge=likes|chat|raffle|
+ * likes-won|likes-lost|raffle-won` (a challenge or the raffle), `?bare` (no
+ * control panel).
  */
 const params = new URLSearchParams(location.search);
 const manual = params.get("clock") === "manual";
@@ -33,6 +36,28 @@ const GIFTS: Record<string, { giftName: string; diamonds: number }> = {
   rocket: { giftName: "Rocket", diamonds: 500 },
   galaxy: { giftName: "Galaxy", diamonds: 1000 },
   lion: { giftName: "Lion", diamonds: 29_999 },
+};
+
+/** The gift powers on offer (ADR-0039). */
+const PERKS: PerksCard = {
+  title: "Poderes do presente",
+  rows: [
+    { diamonds: 1, text: "Salve com seu nome" },
+    { diamonds: 5, text: "Fura-fila: resposta na hora" },
+    { diamonds: 30, text: "Escolha o próximo jogo" },
+    { diamonds: 99, text: "Um hino só seu" },
+    { diamonds: 199, text: "Dono da live por 5 min" },
+  ],
+};
+
+/** Sample challenges by name (ADR-0040): running, won and lost. */
+const CHALLENGES: Record<string, Challenge> = {
+  likes: { kind: "likes", title: "DESAFIO DAS CURTIDAS", detail: "toque na tela", value: 640, target: 1_000, remainingMs: 32_000, durationMs: 45_000, result: null, winner: null },
+  "likes-won": { kind: "likes", title: "DESAFIO DAS CURTIDAS", detail: "toque na tela", value: 1_084, target: 1_000, remainingMs: 0, durationMs: 45_000, result: "won", winner: null },
+  "likes-lost": { kind: "likes", title: "DESAFIO DAS CURTIDAS", detail: "toque na tela", value: 812, target: 1_000, remainingMs: 0, durationMs: 45_000, result: "lost", winner: null },
+  chat: { kind: "chat", title: "CHUVA DE COMENTÁRIOS", detail: "digite BORA", value: 37, target: 80, remainingMs: 21_000, durationMs: 30_000, result: null, winner: null },
+  raffle: { kind: "raffle", title: "SORTEIO RELÂMPAGO", detail: "digite EU", value: 23, target: 0, remainingMs: 18_000, durationMs: 25_000, result: null, winner: null },
+  "raffle-won": { kind: "raffle", title: "SORTEIO RELÂMPAGO", detail: "digite EU", value: 41, target: 0, remainingMs: 0, durationMs: 25_000, result: "won", winner: "lu.desenha" },
 };
 
 const ready = () => ("ready" in engine ? (engine as unknown as { ready(): Promise<void> }).ready() : Promise.resolve());
@@ -86,6 +111,19 @@ const lab = {
   goals: (on = true) => engine.apply(on ? HUD.goals : { t: "goals", goals: [] }),
   /** Shows (or with false, takes down) the call to people scrolling past. */
   hook: (on = true) => engine.apply({ t: "hook", text: on ? "Comenta seu nome e ganha um apelido" : null }),
+  /** Shows (or with false, hides) the gift powers on offer. */
+  perks: (on = true) => engine.apply({ t: "perks", card: on ? PERKS : null }),
+  /** Crowns (or with null, uncrowns) the "dono da live" for five minutes. */
+  boss: (name: string | null = "mari.souza", leftMs = 300_000) => engine.apply({ t: "boss", boss: name ? { name, leftMs } : null }),
+  /** One viewer picks the next game (or with false, the card goes back to the rankings). */
+  pick: (on = true) =>
+    engine.apply({ t: "vote", vote: on ? { title: "Próximo jogo", options: ["Corrida maluca", "Roleta da sorte", "Batata quente"], tally: [0, 0, 0], by: "mari.souza" } : null }),
+  /** Shows a sample challenge by name (see CHALLENGES), or takes it down with null. */
+  challenge: (name: string | null = "likes") => engine.apply({ t: "challenge", challenge: name ? (CHALLENGES[name] ?? null) : null }),
+  /** The alerts for a new top gifter, a gift power and a raffle winner. */
+  crown: (name = "caio") => engine.apply({ t: "alert", kind: "crown", name }),
+  perkAlert: (name = "duda", perk = "Dono da live") => engine.apply({ t: "alert", kind: "perk", name, perk }),
+  raffleWinner: (name = "lu.desenha") => engine.apply({ t: "alert", kind: "raffle", name }),
   /** A viewer reaching a new fan level. */
   levelUp: (name = "duda", level = 7) => engine.apply({ t: "alert", kind: "level", name, level }),
   /** Reaches the like goal: the bar celebrates, then the next goal comes up. */
@@ -129,6 +167,11 @@ if (params.has("hud")) lab.hud();
 if (params.has("support")) lab.support();
 if (params.has("goals")) lab.goals();
 if (params.has("hook")) lab.hook();
+if (params.has("perks")) lab.perks();
+if (params.has("boss")) lab.boss();
+if (params.has("pick")) lab.pick();
+const challenge = params.get("challenge");
+if (challenge !== null) lab.challenge(challenge || "likes");
 
 if (!manual && !params.has("bare")) panel();
 
@@ -175,6 +218,20 @@ function panel(): void {
       lab.support(false);
       lab.hud(k !== "esconder");
     }
+  });
+  group("Poderes do presente", ["cardápio", "dono da live", "fim do reinado", "escolha de um", "novo topo", "poder desbloqueado", "esconder cardápio"], (k) => {
+    if (k === "cardápio") lab.perks();
+    else if (k === "esconder cardápio") lab.perks(false);
+    else if (k === "dono da live") lab.boss();
+    else if (k === "fim do reinado") lab.boss(null);
+    else if (k === "escolha de um") lab.pick();
+    else if (k === "novo topo") lab.crown();
+    else lab.perkAlert();
+  });
+  group("Desafios e sorteio", [...Object.keys(CHALLENGES), "ganhador do sorteio", "tirar"], (k) => {
+    if (k === "tirar") lab.challenge(null);
+    else if (k === "ganhador do sorteio") lab.raffleWinner();
+    else lab.challenge(k);
   });
   group("Votação", ["abrir votação", "fechar votação"], (k) =>
     lab.apply({ t: "vote", vote: k === "abrir votação" ? { title: "Jogo do quadro final", options: ["Quiz", "Charadas", "Dedo mais rápido"], tally: [4, 1, 9] } : null }),

@@ -1,3 +1,4 @@
+import type { AlertKind } from "@tik-live/shared";
 import { Spring, SPRINGS } from "../anim/spring";
 import type { Gl, Texture } from "../gl/gl";
 import { layoutCaption, wordAtProgress, type CaptionLayout } from "./layout";
@@ -236,7 +237,33 @@ export class Caption {
 
 // ---------------------------------------------------------------------------
 
-export type AlertKind = "gift" | "follow" | "share" | "level";
+export type { AlertKind };
+
+/** Alerts end at the right margin and stay clear of the HUD column on the left (it ends at x 404). */
+const ALERT_RIGHT = 1080 - 64;
+const ALERT_MAX_WIDTH = 600;
+const ALERT_SIZE = 32;
+const ALERT_MIN_SIZE = 24;
+const PERK_PINK = "#FF4FD8";
+const RAFFLE_GREEN = "#4DFF9A";
+
+/** What goes between the name and the highlighted end: "duda enviou Rose", "duda desbloqueou Fura-fila!". */
+export function alertVerb(kind: AlertKind): string {
+  return kind === "gift" ? " enviou " : kind === "perk" ? " desbloqueou " : " ";
+}
+
+/**
+ * The font size an alert fits `maxWidth` at, and the name cut to fit once
+ * the font is as small as it goes. `measure(text, size)` measures at a size.
+ */
+export function fitAlert(parts: readonly [string, string, string], maxWidth: number, measure: (text: string, size: number, strong: boolean) => number, pad = 16, extra = 0): { size: number; name: string } {
+  const width = (name: string, size: number) => measure(name, size, false) + measure(parts[1], size, false) + measure(parts[2], size, true) + pad * 2 + extra * (size / ALERT_SIZE);
+  let size = ALERT_SIZE;
+  while (size > ALERT_MIN_SIZE && width(parts[0], size) > maxWidth) size -= 2;
+  let name = parts[0];
+  while (name.length > 3 && width(name, size) > maxWidth) name = truncate(name, name.length - 1);
+  return { size, name };
+}
 
 export class Alerts {
   private readonly items: Array<{ sprite: TextSprite; bornAt: number; slot: Spring; kind: AlertKind; parts: [string, string, string] }> = [];
@@ -251,8 +278,7 @@ export class Alerts {
 
   push(kind: AlertKind, name: string, detail: string, now: number, scale: number): void {
     const sprite = this.pool.pop() ?? new TextSprite(this.gl);
-    const verb = kind === "gift" ? " enviou " : " ";
-    const parts: [string, string, string] = [truncate(name, 24), verb, detail];
+    const parts: [string, string, string] = [truncate(name, 24), alertVerb(kind), detail];
     this.paint(sprite, kind, parts, scale);
     sprite.opacity.snap(0);
     sprite.opacity.target = 1;
@@ -266,15 +292,17 @@ export class Alerts {
   update(dt: number, now: number): void {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const item = this.items[i]!;
-      if (now - item.bornAt > 6) {
+      // The loud ones (a new top gifter, a gift power) stay up a little longer.
+      const life = item.kind === "crown" || item.kind === "perk" ? 7.5 : 6;
+      if (now - item.bornAt > life) {
         item.sprite.opacity.target = 0;
         item.sprite.offsetY.target = -24;
       }
       item.slot.step(dt);
       item.sprite.update(dt, now);
-      item.sprite.x = 1080 - 64 - item.sprite.width;
+      item.sprite.x = ALERT_RIGHT - item.sprite.width;
       item.sprite.y = 360 + item.slot.value * 56;
-      if (now - item.bornAt > 7) this.retire(i, now);
+      if (now - item.bornAt > life + 1) this.retire(i, now);
     }
   }
 
@@ -296,29 +324,99 @@ export class Alerts {
     if (item) this.pool.push(item.sprite);
   }
 
+  private accent(kind: AlertKind): string {
+    switch (kind) {
+      case "gift":
+      case "crown":
+        return GOLD;
+      case "level":
+        return "#FFB84D";
+      case "perk":
+        return PERK_PINK;
+      case "raffle":
+        return RAFFLE_GREEN;
+      default:
+        return this.glow;
+    }
+  }
+
   private paint(sprite: TextSprite, kind: AlertKind, parts: [string, string, string], scale: number): void {
-    const font = `640 32px ${FONT_FAMILY}`;
-    const strong = `800 32px ${FONT_FAMILY}`;
+    // A new top gifter and a gift power get a pill of their own, with a mark on the left.
+    const pill = kind === "crown" || kind === "perk";
+    const mark = pill ? 40 : 0;
+    const pad = pill ? 22 : 16;
+    const fitted = fitAlert(parts, ALERT_MAX_WIDTH, (text, size, strong) => measureWith(`${strong ? 800 : 640} ${size}px ${FONT_FAMILY}`)(text), pad, mark);
+    const size = fitted.size;
+    const font = `640 ${size}px ${FONT_FAMILY}`;
+    const strong = `800 ${size}px ${FONT_FAMILY}`;
+    const name = fitted.name;
     const measure = measureWith(font);
-    const measureStrong = measureWith(strong);
-    const w0 = measure(parts[0]);
+    const w0 = measure(name);
     const w1 = measure(parts[1]);
-    const w2 = measureStrong(parts[2]);
-    const pad = 16;
-    const width = w0 + w1 + w2 + pad * 2;
-    const accent = kind === "gift" ? GOLD : kind === "level" ? "#FFB84D" : this.glow;
-    sprite.draw(width, 32 * 1.2 + pad * 2, scale, (ctx) => {
+    const w2 = measureWith(strong)(parts[2]);
+    const markW = mark * (size / ALERT_SIZE);
+    const width = w0 + w1 + w2 + pad * 2 + markW;
+    const height = size * 1.2 + 32;
+    const accent = this.accent(kind);
+    sprite.draw(width, height, scale, (ctx) => {
       ctx.textBaseline = "alphabetic";
+      const y = 16 + size;
+      let x = pad;
+      if (pill) {
+        // Gold (a new top gifter) or pink (a gift power) glass, with a crown or a diamond.
+        ctx.save();
+        ctx.shadowColor = withAlpha(accent, 0.7);
+        ctx.shadowBlur = 14;
+        const fill = ctx.createLinearGradient(0, 0, width, 0);
+        fill.addColorStop(0, kind === "crown" ? "rgba(92,58,8,0.92)" : "rgba(78,10,66,0.92)");
+        fill.addColorStop(1, "rgba(20,8,40,0.9)");
+        ctx.fillStyle = fill;
+        roundRect(ctx, 4, 6, width - 8, height - 12, (height - 12) / 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.strokeStyle = withAlpha(accent, 0.95);
+        ctx.lineWidth = 2.5;
+        roundRect(ctx, 4, 6, width - 8, height - 12, (height - 12) / 2);
+        ctx.stroke();
+        const cx = pad + markW / 2 - 4;
+        const cy = height / 2;
+        const s = size * 0.8;
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        if (kind === "crown") {
+          // A crown.
+          ctx.moveTo(cx - s / 2, cy + s * 0.35);
+          ctx.lineTo(cx - s / 2, cy - s * 0.3);
+          ctx.lineTo(cx - s / 4, cy);
+          ctx.lineTo(cx, cy - s * 0.45);
+          ctx.lineTo(cx + s / 4, cy);
+          ctx.lineTo(cx + s / 2, cy - s * 0.3);
+          ctx.lineTo(cx + s / 2, cy + s * 0.35);
+        } else {
+          // A diamond.
+          ctx.moveTo(cx - s / 2, cy - s * 0.15);
+          ctx.lineTo(cx - s / 4, cy - s * 0.4);
+          ctx.lineTo(cx + s / 4, cy - s * 0.4);
+          ctx.lineTo(cx + s / 2, cy - s * 0.15);
+          ctx.lineTo(cx, cy + s / 2);
+        }
+        ctx.closePath();
+        ctx.fill();
+        x += markW;
+      }
       ctx.shadowColor = "rgba(5,2,18,0.6)";
       ctx.shadowBlur = 10;
-      const y = pad + 32;
       ctx.font = font;
       ctx.fillStyle = INK;
-      ctx.fillText(parts[0], pad, y);
-      ctx.fillText(parts[1], pad + w0, y);
+      ctx.fillText(name, x, y);
+      ctx.fillText(parts[1], x + w0, y);
       ctx.font = strong;
-      ctx.fillStyle = accent;
-      ctx.fillText(parts[2], pad + w0 + w1, y);
+      ctx.fillStyle = kind === "crown" ? "#FFF1B8" : accent;
+      if (pill) {
+        ctx.shadowColor = withAlpha(accent, 0.8);
+        ctx.shadowBlur = 12;
+      }
+      ctx.fillText(parts[2], x + w0 + w1, y);
     });
   }
 }

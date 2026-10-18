@@ -20,6 +20,10 @@ const ACCENTS: Record<string, [number, number, number]> = {
   math: [0xe8, 0xf0, 0x7a],
   riddle: [0xc7, 0xa6, 0xff],
   fastest: [0xff, 0xe1, 0x4d],
+  race: [0xff, 0xb1, 0x5c],
+  wheel: [0xff, 0xd1, 0x5c],
+  tug: [0xff, 0xe0, 0x8a],
+  potato: [0xff, 0xb3, 0x47],
 };
 
 async function probe(page: Page, x: number, y: number): Promise<Rgba> {
@@ -95,8 +99,9 @@ test("every game scene draws its board, in its own accent, under a smaller chara
     expect(brightness(await probe(page, 540, 410)), `${name}: character up top`).toBeGreaterThan(300);
     // The board has text and shapes.
     expect(await count(page, [100, 600, 980, 1440], 12, "bright"), `${name}: board content`).toBeGreaterThan(40);
-    const kind = name.replace(/-reveal$|4$/, "");
-    if (name.endsWith("-reveal") || kind === "scoreboard" || kind === "podium") continue;
+    const kind = name.replace(/-(reveal|running|finish|boom)$|4$/, "");
+    // No timer once bets close or a round is revealed, and none on the potato: its fuse is secret.
+    if (/-(reveal|running|finish|boom)$/.test(name) || kind === "scoreboard" || kind === "podium" || kind === "potato") continue;
     // Open rounds: the timer bar (2/3 left) is in the scene's accent.
     expect(near(await probe(page, 200, 669), ACCENTS[kind]!), `${name}: timer in accent`).toBe(true);
   }

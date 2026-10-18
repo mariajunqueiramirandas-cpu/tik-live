@@ -1,8 +1,8 @@
-import { GoalPanel, HookBanner, LeaderCard, UpNext } from "../text/hud";
+import { BossBadge, ChallengeBanner, GoalPanel, HookBanner, LeaderCard, UpNext } from "../text/hud";
 import { Alerts, Caption, Chrome } from "../text/sprites";
 import type { Frame, Layer, StageContext } from "./layer";
 
-/** Segment title, AI-disclosure badge, up next, the ranking card, the goals, alerts and the caption: always on top. */
+/** Segment title, AI-disclosure badge, up next, the ranking card, the goals, the "dono da live", challenges, alerts and the caption: always on top. */
 export class TextLayer implements Layer {
   readonly caption: Caption;
   readonly alerts: Alerts;
@@ -11,6 +11,8 @@ export class TextLayer implements Layer {
   readonly card: LeaderCard;
   readonly goals: GoalPanel;
   readonly hook: HookBanner;
+  readonly boss: BossBadge;
+  readonly challenge: ChallengeBanner;
 
   constructor(private readonly ctx: StageContext) {
     this.caption = new Caption(ctx.gl);
@@ -20,6 +22,8 @@ export class TextLayer implements Layer {
     this.card = new LeaderCard(ctx.gl);
     this.goals = new GoalPanel(ctx.gl);
     this.hook = new HookBanner(ctx.gl);
+    this.boss = new BossBadge(ctx.gl);
+    this.challenge = new ChallengeBanner(ctx.gl);
   }
 
   setGlow(color: string, scale: number): void {
@@ -40,7 +44,10 @@ export class TextLayer implements Layer {
     this.upNext.update(dt, f.t, f.scale);
     this.card.update(dt, f.t, this.upNext.height, f.scale);
     this.goals.update(dt, f.t, f.scale);
-    this.hook.update(dt, f.t, f.game);
+    // A challenge takes the hook's spot while it's up.
+    this.hook.update(dt, f.t, this.challenge.active ? 1 : f.game);
+    this.challenge.update(dt, f.t, f.game, f.scale);
+    this.boss.update(dt, f.t, this.card.bottom(this.upNext.height), f.game, f.scale);
   }
 
   draw(): void {
@@ -52,6 +59,9 @@ export class TextLayer implements Layer {
     ctx.drawSprite(this.card.sprite);
     ctx.drawSprite(this.goals.sprite);
     ctx.drawSprite(this.hook.sprite);
+    ctx.drawSprite(this.challenge.sprite);
+    ctx.drawSprite(this.challenge.timer);
+    ctx.drawSprite(this.boss.sprite);
     // The disclosure badge is a legal requirement: it's drawn last but one and never hidden.
     ctx.drawSprite(this.chrome.badge);
     this.alerts.forEachSprite(ctx.drawSprite);
@@ -66,5 +76,7 @@ export class TextLayer implements Layer {
     this.card.repaint(scale);
     this.goals.repaint(scale);
     this.hook.repaint(scale);
+    this.boss.repaint(scale);
+    this.challenge.repaint(scale);
   }
 }

@@ -126,6 +126,8 @@ export const personaSchema = z.object({
   autoShow: z.boolean().optional(),
   /** Chat votes which minigame the run of show's last segment plays (ADR-0029). On when unset. */
   finalVote: z.boolean().optional(),
+  /** Every few minutes a challenge for the room: a like rush, a comment rush or a free raffle (ADR-0040). On when unset. */
+  challenges: z.boolean().optional(),
   /**
    * Now and then the stage shows how viewers can support the show (like,
    * follow, share, gifts) and the host explains it in a quiet moment

@@ -15,6 +15,8 @@ export const persona: Persona = {
   look: { character: "orb", primary: "#7CF5FF", secondary: "#FF5FD2", background: "#0B0420" },
   // Its announcement would join every turn sequence; vote.test.ts turns it on.
   finalVote: false,
+  // So would the room challenges; extras.test.ts turns them on.
+  challenges: false,
 };
 
 export function viewer(handle: string, id = handle): Viewer {

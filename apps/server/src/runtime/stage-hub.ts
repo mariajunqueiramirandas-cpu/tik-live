@@ -14,8 +14,10 @@ import {
   type StageRole,
   type StageServerPayload,
   type BoostKind,
+  type Challenge,
   type LeaderBoard,
   type LeaderRow,
+  type PerksCard,
   type SupportCard,
   type UpNextItem,
 } from "@tik-live/shared";
@@ -31,6 +33,8 @@ const START_GRACE_MS = 4_000;
 const END_GRACE_MS = 1_500;
 /** Stats change with every like; stages need them a few times a second at most. */
 const STATS_INTERVAL_MS = 250;
+/** A challenge that ended this long ago isn't worth showing to a stage that just connected. */
+const CHALLENGE_REPLAY_MS = 6_000;
 
 type VoteView = NonNullable<Extract<StageServerPayload, { t: "vote" }>["vote"]>;
 
@@ -90,6 +94,11 @@ export class StageHub implements SpeechOutput, StageNotifier {
   private lastVote: VoteView | null = null;
   private lastSupport: SupportCard | null = null;
   private lastHook: string | null = null;
+  private lastPerks: PerksCard | null = null;
+  /** The "dono da live" and when the reign ends (server clock), so a stage that connects counts down from now. */
+  private lastBoss: { name: string; endsAt: number } | null = null;
+  /** The challenge as last sent and when, so a stage that connects gets its clock from now. */
+  private lastChallenge: { challenge: Challenge; at: number } | null = null;
   /** The goals as last sent, and as last given (sent with the next tick of the coalescer). */
   private sentGoals: GoalView[] = [];
   private lastGoals: GoalView[] = [];
@@ -125,6 +134,12 @@ export class StageHub implements SpeechOutput, StageNotifier {
     if (this.lastVote) this.sendTo(peer, { t: "vote", vote: this.lastVote });
     if (this.lastSupport) this.sendTo(peer, { t: "support", card: this.lastSupport });
     if (this.lastHook) this.sendTo(peer, { t: "hook", text: this.lastHook });
+    if (this.lastPerks) this.sendTo(peer, { t: "perks", card: this.lastPerks });
+    if (this.lastBoss && this.lastBoss.endsAt > this.now()) {
+      this.sendTo(peer, { t: "boss", boss: { name: this.lastBoss.name, leftMs: this.lastBoss.endsAt - this.now() } });
+    }
+    const challenge = this.replayedChallenge();
+    if (challenge) this.sendTo(peer, { t: "challenge", challenge });
     if (this.lastGoals.length) this.sendTo(peer, { t: "goals", goals: this.lastGoals });
     // A piece that's nearly over isn't worth restarting from the top.
     if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
@@ -337,6 +352,33 @@ export class StageHub implements SpeechOutput, StageNotifier {
     this.broadcast({ t: "alert", kind: "level", name, level });
   }
 
+  crown(name: string): void {
+    this.broadcast({ t: "alert", kind: "crown", name });
+  }
+
+  perk(name: string, perk: string): void {
+    this.broadcast({ t: "alert", kind: "perk", name, perk });
+  }
+
+  raffleWinner(name: string): void {
+    this.broadcast({ t: "alert", kind: "raffle", name });
+  }
+
+  perks(card: PerksCard | null): void {
+    this.lastPerks = card;
+    this.broadcast({ t: "perks", card });
+  }
+
+  boss(boss: { name: string; leftMs: number } | null): void {
+    this.lastBoss = boss ? { name: boss.name, endsAt: this.now() + boss.leftMs } : null;
+    this.broadcast({ t: "boss", boss });
+  }
+
+  challenge(challenge: Challenge | null): void {
+    this.lastChallenge = challenge ? { challenge, at: this.now() } : null;
+    this.broadcast({ t: "challenge", challenge });
+  }
+
   support(card: SupportCard | null): void {
     this.lastSupport = card;
     this.broadcast({ t: "support", card });
@@ -401,6 +443,17 @@ export class StageHub implements SpeechOutput, StageNotifier {
   }
 
   // ---- internals ----------------------------------------------------------
+
+  /** The challenge as a stage connecting now should see it: its clock moved on, and nothing that ended a while ago. */
+  private replayedChallenge(): Challenge | null {
+    const last = this.lastChallenge;
+    if (!last) return null;
+    const elapsed = this.now() - last.at;
+    const { challenge } = last;
+    if (challenge.result !== null) return elapsed < CHALLENGE_REPLAY_MS ? challenge : null;
+    // Still running as far as the server knows (the director sends the result when it's over).
+    return { ...challenge, remainingMs: Math.max(0, challenge.remainingMs - elapsed) };
+  }
 
   private broadcast(payload: StageServerPayload): void {
     const data = JSON.stringify({ v: PROTOCOL_VERSION, ...payload });

@@ -1,5 +1,6 @@
 import {
   autoShow,
+  type Challenge,
   clip,
   GAME_KINDS,
   GAME_LABELS,
@@ -15,6 +16,7 @@ import {
   type LeaderRow,
   type LiveEvent,
   type Persona,
+  type PerksCard,
   runOfShow,
   type Segment,
   type Sound,
@@ -26,8 +28,10 @@ import {
 import type { Logger } from "../../log";
 import type { GameMaster } from "../games/master";
 import type { LoopRanking } from "../games/ranking";
-import { FinalVote, voteOptions } from "../games/vote";
+import { FinalVote, pickOptions, SoloPick, voteOptions } from "../games/vote";
+import { niceTarget, RoomChallenge } from "../challenges";
 import { type GoalReached, StreamGoals } from "../goals";
+import { BOSS_MS, GiftPerks, includes, perksCard, perksSummary, VIP_MS, type Unlock } from "../perks";
 import { levelOf } from "./fans";
 import { GIFT_WINDOW_MS, LIKE_WINDOW_MS, RollingBoard } from "../leaderboards";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
@@ -62,8 +66,8 @@ export interface StageNotifier {
   sfx?(sound: Sound): void;
   /** What's coming up on the show, soonest first (ADR-0028). */
   schedule?(items: UpNextItem[]): void;
-  /** Chat's vote on the last segment's game, or null when it closes (ADR-0029). */
-  vote?(vote: { title: string; options: string[]; tally: number[] } | null): void;
+  /** Chat's vote on the last segment's game, or null when it closes (ADR-0029). With `by`, one viewer's pick (ADR-0039). */
+  vote?(vote: { title: string; options: string[]; tally: number[]; by?: string } | null): void;
   /** A ranking: the top likers over the last 15 minutes, or gifters over the last hour. */
   leaders?(board: LeaderBoard, rows: LeaderRow[], windowMin: number): void;
   /** The "how to support the show" card, or null to put the rankings back (ADR-0032). */
@@ -74,6 +78,18 @@ export interface StageNotifier {
   fanLevel?(name: string, level: number): void;
   /** A big call to people scrolling past, or null to take it down (ADR-0037). */
   hook?(text: string | null): void;
+  /** The gift powers on offer, in the ranking card's place, or null to put the rankings back (ADR-0039). */
+  perks?(card: PerksCard | null): void;
+  /** The "dono da live" and how long their reign has left, or null when it ends (ADR-0039). */
+  boss?(boss: { name: string; leftMs: number } | null): void;
+  /** An alert: a viewer just took first place among the gifters (ADR-0039). */
+  crown?(name: string): void;
+  /** An alert: a gift just unlocked a power for this viewer (ADR-0039). */
+  perk?(name: string, perk: string): void;
+  /** A challenge for the room or a raffle, or null to take it down (ADR-0040). */
+  challenge?(challenge: Challenge | null): void;
+  /** An alert: a viewer won the raffle (ADR-0040). */
+  raffleWinner?(name: string): void;
 }
 
 /** Observability hooks for the studio feed and analytics. */
@@ -123,6 +139,10 @@ export interface DirectorOptions {
   giftAsks?: () => GiftAsks;
   /** Varies the automatic run of show between streams (ADR-0035); random when unset. */
   showSeed?: number;
+  /** Gift powers are on (the channel's safety setting, ADR-0039); on when unset. */
+  giftPerks?: () => boolean;
+  /** Draws raffle winners and the games a viewer picks from; Math.random when unset. */
+  random?: () => number;
   log?: Logger;
   now?: () => number;
 }
@@ -151,8 +171,8 @@ const SEGMENT_OVERDUE_MS = 30_000;
  * at the next free moment, if they were sent this recently. Older than that,
  * an answer lands on a conversation chat has already left behind.
  */
-const OWED_TTL_MS = 90_000;
-const OWED_MAX = 3;
+const OWED_TTL_MS = 120_000;
+const OWED_MAX = 5;
 const CHAT_SAMPLE = 12;
 /** A ranking goes to the stage at most this often. */
 const LEADERS_EVERY_MS = 1_000;
@@ -182,7 +202,12 @@ const HOOKS: ReadonlyArray<{ banner: string; offer: string }> = [
   { banner: "A IA DÁ NOTA PRO SEU NOME", offer: "type their name and you'll rate it from 0 to 10 with a funny reason" },
   { banner: "TEM JOGO VALENDO PÓDIO · FICA AÍ", offer: "stick around: games are coming, worth points and a spot on the podium" },
   { banner: "DIGA DE ONDE VOCÊ É", offer: "say where they're watching from, and you'll say something fun about the place" },
+  { banner: "TEM SORTEIO GRÁTIS NA LIVE", offer: "stick around: there are free raffles during the live (typing EU enters), and the winner picks a game" },
+  { banner: "APOSTA, CORRIDA, BATATA QUENTE", offer: "stay for the games: horse-race bets, a hot potato, a tug of war, all worth points and a spot on the podium" },
+  { banner: "A IA RESPONDE TUDO · SEM ENROLAR", offer: "ask you anything at all, and you'll give your honest, spicy opinion, live" },
 ];
+/** Only on channels that ask for gifts actively: the gift powers, as a reason to stay. */
+const PERKS_HOOK = { banner: "PRESENTE DE 30 = VOCÊ ESCOLHE O JOGO", offer: "send a gift of 30 diamonds or more and choose the next game themselves (one of the show's gift powers on screen)" };
 const HOOK_FIRST_MS = 90_000;
 const HOOK_EVERY_MS = 4 * 60_000;
 /** After this many arrivals within ARRIVALS_WINDOW_MS, the next quiet moment is a hook (at most once a minute). */
@@ -196,6 +221,52 @@ const FLOURISHES: readonly Effect[] = ["sparkles", "jump", "stars", "spin", "bub
 /** Level-ups the host mentions: from this level up, and at most one mention this often (every level-up still gets its alert). */
 const LEVEL_TALK_FROM = 3;
 const LEVEL_TALK_GAP_MS = 90_000;
+/**
+ * Gift powers (ADR-0039): the card with what each gift unlocks, by how
+ * actively the channel asks for gifts; how long a viewer has to pick the
+ * next game; how long a picked game is; the most anthems waiting.
+ */
+const PERKS_PACE: Record<GiftAsks, { first: number; every: number }> = {
+  light: { first: 4.5 * 60_000, every: 7 * 60_000 },
+  active: { first: 2.5 * 60_000, every: 4 * 60_000 },
+};
+const PERKS_CARD_SHOW_MS = 18_000;
+const PICK_MS = 30_000;
+const PICK_ROUNDS = 3;
+/** A picked game waits this long after the last one ends. */
+const PICK_BREAK_MS = 8_000;
+const PICK_TITLE = "Escolha do próximo jogo";
+/** Taking first place among the gifters is news at most this often. */
+const CROWN_GAP_MS = 20_000;
+/**
+ * Room challenges (ADR-0040): a like rush, a free raffle and a comment rush
+ * in turn, the first a few minutes in, then every few minutes, only with
+ * people there to play and nothing else on.
+ */
+const CHALLENGES = ["likes", "raffle", "chat"] as const;
+const CHALLENGE_FIRST_MS = 4 * 60_000;
+const CHALLENGE_EVERY_MS = 6 * 60_000;
+const CHALLENGE_RETRY_MS = 20_000;
+const CHALLENGE_MIN_VIEWERS = 2;
+const CHALLENGE_MS: Record<(typeof CHALLENGES)[number], number> = { likes: 45_000, raffle: 25_000, chat: 30_000 };
+const CHALLENGE_SEND_MS = 250;
+const RUSH_WORDS = ["BORA", "LIVE", "SALVE", "TOP", "AMO"];
+const RAFFLE_WORD = "EU";
+/** How many likes a minute the room has been sending, over this long. */
+const LIKE_RATE_MS = 3 * 60_000;
+/** What the room gets for beating a challenge: the host does one of these right away. */
+const CHALLENGE_PRIZES: ReadonlyArray<{ prize: string; needsMusic?: boolean }> = [
+  { prize: "play a short victory song with play_music and sing one short line over it", needsMusic: true },
+  { prize: "give the room a spicy hot take on something everyone argues about, and defend it" },
+  { prize: "replay the moment like an over-the-top football narrator" },
+  { prize: "rate the room from 0 to 10 with a funny reason" },
+  { prize: "confess a made-up embarrassing secret about yourself" },
+];
+/** Viewers who just arrived for the first time get welcomed by name, a few at a time. */
+const NEWCOMER_TTL_MS = 60_000;
+const NEWCOMERS_MAX = 3;
+const WELCOME_GAP_MS = 45_000;
+
 /** When the card first goes up and how often after that, and the same for the host's explanation, by how actively the channel asks for gifts. */
 const SUPPORT_PACE: Record<GiftAsks, { cardFirst: number; cardEvery: number; talkFirst: number; talkEvery: number }> = {
   light: { cardFirst: 3 * 60_000, cardEvery: 8 * 60_000, talkFirst: 6 * 60_000, talkEvery: 20 * 60_000 },
@@ -221,6 +292,8 @@ export const TURN_PRIORITY: Record<TurnKind, number> = {
   opening: 40,
   game: 45,
   request: 45,
+  // A gifter's anthem plays to the end: a new gift waits for it.
+  perk: 45,
   react: 50,
 };
 
@@ -240,7 +313,7 @@ export function eventUrgency(event: LiveEvent): number {
 const EMPTY_ROOM_REACT_ONLY_MS = 10 * 60 * 1000;
 
 /** Ideas for quiet moments, in rotation, so fillers don't all sound alike. */
-const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean; needsGoals?: boolean }> = [
+const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean; needsGoals?: boolean; needsUpNext?: boolean }> = [
   { beat: "ask chat one fresh, easy question you haven't asked before." },
   { beat: "share a quick, original opinion or hot take, then ask chat if they agree." },
   { beat: "follow up on something a viewer told you earlier, by name.", needsChat: true },
@@ -248,6 +321,13 @@ const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean; needsGoal
   { beat: "welcome anyone who just arrived, say in one line what this show is about, and invite them to say hi." },
   { beat: "cheer chat on toward the stream's goals: say how many likes or diamonds are left to the next one.", needsGoals: true },
   { beat: "start a quick challenge chat can answer in one word." },
+  { beat: "call a roll: ask everyone watching to type 1 in chat (or the city they're in) so you can see who's here." },
+  { beat: "pick one viewer who chatted recently and interview them by name with one fun, unexpected question.", needsChat: true },
+  { beat: "tease what's coming up on the show (it's on screen) and give people a reason to stay for it.", needsUpNext: true },
+  { beat: "share a bold, spicy opinion on something people love to argue about (food, football, music, dating, the internet), and dare chat to disagree." },
+  { beat: "ask whoever hasn't followed yet to follow so they don't miss the next game, in one fun line." },
+  { beat: "make a funny prediction about someone in chat, by name, like a fortune teller.", needsChat: true },
+  { beat: "ask chat to share the live with one friend who'd love it, and say you'll thank whoever shares by name." },
 ];
 
 export function nextLikeMilestone(likes: number): number {
@@ -385,11 +465,38 @@ export class Director {
   private supportCardAt = Infinity;
   private supportHideAt = Infinity;
   private supportTalkAt = Infinity;
+  /** Gift powers (ADR-0039): who unlocked what, the boss on stage, the one viewer picking the next game, and the game they picked. */
+  private readonly perks = new GiftPerks();
+  private bossShown: string | null = null;
+  private pick: { ballot: SoloPick; closesAt: number } | null = null;
+  private pendingPicks: Array<{ id: string; name: string; reason: "gift" | "raffle" }> = [];
+  /** The game a viewer picked, and the announcement it waits for (so the host says who chose it before it starts). */
+  private pickedGame: { config: GameConfig; by: string; cue: { note: string; line: string; history: string } } | null = null;
+  private anthems: string[] = [];
+  private crownAt = -Infinity;
+  private perksCardAt = Infinity;
+  private perksHideAt = Infinity;
+  /** Show moments for a game-priority turn, in order: a pick opening or closing, a challenge starting or ending. */
+  private eventCues: Array<{ note: string; line: string; history: string }> = [];
+  /** Room challenges (ADR-0040), and what the stage last got. */
+  private readonly challenge: RoomChallenge;
+  private challengeAt = Infinity;
+  private challengeIndex = 0;
+  private challengeKey = "";
+  private challengeSentAt = -Infinity;
+  private prizeIndex = 0;
+  private likeLog: Array<{ at: number; count: number }> = [];
+  /** First-time viewers who just arrived, to welcome by name. */
+  private newcomers: Array<{ id: string; name: string; at: number }> = [];
+  private welcomedAt = -Infinity;
+  private readonly random: () => number;
   private readonly engine: TurnEngine;
   private readonly now: () => number;
 
   constructor(private readonly options: DirectorOptions) {
     this.now = options.now ?? Date.now;
+    this.random = options.random ?? Math.random;
+    this.challenge = new RoomChallenge(this.random);
     this.persona = options.persona;
     this.showSeed = options.showSeed ?? Math.floor(Math.random() * 2 ** 31);
     this.show = runOfShow(this.persona, 0, this.showSeed);
@@ -472,6 +579,17 @@ export class Director {
     } else if (this.opened && this.supportCardAt === Infinity) {
       this.scheduleSupport(this.now());
     }
+    if (persona.challenges === false && this.challenge.shown()) {
+      this.challenge.stop();
+      this.options.stage.challenge?.(null);
+      this.challengeKey = "";
+    }
+    if (!this.perksOn()) {
+      this.hidePerks();
+      this.perksCardAt = Infinity;
+    } else if (this.opened && this.perksCardAt === Infinity) {
+      this.perksCardAt = this.now() + PERKS_PACE[this.giftAsks()].first;
+    }
     const index = show.findIndex((s) => s.id === currentId);
     if (index >= 0) {
       this.segmentIndex = index;
@@ -523,6 +641,7 @@ export class Director {
       this.voteCue = null;
       this.finalGame = null;
       this.loops = 0;
+      this.clearShowExtras();
       this.publishHud(this.now(), true);
       this.options.hooks?.onEvent?.(event, null);
       return;
@@ -534,6 +653,8 @@ export class Director {
     }
     if (event.kind !== "viewers" && event.kind !== "like") this.lastEventAt = this.now();
 
+    /** What the brief should say about this event besides its kind (a gift power it unlocked, a crown it took). */
+    const tags: string[] = [];
     const levelBefore = "viewer" in event ? levelOf(this.options.memory.get(event.viewer.id)) : 0;
     const record = this.options.memory.observe(event);
     if (record && "viewer" in event && levelOf(record) > levelBefore) this.levelUp(event.viewer, levelOf(record));
@@ -565,16 +686,22 @@ export class Director {
           this.sound("levelup");
         }
         this.boards.likes.add(event.viewer.id, this.boardName(event.viewer), event.count);
+        // Likes pull the rope in a tug of war (ADR-0038), and count in a like challenge (ADR-0040).
+        this.options.games?.handleLike(event);
+        this.challenge.like(event.count);
+        this.noteLikes(this.now(), event.count);
         this.options.stage.stats({ viewers: this.viewers, likes: this.counters.likes });
         if (this.goalsOn()) this.publishGoals();
         this.options.hooks?.onEvent?.(event, null);
         return;
       }
-      case "gift":
+      case "gift": {
         this.counters.gifts += 1;
         this.stirred(this.now());
         this.counters.diamonds += event.diamonds;
+        const top = this.boards.gifts.top(1)[0]?.name;
         this.boards.gifts.add(event.viewer.id, this.boardName(event.viewer), event.diamonds);
+        tags.push(...this.crown(top), ...this.unlockPerks(event));
         if (this.goalsOn()) {
           this.reachGoal(this.goals.update("gifts", this.counters.diamonds));
           this.publishGoals();
@@ -585,6 +712,7 @@ export class Director {
         this.sound(event.diamonds >= 1_000 ? "fanfare" : event.diamonds >= 100 ? "levelup" : event.diamonds >= 10 ? "chime" : "pop");
         this.remember({ at: event.at, kind: "support", event });
         break;
+      }
       case "follow":
         this.counters.follows += 1;
         this.stirred(this.now());
@@ -611,15 +739,26 @@ export class Director {
           this.options.hooks?.onEvent?.(event, { queued: false, reason: "vote" });
           return;
         }
+        // And the one viewer picking the next game, and entries in a challenge or the raffle.
+        if (this.pick?.ballot.cast(event.viewer.id, event.text)) {
+          this.options.hooks?.onEvent?.(event, { queued: false, reason: "pick" });
+          return;
+        }
+        if (this.challenge.chat(event.viewer.id, this.boardName(event.viewer), event.text, this.now())) {
+          this.options.hooks?.onEvent?.(event, { queued: false, reason: "challenge" });
+          return;
+        }
         break;
       case "join":
         this.counters.joins += 1;
         this.noteArrival(this.now());
+        if (!this.options.memory.isReturning(event.viewer.id)) this.noteNewcomer(event.viewer, this.now());
         break;
       default:
         break;
     }
     const result = this.options.triage.ingest(event);
+    if (tags.length && result.queued) result.item.tags = [...(result.item.tags ?? []), ...tags];
     this.options.hooks?.onEvent?.(event, result);
     if (!result.queued && result.overheard && (event.kind === "chat" || event.kind === "question")) {
       // Viewers talking to each other, or a laugh: the host hears it, but nobody asks it to answer.
@@ -785,6 +924,8 @@ export class Director {
     this.pendingLevels.clear();
     this.publishGoals();
     this.clearBoards();
+    this.clearShowExtras();
+    this.likeLog = [];
   }
 
   state(): DirectorState {
@@ -811,6 +952,10 @@ export class Director {
     this.options.ranking?.tick(idle);
     const now = this.now();
     this.maybeOpenVote(now);
+    this.maybeClosePick(now);
+    this.maybeChallenge(now);
+    this.maybeEndBoss(now);
+    this.maybeShowPerks(now);
     this.maybeShowSupport(now);
     this.maybeFlourish(now);
     if (now >= this.hookHideAt) this.hideHook();
@@ -862,7 +1007,9 @@ export class Director {
     const { triage, speech } = this.options;
     const games = this.options.games;
     const ranking = this.options.ranking;
-    const game = [games?.hostContext() ?? ranking?.hostContext(), this.voteContext()].filter(Boolean).join("\n") || undefined;
+    const game =
+      [games?.hostContext() ?? ranking?.hostContext(), this.voteContext(), this.pickContext(now), this.challenge.describe(now), this.bossContext(now)].filter(Boolean).join("\n") ||
+      undefined;
     const segment = this.segment();
     const segmentEndsAt = this.segmentStartedAt + segment.minutes * 60_000;
     const base = {
@@ -881,6 +1028,8 @@ export class Director {
       this.scheduleSupport(now);
       this.hookAt = now + HOOK_FIRST_MS;
       this.flourishAt = now + FLOURISH_EVERY_MS;
+      this.challengeAt = now + CHALLENGE_FIRST_MS;
+      if (this.perksOn()) this.perksCardAt = now + PERKS_PACE[this.giftAsks()].first;
       // Whoever woke the show up gets greeted in the opening, not answered again right after it.
       const focus = this.takeFocus();
       return { ...base, kind: "opening", items: focus.items };
@@ -900,10 +1049,24 @@ export class Director {
       return { ...base, kind: "game", items: [], note: voteCue.note, line: voteCue.line };
     }
 
+    const event = this.eventCues.shift();
+    if (event) {
+      this.remember({ at: now, kind: "show", text: event.history });
+      return { ...base, kind: "game", items: [], note: event.note, line: event.line };
+    }
+
     if (this.pendingRequest !== undefined) {
       const note = this.pendingRequest;
       this.pendingRequest = undefined;
       return { ...base, kind: "request", items: [], note };
+    }
+
+    // A gift's anthem, once no round is waiting on answers (music never plays over one).
+    const round = games?.status()?.phase;
+    if (this.anthems.length && round !== "open" && round !== "running") {
+      const name = this.anthems.shift() as string;
+      this.remember({ at: now, kind: "show", text: `${name}'s anthem, unlocked with a gift.` });
+      return { ...base, kind: "perk", items: [], note: this.anthemNote(name), line: `Esse é o hino de ${name}! ${name}, ${name}, a estrela da live!` };
     }
 
     // A game in progress (or the podium) finishes before the segment moves on (a forced change already stopped a segment's game).
@@ -1049,8 +1212,9 @@ export class Director {
   /** The quiet moment's call to people scrolling past, when one is due: its note for the host, with the offer big on stage. */
   private takeHook(): string | undefined {
     const now = this.now();
-    if (now < this.hookAt || this.options.games?.isActive()) return undefined;
-    const hook = HOOKS[this.hookIndex++ % HOOKS.length] as (typeof HOOKS)[number];
+    if (now < this.hookAt || this.options.games?.isActive() || this.challenge.shown()) return undefined;
+    const hooks = this.perksOn() && this.giftAsks() === "active" ? [...HOOKS, PERKS_HOOK] : HOOKS;
+    const hook = hooks[this.hookIndex++ % hooks.length] as (typeof HOOKS)[number];
     this.hookAt = now + HOOK_EVERY_MS;
     this.lastHookAt = now;
     this.arrivals = [];
@@ -1076,6 +1240,292 @@ export class Director {
     this.flourishAt = now + FLOURISH_EVERY_MS;
     if (this.options.games?.isActive() || this.options.ranking?.isRevealing()) return;
     this.options.stage.fx?.(FLOURISHES[this.flourishIndex++ % FLOURISHES.length] as Effect, 0.7);
+  }
+
+  // ---- gift powers (ADR-0039) ------------------------------------------------------
+
+  private perksOn(): boolean {
+    return this.options.giftPerks?.() ?? true;
+  }
+
+  /** A gift that takes first place among the gifters: an alert now, and a word in the host's thank-you. */
+  private crown(before: string | undefined): string[] {
+    const now = this.now();
+    const top = this.boards.gifts.top(1)[0]?.name;
+    if (!before || !top || top === before || now - this.crownAt < CROWN_GAP_MS) return [];
+    this.crownAt = now;
+    this.options.stage.crown?.(top);
+    this.sound("fanfare");
+    return [`took first place among the gifters from ${before}`];
+  }
+
+  /** What a gift unlocked: on stage now, and what the host should know when it thanks the gift. */
+  private unlockPerks(event: Extract<LiveEvent, { kind: "gift" }>): string[] {
+    if (!this.perksOn()) return [];
+    const now = this.now();
+    const name = this.boardName(event.viewer);
+    const unlock: Unlock | null = this.perks.gift(event.viewer.id, name, event.diamonds, now);
+    if (!unlock) return [];
+    const { perk } = unlock;
+    this.options.stage.perk?.(name, perk.label);
+    this.options.stage.fx?.("stars", 1.5);
+    this.sound("levelup");
+    this.options.triage.promote(event.viewer.id, perk.id === "boss" ? "boss" : "vip", now + (perk.id === "boss" ? BOSS_MS : VIP_MS));
+    // The pick opens with the thank-you, which tells them how to choose (one turn, not two).
+    const pick = includes(perk.id, "pick") ? this.queuePick(event.viewer.id, name, "gift", now, false) : undefined;
+    if (perk.id === "anthem") this.anthems = [...this.anthems, name].slice(-2);
+    if (perk.id === "boss") {
+      // The old dono da live keeps cutting the line for a while, but the crown is gone.
+      if (unlock.dethroned) this.options.triage.demote(unlock.dethroned.id);
+      this.showBoss(now);
+      this.options.stage.fx?.("fireworks", 2.5);
+      this.remember({ at: now, kind: "show", text: `${name} is the dono da live for the next ${BOSS_MS / 60_000} minutes${unlock.dethroned ? `, taking the crown from ${unlock.dethroned.name}` : ""}.` });
+    }
+    const choose = pick ? `; the card on screen shows their pick of the next game (${pick}): tell ${name} to type the number now, they have ${PICK_MS / 1000} seconds` : "";
+    return [`unlocked ${perk.label}: ${name} ${perk.note}${unlock.dethroned ? `, and took the crown from ${unlock.dethroned.name}` : ""}; make it a moment${choose}`];
+  }
+
+  private showBoss(now: number): void {
+    const boss = this.perks.boss(now);
+    this.bossShown = boss?.id ?? null;
+    this.options.stage.boss?.(boss ? { name: boss.name, leftMs: boss.until - now } : null);
+  }
+
+  /** The reign ends on its own: the crown comes off the stage. */
+  private maybeEndBoss(now: number): void {
+    if (!this.bossShown || this.perks.boss(now)) return;
+    this.bossShown = null;
+    this.options.stage.boss?.(null);
+    this.remember({ at: now, kind: "show", text: "The dono da live's reign just ended: the crown is up for grabs again." });
+  }
+
+  private bossContext(now: number): string | undefined {
+    const boss = this.perks.boss(now);
+    if (!boss) return undefined;
+    return `Dono da live: ${boss.name}, for ${Math.max(1, Math.ceil((boss.until - now) / 60_000))} more min (a gift power): treat them like royalty, give them a royal title, and do what they ask when it's safe and playful.`;
+  }
+
+  /**
+   * A viewer gets to pick the next game: theirs opens now, or after the one
+   * before it. Returns the options when it opened right away; with `cue`
+   * off, the caller's own line announces them.
+   */
+  private queuePick(id: string, name: string, reason: "gift" | "raffle", now: number, cue = true): string | undefined {
+    if (!this.options.games || this.pick?.ballot.viewerId === id || this.pendingPicks.some((p) => p.id === id)) return undefined;
+    this.pendingPicks = [...this.pendingPicks, { id, name, reason }].slice(-3);
+    return this.maybeOpenPick(now, cue);
+  }
+
+  private maybeOpenPick(now: number, cue = true): string | undefined {
+    if (this.pick || this.pickedGame) return undefined;
+    const next = this.pendingPicks.shift();
+    if (!next) return undefined;
+    const ballot = new SoloPick(next.id, next.name, pickOptions(this.random, this.options.games?.status()?.kind), next.reason);
+    this.pick = { ballot, closesAt: now + PICK_MS };
+    const options = ballot.labels.map((label, i) => `${i + 1}) ${label}`).join(", ");
+    this.sound("start");
+    if (!cue) return options;
+    const why = next.reason === "gift" ? "unlocked it with a gift" : "won the raffle";
+    this.eventCues.push({
+      note: `${next.name} ${why} and chooses the next minigame alone: ${options}. Read the options and tell ${next.name}, by name, to type the number in chat now (${PICK_MS / 1000} seconds). Make them feel powerful.`,
+      line: `${next.name}, você escolhe o próximo jogo! ${ballot.labels.map((label, i) => `${i + 1} para ${label}`).join(", ")}. Digita o número!`,
+      history: `${next.name} gets to pick the next game: ${options}.`,
+    });
+    return options;
+  }
+
+  /** The pick is in (or its time ran out and the show drew for them): that game is next. */
+  private maybeClosePick(now: number): void {
+    const pick = this.pick;
+    if (!pick || (!pick.ballot.choice && now < pick.closesAt)) return;
+    const chosen = pick.ballot.choice;
+    const kind = chosen ?? (pick.ballot.options[Math.floor(this.random() * pick.ballot.options.length)] as GameKind);
+    this.pick = null;
+    const label = GAME_LABELS[kind];
+    const when = this.options.games?.isActive() ? "right after this game" : "right now";
+    const cue = {
+      note: chosen
+        ? `${pick.ballot.name} chose ${label}! Celebrate their choice by name in one line and say it starts ${when}.`
+        : `${pick.ballot.name} didn't choose in time, so the show drew ${label} for them. Say so in one playful line, and that it starts ${when}.`,
+      line: `${pick.ballot.name} escolheu ${label}!`,
+      history: `${pick.ballot.name}'s pick: ${label} (${chosen ? "chosen" : "drawn for them"}), starting ${when}.`,
+    };
+    this.eventCues.push(cue);
+    this.pickedGame = { config: { kind, rounds: PICK_ROUNDS }, by: pick.ballot.name, cue };
+    this.options.stage.fx?.("confetti", 1.2);
+    this.sound("reveal");
+  }
+
+  private pickContext(now: number): string | undefined {
+    const pick = this.pick;
+    if (!pick) return undefined;
+    return `${pick.ballot.name} is choosing the next game (only their message counts, ${Math.max(0, Math.ceil((pick.closesAt - now) / 1000))} s left): ${pick.ballot.labels.map((label, i) => `${i + 1}) ${label}`).join(", ")}.`;
+  }
+
+  private anthemNote(name: string): string {
+    const music = this.persona.sound?.music !== false && this.options.actions?.playMusic !== undefined;
+    return music
+      ? `${name} unlocked a personal anthem with a gift. Say one short line introducing "o hino de ${name}", then compose it with play_music: a short, upbeat original piece with their name in the title. Sing two short original lines about ${name} as your speech, their name in them.`
+      : `${name} unlocked a personal anthem with a gift. Rap or sing two short original lines about ${name}, with their name in them, with all the drama of a stadium anthem.`;
+  }
+
+  /** The card with what each gift unlocks, now and then, where the rankings are (never over a vote or the support card). */
+  private maybeShowPerks(now: number): void {
+    if (now >= this.perksHideAt) this.hidePerks();
+    if (now < this.perksCardAt || this.standby || !this.perksOn()) return;
+    if (this.vote || this.pick || this.supportHideAt !== Infinity) {
+      this.perksCardAt = now + 30_000;
+      return;
+    }
+    this.options.stage.perks?.(perksCard());
+    this.perksHideAt = now + PERKS_CARD_SHOW_MS;
+    this.perksCardAt = now + PERKS_PACE[this.giftAsks()].every;
+  }
+
+  private hidePerks(): void {
+    if (this.perksHideAt === Infinity) return;
+    this.perksHideAt = Infinity;
+    this.options.stage.perks?.(null);
+  }
+
+  /** Everything gift powers and challenges put on the show belongs to one stream. */
+  private clearShowExtras(): void {
+    this.perks.clear();
+    if (this.bossShown) this.options.stage.boss?.(null);
+    this.bossShown = null;
+    this.pick = null;
+    this.pendingPicks = [];
+    this.pickedGame = null;
+    this.anthems = [];
+    this.eventCues = [];
+    this.hidePerks();
+    if (this.challenge.shown()) {
+      this.challenge.stop();
+      this.options.stage.challenge?.(null);
+    }
+    this.challengeKey = "";
+    this.newcomers = [];
+  }
+
+  // ---- room challenges (ADR-0040) --------------------------------------------------
+
+  private noteLikes(now: number, count: number): void {
+    const last = this.likeLog.at(-1);
+    // One entry a second is plenty for a rate.
+    if (last && now - last.at < 1_000) last.count += count;
+    else this.likeLog.push({ at: now, count });
+    while (this.likeLog.length && now - (this.likeLog[0] as { at: number }).at > LIKE_RATE_MS) this.likeLog.shift();
+  }
+
+  /** Likes a minute lately (over the stream so far when it's younger than the window). */
+  private likesPerMinute(now: number): number {
+    const total = this.likeLog.filter((entry) => now - entry.at <= LIKE_RATE_MS).reduce((sum, entry) => sum + entry.count, 0);
+    const minutes = Math.max(1, Math.min(LIKE_RATE_MS, now - this.startedAt) / 60_000);
+    return total / minutes;
+  }
+
+  /** Starts the next challenge when one is due and the room is free for it; ends the one running when its time is up. */
+  private maybeChallenge(now: number): void {
+    const ended = this.challenge.tick(now);
+    if (ended) this.challengeEnded(ended, now);
+    if (now < this.challengeAt || this.challenge.shown() || !this.opened || this.paused || this.standby || this.persona.challenges === false) return;
+    const busy = this.options.games?.isActive() || this.options.ranking?.isRevealing() || this.pick || this.vote || this.reactOnly();
+    if (busy || this.viewers < CHALLENGE_MIN_VIEWERS) {
+      this.challengeAt = now + CHALLENGE_RETRY_MS;
+      return;
+    }
+    const kind = CHALLENGES[this.challengeIndex++ % CHALLENGES.length] as (typeof CHALLENGES)[number];
+    const durationMs = CHALLENGE_MS[kind];
+    const seconds = durationMs / 1000;
+    const word = kind === "raffle" ? RAFFLE_WORD : (RUSH_WORDS[Math.floor(this.random() * RUSH_WORDS.length)] as string);
+    const target =
+      kind === "likes"
+        ? niceTarget(Math.min(100_000, Math.max(50, this.viewers * 12, this.likesPerMinute(now) * (seconds / 60) * 1.6)))
+        : kind === "chat"
+          ? niceTarget(Math.min(300, Math.max(10, this.viewers * 1.2)))
+          : 0;
+    this.challenge.start({ kind, target, durationMs, word }, now);
+    this.challengeAt = now + CHALLENGE_EVERY_MS;
+    this.hideHook();
+    this.sound("start");
+    const notes = {
+      likes: {
+        note: `Like challenge, on screen now: ${target.toLocaleString("en-US")} likes in ${seconds} seconds! Rally everyone to tap the screen nonstop, with huge energy, and say there's a prize if they make it.`,
+        line: `Desafio das curtidas! ${target.toLocaleString("pt-BR")} curtidas em ${seconds} segundos. Toca na tela sem parar!`,
+      },
+      chat: {
+        note: `Comment rush, on screen now: ${target} messages with "${word}" in ${seconds} seconds! Tell chat to type ${word} as many times as they can, and say there's a prize if they make it.`,
+        line: `Chuva de comentários! Digitem ${word} sem parar: ${target} mensagens em ${seconds} segundos!`,
+      },
+      raffle: {
+        note: `Free raffle, on screen now: whoever types ${word} in the next ${seconds} seconds is in, and you'll draw one winner who gets to pick the next game. Entering is free. Say it with energy so people scrolling past join in.`,
+        line: `Sorteio relâmpago! Digita ${word} no chat pra participar. Quem ganhar escolhe o próximo jogo!`,
+      },
+    }[kind];
+    this.eventCues.push({ ...notes, history: `A ${kind === "likes" ? "like challenge" : kind === "chat" ? "comment rush" : "raffle"} started on stage.` });
+  }
+
+  private challengeEnded(ended: NonNullable<ReturnType<RoomChallenge["tick"]>>, now: number): void {
+    const stage = this.options.stage;
+    if (ended.kind === "raffle") {
+      if (!ended.winner) {
+        this.sound("fail");
+        this.eventCues.push({
+          note: "Nobody entered the raffle. Joke about it in one line and say there'll be another one soon, so stick around.",
+          line: "Ninguém entrou no sorteio? Vou fazer outro daqui a pouco, hein!",
+          history: "Nobody entered the raffle.",
+        });
+        return;
+      }
+      const name = ended.winner.name;
+      stage.raffleWinner?.(name);
+      stage.fx?.("confetti", 2);
+      this.sound("fanfare");
+      const options = this.queuePick(ended.winner.id, name, "raffle", now, false);
+      this.eventCues.push({
+        note: `${name} won the raffle (out of ${ended.players})! Congratulate them by name, give them a funny title, and say their prize: they pick the next minigame${options ? `. The card shows their options (${options}): tell ${name} to type the number now, they have ${PICK_MS / 1000} seconds` : ", right after the pick before theirs"}.`,
+        line: `${name} ganhou o sorteio! E o prêmio: você escolhe o próximo jogo!`,
+        history: `${name} won the raffle, out of ${ended.players}${options ? `, and is picking the next game: ${options}` : ""}.`,
+      });
+      return;
+    }
+    const what = ended.kind === "likes" ? `${ended.value.toLocaleString("en-US")} likes` : `${ended.value} messages`;
+    if (ended.result === "won") {
+      stage.fx?.("fireworks", 3);
+      stage.fx?.("confetti", 2);
+      this.sound("fanfare");
+      const prizes = CHALLENGE_PRIZES.filter((p) => !p.needsMusic || (this.persona.sound?.music !== false && this.options.actions?.playMusic !== undefined));
+      const prize = (prizes[this.prizeIndex++ % prizes.length] as (typeof CHALLENGE_PRIZES)[number]).prize;
+      this.eventCues.push({
+        note: `The room beat the ${ended.kind === "likes" ? "like challenge" : "comment rush"}: ${what}! Celebrate big and thank everyone, then, as the prize, ${prize}.`,
+        line: "Conseguimos! Vocês são demais!",
+        history: `The room beat the ${ended.kind === "likes" ? "like challenge" : "comment rush"} with ${what}.`,
+      });
+    } else {
+      this.sound("fail");
+      this.eventCues.push({
+        note: `The ${ended.kind === "likes" ? "like challenge" : "comment rush"} ended at ${what} of ${ended.target.toLocaleString("en-US")}. So close: tease the room playfully in one line and promise a rematch soon.`,
+        line: "Quase! Na próxima a gente consegue.",
+        history: `The ${ended.kind === "likes" ? "like challenge" : "comment rush"} fell short: ${what} of ${ended.target}.`,
+      });
+    }
+  }
+
+  // ---- people arriving ---------------------------------------------------------------
+
+  private noteNewcomer(viewer: Viewer, now: number): void {
+    const name = this.boardName(viewer);
+    if (!name || name === "visitante" || this.newcomers.some((n) => n.id === viewer.id)) return;
+    this.newcomers = [...this.newcomers.filter((n) => now - n.at < NEWCOMER_TTL_MS), { id: viewer.id, name, at: now }].slice(-NEWCOMERS_MAX * 2);
+  }
+
+  /** Up to three people who just arrived for the first time, to welcome by name (at most every so often). */
+  private takeNewcomers(now: number): string[] {
+    if (now - this.welcomedAt < WELCOME_GAP_MS) return [];
+    const fresh = this.newcomers.filter((n) => now - n.at < NEWCOMER_TTL_MS).slice(-NEWCOMERS_MAX);
+    this.newcomers = [];
+    if (fresh.length) this.welcomedAt = now;
+    return fresh.map((n) => n.name);
   }
 
   private goalsOn(): boolean {
@@ -1156,7 +1606,7 @@ export class Director {
     triage.discard((item) => item.event.kind === "chat" && !isQuestion(item.event));
     const segment = this.segment();
     const game = this.options.games?.fillerNote();
-    const next = game ?? (this.takeSupportTalk() ? SUPPORT_TALK[this.giftAsks()] : `get on with "${segment.title}": ${segment.prompt}`);
+    const next = game ?? (this.takeSupportTalk() ? this.supportTalk() : `get on with "${segment.title}": ${segment.prompt}`);
     return {
       ...base,
       kind: "show",
@@ -1172,14 +1622,28 @@ export class Director {
     if (this.options.ranking?.isRevealing()) return "The loop's podium is on screen. Celebrate the top players by name in a line or two and invite everyone to play in the next loop.";
     const segment = this.segment();
     // The support explanation is rarer, so it goes first when both are due; the call to passers-by takes the next quiet moment.
-    if (this.takeSupportTalk()) return `Keep the show alive for "${segment.title}". This time, ${SUPPORT_TALK[this.giftAsks()]}`;
+    if (this.takeSupportTalk()) return `Keep the show alive for "${segment.title}". This time, ${this.supportTalk()}`;
+    // Naming who just arrived beats a call to everyone passing by; the call takes the next quiet moment.
+    const now = this.now();
+    const newcomers = this.takeNewcomers(now);
+    if (newcomers.length) {
+      return `Keep the show alive for "${segment.title}". This time, welcome ${newcomers.join(", ")} by name: ${newcomers.length === 1 ? "they're" : "they're all"} here for the first time. One warm, fun line, then tell them one thing they can do right now (play the game on screen, ask you anything, type their name for a nickname).`;
+    }
     const hook = this.takeHook();
     if (hook) return hook;
     const chat = this.engine.conversation.hasViewerChat();
-    const usable = (beat: (typeof FILLER_BEATS)[number]) => (!beat.needsChat || chat) && (!beat.needsGoals || this.goalsOn());
+    const upNext = this.upNext(now).length > 0;
+    const usable = (beat: (typeof FILLER_BEATS)[number]) => (!beat.needsChat || chat) && (!beat.needsGoals || this.goalsOn()) && (!beat.needsUpNext || upNext);
     let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     if (!usable(pick)) pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     return `Keep the show alive for "${segment.title}" (${segment.prompt}). This time, ${pick.beat}`;
+  }
+
+  /** How the host explains supporting the show; with gift powers on, it names a couple of them too. */
+  private supportTalk(): string {
+    const talk = SUPPORT_TALK[this.giftAsks()];
+    if (!this.perksOn()) return talk;
+    return `${talk} Then say the show has gift powers, the show's own rules (${perksSummary()}), and name one or two${this.giftAsks() === "active" ? " with energy" : ", to the whole room, without asking anyone by name"}.`;
   }
 
   private supportOn(): boolean {
@@ -1304,13 +1768,31 @@ export class Director {
   private publishHud(now: number, force = false): void {
     const stage = this.options.stage;
     if (stage.vote) {
+      // One viewer's pick of the next game goes over chat's vote while it's open (ADR-0039).
+      const pick = this.pick;
       const vote = this.vote;
       const tally = vote?.ballot.tally() ?? [];
-      const key = vote ? `${vote.ballot.labels.join("|")}:${tally.join(",")}` : "";
-      if (force || (key !== this.voteKey && (key === "" || this.voteKey === "" || now - this.voteSentAt >= LEADERS_EVERY_MS))) {
+      const key = pick ? `pick:${pick.ballot.viewerId}:${pick.ballot.labels.join("|")}` : vote ? `${vote.ballot.labels.join("|")}:${tally.join(",")}` : "";
+      if (force || (key !== this.voteKey && (key === "" || this.voteKey === "" || pick !== null || now - this.voteSentAt >= LEADERS_EVERY_MS))) {
         this.voteKey = key;
         this.voteSentAt = now;
-        stage.vote(vote ? { title: VOTE_TITLE, options: vote.ballot.labels, tally } : null);
+        stage.vote(
+          pick
+            ? { title: PICK_TITLE, options: pick.ballot.labels, tally: [], by: pick.ballot.name }
+            : vote
+              ? { title: VOTE_TITLE, options: vote.ballot.labels, tally }
+              : null,
+        );
+      }
+    }
+    if (stage.challenge) {
+      const view = this.challenge.view(now);
+      // The countdown runs on stage; only a new count or the result needs a message.
+      const key = view ? `${view.kind}:${view.value}:${view.result}:${view.winner}` : "";
+      if (force || (key !== this.challengeKey && (key === "" || this.challengeKey === "" || view?.result !== null || now - this.challengeSentAt >= CHALLENGE_SEND_MS))) {
+        this.challengeKey = key;
+        this.challengeSentAt = now;
+        stage.challenge(view);
       }
     }
     if (stage.schedule) {
@@ -1357,9 +1839,20 @@ export class Director {
     if (this.persona.sound?.effects !== false) this.options.stage.sfx?.(sound);
   }
 
-  /** Starts the current segment's game when the segment has one and the room is ready for it. */
+  /** Starts the current segment's game when the segment has one and the room is ready for it; a viewer's pick goes first. */
   private maybeStartSegmentGame(now: number): void {
     const games = this.options.games;
+    const picked = this.pickedGame;
+    const announced = picked !== null && !this.eventCues.includes(picked.cue);
+    if (games && picked && announced && this.opened && !games.isActive() && !this.options.ranking?.isRevealing() && now - games.lastEndedAt() >= PICK_BREAK_MS) {
+      const started = games.start(picked.config, "pick", this.chatSample());
+      if (started.ok) {
+        this.options.log?.info(`starting the game a viewer picked (${picked.config.kind})`);
+        this.pickedGame = null;
+        this.maybeOpenPick(now);
+      }
+      return;
+    }
     const config = this.segmentGame(this.segmentIndex);
     // Not gated on a quiet room: on a busy stream it never is, and the game's cue gets its own turn.
     if (!games || !config || !this.opened || games.isActive() || this.options.ranking?.isRevealing() || this.reactOnly()) return;

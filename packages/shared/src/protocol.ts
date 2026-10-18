@@ -52,6 +52,42 @@ export const supportCardSchema = z.object({
 });
 export type SupportCard = z.infer<typeof supportCardSchema>;
 
+/**
+ * The gift powers on offer (ADR-0039): what a gift of so many diamonds
+ * unlocks on the show, one row each, cheapest first.
+ */
+export const perksCardSchema = z.object({
+  title: z.string().max(60),
+  rows: z.array(z.object({ diamonds: z.number().int().min(1), text: z.string().max(40) })).min(1).max(5),
+});
+export type PerksCard = z.infer<typeof perksCardSchema>;
+
+/**
+ * A short challenge for the whole room (ADR-0040): likes or messages to a
+ * target before the clock runs out, or a free raffle chat enters by typing
+ * a word. Times are relative to receipt.
+ */
+export const CHALLENGE_KINDS = ["likes", "chat", "raffle"] as const;
+export type ChallengeKind = (typeof CHALLENGE_KINDS)[number];
+export const challengeSchema = z.object({
+  kind: z.enum(CHALLENGE_KINDS),
+  /** "DESAFIO DAS CURTIDAS". */
+  title: z.string().max(60),
+  /** How to take part: "toque na tela", "digite EU". */
+  detail: z.string().max(60),
+  /** Likes or messages so far, or raffle entries. */
+  value: z.number().int().min(0),
+  /** The target; 0 for a raffle. */
+  target: z.number().int().min(0),
+  remainingMs: z.number().min(0),
+  durationMs: z.number().min(0),
+  /** How it ended: "won" (the target was reached, or someone won the raffle) or "lost"; null while it runs. */
+  result: z.enum(["won", "lost"]).nullable(),
+  /** The raffle's winner. */
+  winner: z.string().max(40).nullable(),
+});
+export type Challenge = z.infer<typeof challengeSchema>;
+
 export const GOAL_KINDS = ["likes", "gifts"] as const;
 export type GoalKind = (typeof GOAL_KINDS)[number];
 
@@ -63,6 +99,9 @@ export const goalViewSchema = z.object({
   level: z.number().int().min(1),
 });
 export type GoalView = z.infer<typeof goalViewSchema>;
+
+export const ALERT_KINDS = ["gift", "follow", "share", "level", "crown", "perk", "raffle"] as const;
+export type AlertKind = (typeof ALERT_KINDS)[number];
 
 export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({
@@ -92,14 +131,20 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({
     v,
     t: z.literal("alert"),
-    /** "level": a viewer just reached a new fan level (ADR-0037). */
-    kind: z.enum(["gift", "follow", "share", "level"]),
+    /**
+     * "level": a viewer just reached a new fan level (ADR-0037). "crown": a
+     * viewer just took first place among the gifters; "perk": a gift unlocked
+     * a gift power (ADR-0039); "raffle": a viewer won the raffle (ADR-0040).
+     */
+    kind: z.enum(ALERT_KINDS),
     name: z.string(),
     giftName: z.string().optional(),
     count: z.number().optional(),
     diamonds: z.number().optional(),
     /** The fan level reached, for "level". */
     level: z.number().int().min(1).optional(),
+    /** The power unlocked, for "perk" ("Dono da live"). */
+    perk: z.string().max(40).optional(),
   }),
   z.object({ v, t: z.literal("segment"), title: z.string() }),
   z.object({ v, t: z.literal("stats"), viewers: z.number(), likes: z.number() }),
@@ -123,11 +168,19 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
         title: z.string().max(60),
         options: z.array(z.string().max(40)).min(2).max(3),
         tally: z.array(z.number().int().min(0)).max(3),
+        /** Only this viewer chooses (a gift power or the raffle's prize, ADR-0039): no tally, their name on the card. */
+        by: z.string().max(40).optional(),
       })
       .nullable(),
   }),
   /** The "how to support the show" card, in the ranking card's place for a moment, or null to put the rankings back (ADR-0032). */
   z.object({ v, t: z.literal("support"), card: supportCardSchema.nullable() }),
+  /** The gift powers on offer, in the ranking card's place for a moment, or null to put the rankings back (ADR-0039). */
+  z.object({ v, t: z.literal("perks"), card: perksCardSchema.nullable() }),
+  /** Who's the "dono da live" right now and for how much longer (relative to receipt), or null when nobody is (ADR-0039). */
+  z.object({ v, t: z.literal("boss"), boss: z.object({ name: z.string().max(40), leftMs: z.number().min(0) }).nullable() }),
+  /** A challenge for the whole room or a raffle, with its live count, or null to take it down (ADR-0040). */
+  z.object({ v, t: z.literal("challenge"), challenge: challengeSchema.nullable() }),
   /** A big call to people scrolling past, under the character for a few seconds, or null to take it down (ADR-0037). */
   z.object({ v, t: z.literal("hook"), text: z.string().max(60).nullable() }),
   /** The stream's like and gift goals and how far along they are; an empty list hides them (ADR-0036). */

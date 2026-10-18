@@ -1,4 +1,4 @@
-import { BOOST_LABELS, type BoostKind, type Effect } from "@tik-live/shared";
+import { BOOST_LABELS, type AlertKind, type BoostKind, type Effect } from "@tik-live/shared";
 import type { MusicPlayer } from "../audio/music";
 import { Spring, SPRINGS } from "../anim/spring";
 import { hexToRgb, type Rgb } from "../color";
@@ -93,8 +93,8 @@ export class FxLayer {
   private bannerText: [string, string] = ["", ""];
   private bannerColor = GOLD_HEX;
   private bannerUntil = -1;
-  /** A power-up banner waiting for a gift's banner to finish. */
-  private pendingBanner: { big: string; small: string } | null = null;
+  /** Banners waiting for the one on screen to finish (a power-up, a new top gifter), oldest first. */
+  private readonly pendingBanners: Array<{ big: string; small: string; color: string; seconds: number }> = [];
   /** Gifts in quick succession: "COMBO ×5" over the character's head. */
   private readonly combo: TextSprite;
   private comboCount = 0;
@@ -200,12 +200,33 @@ export class FxLayer {
     }
   }
 
-  /** Gifts by tier, follows and shares (the alert text itself is the text layer's). */
-  alert(kind: "gift" | "follow" | "share" | "level", name: string, giftName: string, diamonds: number, now: number): void {
+  /** Gifts by tier, follows, shares, level-ups, a new top gifter, gift powers and the raffle (the alert text itself is the text layer's). */
+  alert(kind: AlertKind, name: string, giftName: string, diamonds: number, now: number): void {
     this.now = now;
     if (kind === "level") {
       this.play("sparkles", 1, now);
       return this.play("stars", 1.1, now);
+    }
+    if (kind === "crown") {
+      // A new top gifter: fireworks, a gold burst, and the crown changing hands on a banner.
+      this.play("fireworks", 1.6, now);
+      this.burst(KIND.star, 34, WARM, 58);
+      this.character.move("jump", now, 1);
+      this.flash = Math.min(1.4, this.flash + 0.9);
+      this.screenFlash = Math.max(this.screenFlash, 0.45);
+      return this.queueBanner("NOVO TOPO!", `${truncate(name, 24)} assumiu a coroa`, GOLD_HEX, 2.4, now);
+    }
+    if (kind === "perk") {
+      this.play("sparkles", 1.3, now);
+      this.play("stars", 1.1, now);
+      this.flash = Math.min(1.4, this.flash + 0.5);
+      return this.character.kick(-3);
+    }
+    if (kind === "raffle") {
+      // The raffle's own banner names the winner; here it's the party.
+      this.play("confetti", 1.5, now);
+      this.play("sparkles", 0.9, now);
+      return this.character.move("jump", now, 1);
     }
     if (kind === "follow") return this.play("stars", 0.8, now);
     if (kind === "share") return this.play("bubbles", 0.8, now);
@@ -245,8 +266,14 @@ export class FxLayer {
     const small = `presente de ${truncate(by, 24)}`;
     this.play("sparkles", 1.4, now);
     this.character.move("jump", now, 0.8);
-    if (this.bannerUntil > now) this.pendingBanner = { big, small };
-    else this.showBanner(big, small, now, BOOST_HEX, 2);
+    this.queueBanner(big, small, BOOST_HEX, 2, now);
+  }
+
+  /** Shows a banner now, or after the ones already up or waiting (at most three wait). */
+  private queueBanner(big: string, small: string, color: string, seconds: number, now: number): void {
+    if (this.bannerUntil > now || this.pendingBanners.length) {
+      if (this.pendingBanners.length < 3) this.pendingBanners.push({ big, small, color, seconds });
+    } else this.showBanner(big, small, now, color, seconds);
   }
 
   /** New likes: hearts float up from the bottom right, at most six a second. */
@@ -300,10 +327,9 @@ export class FxLayer {
       this.banner.offsetY.target = -30;
       this.bannerUntil = -1;
     }
-    if (this.pendingBanner && this.bannerUntil < 0 && this.banner.opacity.value < 0.05) {
-      const { big, small } = this.pendingBanner;
-      this.pendingBanner = null;
-      this.showBanner(big, small, t, BOOST_HEX, 2);
+    if (this.pendingBanners.length && this.bannerUntil < 0 && this.banner.opacity.value < 0.05) {
+      const next = this.pendingBanners.shift() as (typeof this.pendingBanners)[number];
+      this.showBanner(next.big, next.small, t, next.color, next.seconds);
     }
     this.banner.update(dt, t);
     // The combo floats over the character's head and fades once the gifts stop.
