@@ -21,11 +21,13 @@ import { displayName } from "../brain/prompt";
 import type { SafetyVerdict } from "../safety/gate";
 import { matchesAnswer, normalize, readNumber, readOption, readTrueFalse, readWord } from "./answers";
 import {
-  contentKey,
+  avoidLine,
   guessLanguage,
   makeMath,
   makeNumber,
   pickFromBank,
+  pickThemes,
+  sameIdea,
   scrambleLetters,
   type RoundContent,
   type WrittenKind,
@@ -175,6 +177,10 @@ const READY_MAX_MS = 15_000;
 const HURRY_MS = 5_000;
 /** Writing questions takes this long at most before the bank fills in. */
 const PREP_TIMEOUT_MS = 20_000;
+/** How many of a kind's past rounds the writer is told to stay away from. */
+const AVOID_MAX = 60;
+/** How many past rounds a stream remembers, so a long stream doesn't repeat itself. */
+const PLAYED_MAX = 600;
 const PUBLISH_EVERY_MS = 250;
 const GUESS_COOLDOWN_MS = 2_500;
 /** Hints show up after this share of the round. */
@@ -204,8 +210,8 @@ export class GameMaster {
   private dirty = false;
   private publishedAt = 0;
   private endedAt = -Infinity;
-  /** Rounds used this stream, so games don't repeat themselves. */
-  private readonly used = new Set<string>();
+  /** Rounds played this stream, so games don't repeat themselves. */
+  private played: RoundContent[] = [];
   private readonly now: () => number;
   private readonly random: () => number;
 
@@ -528,11 +534,18 @@ export class GameMaster {
             ...(game.config.topic ? { topic: game.config.topic } : {}),
             ...(this.options.language() ? { language: this.options.language() as string } : {}),
             chatSample: chatSample.slice(-12),
-            avoid: [...this.used].slice(-30).map((key) => key.slice(key.indexOf(":") + 1)),
+            avoid: this.played
+              .filter((round) => round.kind === kind)
+              .slice(-AVOID_MAX)
+              .map(avoidLine),
+            ...(game.config.topic ? {} : { themes: pickThemes(kind, this.random) }),
           },
           prep.signal,
         );
-        rounds = await this.vet(written.filter((round) => !this.used.has(contentKey(round))));
+        // Models reword what they wrote before: drop a round that's an old one in new words, or a twin of another in the batch.
+        const fresh: RoundContent[] = [];
+        for (const round of written) if (!this.wasPlayed(round) && !fresh.some((kept) => sameIdea(kept, round))) fresh.push(round);
+        rounds = await this.vet(fresh);
       }
     } catch (err) {
       if (this.game === game) this.options.log?.warn("couldn't write game rounds; using the built-in ones", err);
@@ -543,8 +556,8 @@ export class GameMaster {
     if (this.game !== game) return;
     if (rounds.length < wanted) {
       const language = guessLanguage(this.options.language(), chatSample);
-      const taken = new Set([...this.used, ...rounds.map(contentKey)]);
-      rounds.push(...pickFromBank(language, kind, wanted - rounds.length, taken, this.random));
+      const queued = rounds;
+      rounds.push(...pickFromBank(language, kind, wanted - rounds.length, (item) => this.wasPlayed(item) || queued.some((round) => sameIdea(round, item)), this.random));
     }
     game.queue = rounds.slice(0, wanted);
     if (game.queue.length === 0) {
@@ -572,6 +585,10 @@ export class GameMaster {
     });
   }
 
+  private wasPlayed(round: RoundContent): boolean {
+    return this.played.some((old) => sameIdea(old, round));
+  }
+
   private hasNextRound(game: ActiveGame): boolean {
     const kind = game.config.kind;
     return kind === "number" || kind === "math" || game.index < game.queue.length;
@@ -582,7 +599,7 @@ export class GameMaster {
     const kind = game.config.kind;
     const content: RoundContent =
       kind === "number" ? makeNumber(this.random) : kind === "math" ? makeMath(game.index + 1, this.random) : (game.queue[game.index] as RoundContent);
-    this.used.add(contentKey(content));
+    this.played = [...this.played, content].slice(-PLAYED_MAX);
     const round: Round = {
       content,
       openedAt: now,
