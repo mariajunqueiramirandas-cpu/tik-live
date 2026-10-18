@@ -4,12 +4,13 @@ import s from "./studio.module.css";
 
 type Tone = "ok" | "warn" | "bad" | "off";
 
-function Item({ tone, label, value }: { tone: Tone; label: string; value: string }) {
+function Item({ tone, label, value, detail }: { tone: Tone; label: string; value: string; detail?: string }) {
   return (
     <li className={cx(s.healthItem, s[tone])}>
       <span className={s.healthDot} aria-hidden />
       <span className={s.healthLabel}>{label}</span>
       <span className={s.healthValue}>{value}</span>
+      {detail && <span className={s.healthDetail}>{detail}</span>}
     </li>
   );
 }
@@ -18,6 +19,17 @@ const BROADCAST_TEXT = { starting: "Iniciando", live: "Ao vivo", retrying: "Reco
 
 /** "4,5" */
 const oneDecimal = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/** Where the reply time goes: "espera 0,3 s · IA 0,9 s · voz 0,8 s · fala anterior 0,2 s". */
+function latencyDetail(stages: NonNullable<NonNullable<RuntimeSnapshot["health"]["latency"]>["stages"]>): string {
+  const parts: Array<[string, number]> = [
+    ["espera", stages.waitMs],
+    ["IA", stages.writeMs],
+    ["voz", stages.voiceMs],
+    ["fala anterior", stages.queueMs],
+  ];
+  return parts.map(([label, ms]) => `${label} ${oneDecimal(ms / 1000)} s`).join(" · ");
+}
 
 function BroadcastItem({ broadcast }: { broadcast: NonNullable<RuntimeSnapshot["health"]["broadcast"]> }) {
   const tone: Tone = broadcast.state === "live" ? "ok" : broadcast.state === "failed" ? "bad" : broadcast.state === "stopped" ? "off" : "warn";
@@ -50,7 +62,14 @@ export function Health({ snapshot, onAir }: { snapshot: RuntimeSnapshot | null; 
         value={health.stages.broadcast > 0 ? "Transmissão pela nuvem" : onStage > 0 ? (onStage === 1 ? "OBS conectado" : `${onStage} fontes no OBS`) : "OBS não conectado"}
       />
       {engine && <Item tone={engine.error ? "bad" : engine.fps >= 24 ? "ok" : "warn"} label="Palco" value={engine.error ? "Erro ao desenhar" : `${Math.round(engine.fps)} fps`} />}
-      {health.latency && <Item tone={health.latency.p50 < 4000 ? "ok" : "warn"} label="Tempo de resposta" value={`${oneDecimal(health.latency.p50 / 1000)} s`} />}
+      {health.latency && (
+        <Item
+          tone={health.latency.p50 < 4000 ? "ok" : "warn"}
+          label="Tempo de resposta"
+          value={`${oneDecimal(health.latency.p50 / 1000)} s`}
+          {...(health.latency.stages ? { detail: latencyDetail(health.latency.stages) } : {})}
+        />
+      )}
       {health.brain.context && onAir && (
         <Item tone={health.brain.context.cachedPct >= 50 ? "ok" : "warn"} label="Memória da live" value={`${health.brain.context.cachedPct}% reaproveitado`} />
       )}

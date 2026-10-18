@@ -107,6 +107,7 @@ export class TurnEngine {
     const persona = this.options.persona();
     const abort = new AbortController();
     this.current = { kind: plan.kind, abort };
+    const startedAt = this.now();
     const turnId = `t${++this.counter}`;
     this.options.onTurn?.({ id: turnId, kind: plan.kind, items: plan.items.length });
 
@@ -137,7 +138,7 @@ export class TurnEngine {
         const line: Utterance = { ...utterance, text };
         const context = moderationContext(plan, said);
         speech.enqueue(line, {
-          meta: { turnId, turnKind: plan.kind, originAt, first: said.length === 0 },
+          meta: { turnId, turnKind: plan.kind, originAt, first: said.length === 0, startedAt, writtenAt: this.now() },
           ...(context ? { context } : {}),
         });
         this.remember(text);

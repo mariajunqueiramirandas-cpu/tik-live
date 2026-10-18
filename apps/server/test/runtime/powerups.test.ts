@@ -38,6 +38,7 @@ describe("gift power-ups (ADR-0029)", () => {
     const { games, boosts, flush, last } = setup();
     games.start({ kind: "trivia", rounds: 1 }, "studio");
     await flush();
+    games.tick(true);
     expect(last()).toMatchObject({ kind: "trivia", phase: "open", durationMs: 25_000 });
     expect(games.handleGift(gift("ana", 5))).toEqual([]);
     expect(games.handleGift(gift("bia", 5))).toEqual(["time"]);
@@ -54,6 +55,8 @@ describe("gift power-ups (ADR-0029)", () => {
     // Each one is thanked by name, without the answer.
     const cues = [games.takeCue(), games.takeCue(), games.takeCue(), games.takeCue()].filter(Boolean);
     expect(cues.some((cue) => cue?.note.includes("bia's gift"))).toBe(true);
+    // The question the host hasn't read yet tells chat about the extra time.
+    expect(cues[0]?.note).toContain("about 35 seconds left");
     for (const cue of cues) if (cue?.note.includes("gift")) expect(cue.note).not.toContain("Jupiter");
   });
 
@@ -61,6 +64,7 @@ describe("gift power-ups (ADR-0029)", () => {
     const { games, flush, clock } = setup();
     games.start({ kind: "trivia", rounds: 1 }, "studio");
     await flush();
+    games.tick(true);
     games.handleGift(gift("rich", 1_000));
     games.handleChat({ kind: "chat", at: 0, viewer: viewer("ana"), text: "B" });
     games.handleChat({ kind: "chat", at: 0, viewer: viewer("rich"), text: "A" });
@@ -74,6 +78,7 @@ describe("gift power-ups (ADR-0029)", () => {
     expect(games.handleGift(gift("ana", 500))).toEqual([]);
     games.start({ kind: "fastest", rounds: 1 }, "studio");
     await flush();
+    games.tick(true);
     // No hint in a typing race: time and double points only.
     expect(games.handleGift(gift("ana", 500))).toEqual(["time", "double"]);
   });
@@ -81,6 +86,7 @@ describe("gift power-ups (ADR-0029)", () => {
   it("narrows the number game's window around the secret", () => {
     const { games, last } = setup();
     games.start({ kind: "number", rounds: 1 }, "studio");
+    games.tick(true);
     const before = last();
     if (before?.kind !== "number") throw new Error("expected number");
     games.handleGift(gift("ana", 50));

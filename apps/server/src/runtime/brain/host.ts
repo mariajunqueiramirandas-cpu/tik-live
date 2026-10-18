@@ -1,9 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Effect, MusicTrack, Persona, SafetySettings } from "@tik-live/shared";
 import type { Logger } from "../../log";
+import { THINKING_OFF_MODELS } from "../safety/gate";
 import type { UsageReport } from "../usage";
 import { PLAY_MUSIC_TOOL, PLAY_MUSIC_TOOL_NAME, readMusicCall } from "./music-tool";
-import { buildSystemPrompt, type BriefLayout, type TurnRequest } from "./prompt";
+import { buildSystemPrompt, reactionSentences, type BriefLayout, type TurnRequest } from "./prompt";
 import { effectTags, SentenceSplitter, toUtterance, type Emotion, type Utterance } from "./sentences";
 
 /** Things the host can do besides talking. */
@@ -62,6 +63,8 @@ export interface ClaudeHostOptions {
   speechLanguage?: string;
   model: string;
   effort: "low" | "medium" | "high";
+  /** "off" skips thinking for a faster first word, where the model allows it (THINKING_OFF_MODELS). */
+  thinking?: "adaptive" | "off";
   onUsage?: (usage: UsageReport) => void;
   log?: Logger;
 }
@@ -84,6 +87,9 @@ export class ClaudeHost implements HostBrain {
     this.name = options.model;
     this.layout = SYSTEM_MESSAGE_MODELS.has(options.model) ? "system" : "inline";
     this.system = this.buildSystem();
+    if (options.thinking === "off" && !THINKING_OFF_MODELS.has(options.model)) {
+      options.log?.warn(`${options.model} can't turn thinking off; it keeps adaptive thinking`);
+    }
   }
 
   reconfigure(update: { persona?: Persona; safety?: SafetySettings; speechLanguage?: string | null }): void {
@@ -157,6 +163,7 @@ export class ClaudeHost implements HostBrain {
 
   private async *attempt(turn: TurnRequest, signal: AbortSignal, actions: HostActions): AsyncGenerator<Utterance> {
     const { client, model, effort, persona, log } = this.options;
+    const thinkingOff = this.options.thinking === "off" && THINKING_OFF_MODELS.has(model);
     // Stable per persona, so the cached prefix (tools, then system) survives across turns.
     const music = persona.sound?.music !== false;
     const local = new AbortController();
@@ -170,6 +177,7 @@ export class ClaudeHost implements HostBrain {
         system: [{ type: "text", text: this.system, cache_control: { type: "ephemeral" } }],
         ...(music ? { tools: [PLAY_MUSIC_TOOL], tool_choice: { type: "auto" as const } } : {}),
         output_config: { effort },
+        ...(thinkingOff ? { thinking: { type: "disabled" as const } } : {}),
         messages: this.messages(turn),
         ...(FALLBACK_CAPABLE.has(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
       },
@@ -177,8 +185,7 @@ export class ClaudeHost implements HostBrain {
     );
 
     const splitter = new SentenceSplitter();
-    // A game turn reads a question and its options, so it gets a little more room.
-    const maxUtterances = turn.brief ? BRIEF_SENTENCES : persona.maxSentences + (turn.kind === "game" ? 3 : 1);
+    const maxUtterances = turn.brief ? BRIEF_SENTENCES : sentenceCap(turn, persona.maxSentences);
     let emotion: Emotion = "neutral";
     let produced = 0;
     // Metered from the stream itself, so a reply cut off mid-way is still counted. The API reports
@@ -278,6 +285,16 @@ export class ClaudeHost implements HostBrain {
       signal.removeEventListener("abort", abort);
     }
   }
+}
+
+/** Where a reply is cut off: one sentence past what the brief asked for. */
+function sentenceCap(turn: TurnRequest, maxSentences: number): number {
+  // A game turn reads a question and its options, so it gets a little more room.
+  if (turn.kind === "game") return maxSentences + 3;
+  const chat = turn.items.filter((item) => item.event.kind === "chat" || item.event.kind === "question").length;
+  // An answer to chat is kept as short as the brief asked: people are waiting on it.
+  if (turn.kind === "react" && chat) return reactionSentences(chat, turn.items.length - chat, maxSentences) + 1;
+  return maxSentences + 1;
 }
 
 /**

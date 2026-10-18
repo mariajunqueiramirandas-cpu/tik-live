@@ -65,6 +65,12 @@ export interface GameMasterOptions {
   ranking?: LoopRanking;
   /** The game's status changed (for the studio). */
   onChange?: () => void;
+  /**
+   * How far behind real time viewers watch the stream. A round keeps taking
+   * answers this long after its timer runs out, since viewers still see time
+   * on the clock and their answers arrive late.
+   */
+  streamDelayMs?: number;
   now?: () => number;
   random?: () => number;
   log?: Logger;
@@ -77,6 +83,8 @@ interface PendingCue extends GameCue {
   round: number;
   phase: Phase;
   at: number;
+  /** An open round's cue: when its timer runs out, to tell the host how long is left when it reads the round. */
+  closesAt?: number;
   /** A thank-you for a power-up, not the round's question. */
   boost?: true;
 }
@@ -121,6 +129,8 @@ interface ActiveGame {
   index: number;
   round: Round | null;
   phaseAt: number;
+  /** When the first round could open; it waits for the host to stop talking. */
+  readyAt: number | null;
   scores: Map<string, { name: string; points: number }>;
   prep: AbortController | null;
 }
@@ -158,6 +168,10 @@ const REVEAL_MIN_MS = 7_000;
 const REVEAL_MAX_MS = 25_000;
 const RESULTS_MIN_MS = 10_000;
 const RESULTS_MAX_MS = 30_000;
+/** The first round waits this long at most for the host to stop talking. */
+const READY_MAX_MS = 15_000;
+/** Below this, the host is told to hurry chat instead of reading out the time. */
+const HURRY_MS = 5_000;
 /** Writing questions takes this long at most before the bank fills in. */
 const PREP_TIMEOUT_MS = 20_000;
 const PUBLISH_EVERY_MS = 250;
@@ -224,13 +238,14 @@ export class GameMaster {
       index: 0,
       round: null,
       phaseAt: now,
+      readyAt: null,
       scores: new Map(),
       prep: null,
     };
     this.game = game;
     this.cues = [];
     if (config.kind === "number" || config.kind === "math") {
-      this.openRound(game);
+      game.readyAt = now;
     } else {
       void this.prepare(game, config.kind, chatSample);
     }
@@ -250,7 +265,23 @@ export class GameMaster {
   takeCue(): GameCue | null {
     this.dropStaleCues();
     const cue = this.cues.shift();
-    return cue ? { note: cue.note, line: cue.line, history: cue.history } : null;
+    if (!cue) return null;
+    // How long is left when the host gets to it, not when the round opened.
+    const left = cue.closesAt === undefined ? undefined : cue.closesAt - this.now();
+    const time = left === undefined ? "" : left >= HURRY_MS ? ` They have about ${Math.round(left / 1000)} seconds left.` : " Time is almost up: tell them to answer right now.";
+    return { note: `${cue.note}${time}`, line: cue.line, history: cue.history };
+  }
+
+  /**
+   * A round is ready to go up as soon as the host stops talking. The director
+   * holds new turns meanwhile, so the round opens when the host can read it
+   * and its timer doesn't run while the host talks about something else.
+   */
+  wantsFloor(): boolean {
+    const game = this.game;
+    if (!game || this.hasCue()) return false;
+    if (game.phase === "preparing") return game.readyAt !== null;
+    return game.phase === "reveal" && this.now() - game.phaseAt >= REVEAL_MIN_MS && game.index + 1 < game.config.rounds && this.hasNextRound(game);
   }
 
   /** True while a game moment is waiting to be announced. */
@@ -358,6 +389,10 @@ export class GameMaster {
       unlocked.push(boost);
     }
     if (!unlocked.length) return [];
+    // More time: the host's still-unread question tells chat the new time left.
+    if (unlocked.includes("time")) {
+      for (const cue of this.cues) if (cue.phase === "open" && cue.round === game.index && cue.closesAt !== undefined) cue.closesAt += BOOST_TIME_MS;
+    }
     const now = this.now();
     this.options.stage.boost?.(unlocked[unlocked.length - 1] as BoostKind, by);
     this.options.stage.fx("sparkles", 1.5);
@@ -385,7 +420,7 @@ export class GameMaster {
     const round = game.round;
     switch (game.phase) {
       case "open":
-        if (round && now - round.openedAt >= round.durationMs) this.reveal(game, now);
+        if (round && now - round.openedAt >= round.durationMs + (this.options.streamDelayMs ?? 0)) this.reveal(game, now);
         break;
       case "reveal": {
         // The next round waits until the host has announced this one's answer.
@@ -406,6 +441,7 @@ export class GameMaster {
         break;
       }
       case "preparing":
+        if (game.readyAt !== null && (speechIdle || now - game.readyAt >= READY_MAX_MS)) this.openRound(game);
         break;
     }
     if (this.dirty && now - this.publishedAt >= PUBLISH_EVERY_MS) this.publish();
@@ -439,11 +475,16 @@ export class GameMaster {
     const label = GAME_LABELS[game.config.kind];
     const lines = [`${label}${game.config.topic ? ` about ${game.config.topic}` : ""}, round ${game.index + 1} of ${game.config.rounds}. Viewers ${HOW_TO_ANSWER[game.config.kind]}.`];
     const round = game.round;
-    if (game.phase === "preparing") lines.push("Setting up the questions right now.");
+    if (game.phase === "preparing") lines.push(game.readyAt === null ? "Setting up the questions right now." : "The first round goes up as soon as you finish talking.");
     if (round && game.phase === "open") {
-      const left = Math.max(0, Math.ceil((round.openedAt + round.durationMs - this.now()) / 1000));
+      const left = Math.ceil((round.openedAt + round.durationMs - this.now()) / 1000);
+      const answers = `${round.answers.size + round.guesses} answers so far`;
       lines.push(`On screen: ${promptOf(round)}`);
-      lines.push(`Open for ${left} more seconds; ${round.answers.size + round.guesses} answers so far. Don't reveal or hint at the answer.`);
+      lines.push(
+        left > 0
+          ? `Open for ${left} more seconds; ${answers}. Don't reveal or hint at the answer.`
+          : `Time is up on screen; the last answers are still coming in (${answers}). Don't reveal or hint at the answer yet.`,
+      );
     }
     if (round && game.phase === "reveal") lines.push(`Just revealed: ${promptOf(round)} Answer: ${answerOf(round.content) ?? "(a vote)"}.`);
     if (game.phase === "results") lines.push("The game just ended.");
@@ -511,7 +552,9 @@ export class GameMaster {
       return;
     }
     game.config = { ...game.config, rounds: Math.min(game.config.rounds, game.queue.length) };
-    this.openRound(game);
+    // The first round goes up once the host stops talking (see tick).
+    game.readyAt = this.now();
+    this.options.onChange?.();
   }
 
   /** Runs written rounds through the safety gate (they're shown and read out). Drops what fails. */
@@ -567,12 +610,13 @@ export class GameMaster {
       ? `This is the start of a ${label} game with ${game.config.rounds} rounds${game.config.topic ? ` about ${game.config.topic}` : ""}: say in one short line how it works (viewers ${HOW_TO_ANSWER[kind]}). `
       : "";
     this.cues.push({
-      note: `${intro}Round ${game.index + 1} of ${game.config.rounds} is on screen now: ${promptOf(round)} ${openInstruction(content)} They have ${Math.round(round.durationMs / 1000)} seconds.`,
+      note: `${intro}Round ${game.index + 1} of ${game.config.rounds} is on screen now: ${promptOf(round)} ${openInstruction(content)}`,
       line: first ? `${label}! Rodada ${game.index + 1}. ${spokenPrompt(round)}` : `Rodada ${game.index + 1}! ${spokenPrompt(round)}`,
       history: `${label} round ${game.index + 1} of ${game.config.rounds} opened: ${promptOf(round)}`,
       round: game.index,
       phase: "open",
       at: now,
+      closesAt: now + round.durationMs,
     });
     this.options.onChange?.();
   }

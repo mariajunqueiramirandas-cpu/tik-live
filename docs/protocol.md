@@ -343,8 +343,10 @@ host is saying, the queue of things it may react to, counts
 of filtered events by reason, and health (event source, connected stages by
 role, engine telemetry, models in use, how much of the host's recent input
 came from the prompt cache (`health.brain.context`, null until the first
-turn), reply latency p50/p95, budget use, cloud broadcast state), plus the
-current stream session.
+turn), reply latency p50/p95 with the median of each stage
+(`health.latency.stages`: waiting for the turn, the model writing, the
+voice, and waiting for the line before it), budget use, cloud broadcast
+state), plus the current stream session.
 
 #### `patch`
 

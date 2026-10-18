@@ -26,7 +26,7 @@ import type { RoomEntry } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
 import type { ViewerMemory } from "./memory";
 import { describeClock, displayName, type TurnKind, type TurnPlan } from "./prompt";
-import type { QueueItem, Triage, TriageResult } from "./triage";
+import { isQuestion, type QueueItem, type Triage, type TriageResult } from "./triage";
 import { TurnEngine } from "./turns";
 
 export interface StreamStats {
@@ -78,6 +78,12 @@ export interface DirectorOptions {
   hooks?: DirectorHooks;
   /** Silence (ms) before the host fills dead air when people are watching. */
   deadAirMs: number;
+  /**
+   * How far behind real time viewers watch the stream. After the host asks
+   * the room something, replies can't arrive before viewers have heard it,
+   * so dead air waits this much longer.
+   */
+  streamDelayMs?: number;
   /** Wait for the first real event before talking (avoids talking to an empty room). */
   startInStandby?: boolean;
   /** Runs chat minigames, when the channel has them. */
@@ -109,7 +115,7 @@ const REACT_CHAT = 3;
 const REACT_SUPPORT = 6;
 /** A segment this late moves on even while chat keeps the host busy. */
 const SEGMENT_OVERDUE_MS = 30_000;
-/** Questions the host moved past come back in a quiet moment, if they're this fresh. */
+/** Questions the host moved past (or that expired while it was busy) come back at the next free moment, if they're this fresh. */
 const OWED_TTL_MS = 3 * 60_000;
 const OWED_MAX = 3;
 const CHAT_SAMPLE = 12;
@@ -200,13 +206,18 @@ export interface DirectorState {
  * 4. a segment change that is overdue (a busy chat can't hold the show in one segment forever);
  * 5. reactions: gifts and follows first, then messages oldest first; a like milestone rides along;
  * 6. a like milestone on its own;
- * 7. the segment change, on time, in a quiet moment;
- * 8. dead-air filler, including questions the host moved past earlier.
+ * 7. a question the host moved past, or that expired while it was busy;
+ * 8. the segment change, on time, in a quiet moment;
+ * 9. dead-air filler.
  *
  * The host moves forward through chat: once it answers a message, older
  * messages it didn't pick are passed over (they're still in the room it
  * saw), so it never jumps back to something older than what it just
- * answered, except when it says so in a quiet moment.
+ * answered, except to come back to a question it owes, saying who asked.
+ * Questions that expire while the host is busy are owed the same way.
+ *
+ * A game round that's ready to go up holds new turns until the host stops
+ * talking, so the round opens when the host can read it out.
  *
  * Turn-taking (ADR-0022): one turn is written at a time, and the next one
  * starts while the last sentence of the previous one is playing, so events
@@ -243,6 +254,8 @@ export class Director {
   /** Questions passed over on a busy stretch. */
   private owed: Array<{ event: LiveEvent; at: number }> = [];
   private fillerBeat = 0;
+  /** The host's last line asked the room something. */
+  private askedRoom = false;
   private recentChat: string[] = [];
   private music: { title: string; endsAt: number } | null = null;
   /** Who sent the most likes (last 15 minutes) and diamonds (last hour). */
@@ -421,7 +434,6 @@ export class Director {
         this.counters.shares += 1;
         this.options.stage.alert(event);
         this.sound("whoosh");
-        this.remember({ at: event.at, kind: "support", event });
         break;
       case "chat":
       case "question":
@@ -450,7 +462,8 @@ export class Director {
       if (event.kind === "chat" || event.kind === "question") {
         this.remember({ at: event.at, kind: "viewer", event });
         this.recentChat = [...this.recentChat, event.text].slice(-CHAT_SAMPLE);
-      } else if (event.kind === "join") {
+      } else if (event.kind === "join" || event.kind === "share") {
+        // A repeat share isn't queued, so the host isn't nudged to thank it again.
         this.remember({ at: event.at, kind: "support", event });
       }
       this.yieldTo(eventUrgency(event));
@@ -460,6 +473,7 @@ export class Director {
   /** A line was performed on stage. Lines the owner typed join the conversation as theirs. */
   noteSpoken(text: string, _meta?: CueMeta, operator = false): void {
     this.recentLines = [...this.recentLines, text].slice(-RECENT_LINES);
+    this.askedRoom = /\?[^\p{L}\p{N}]*$/u.test(text);
     if (operator) this.remember({ at: this.now(), kind: "show", text: `The channel owner had you say: "${text}"` });
   }
 
@@ -632,6 +646,8 @@ export class Director {
     // Start the next turn while the last sentence is still playing, but never
     // stack up more than one turn of queued speech.
     if (this.options.speech.pending() > 0) return;
+    // A game round goes up as soon as the host stops talking: don't start something else first.
+    if (this.options.games?.wantsFloor()) return;
 
     const plan = this.chooseTurn(now);
     if (plan) await this.runTurn(plan);
@@ -737,6 +753,13 @@ export class Director {
     const milestone = this.takeMilestone();
     if (milestone) return { ...base, kind: "milestone", items: [], note: milestone.note, line: milestone.line };
 
+    // A question the host moved past, or that expired while it was busy (a game, a segment change), comes back now.
+    for (const item of triage.takeLapsed()) this.owe(item);
+    const owed = this.takeOwed(now);
+    if (owed) {
+      return { ...base, kind: "react", items: [owed], note: "It came in a bit earlier and you didn't get to it: say who asked. Skip it if you already answered it." };
+    }
+
     if (this.reactOnly()) return undefined;
 
     if (segmentDue && speech.isIdle()) return this.advance(now, base);
@@ -747,10 +770,11 @@ export class Director {
       if (podium) return podium;
     }
 
-    const deadAir = deadAirFor(this.viewers, this.options.deadAirMs);
+    // Replies to a question can't come in before viewers have heard it.
+    const deadAir = deadAirFor(this.viewers, this.options.deadAirMs) + (this.askedRoom ? (this.options.streamDelayMs ?? 0) : 0);
     const quietFor = speech.silenceMs();
     if (quietFor >= deadAir && now - this.lastTurnAt >= deadAir) {
-      return { ...base, kind: "filler", items: [], note: this.fillerNote(now) };
+      return { ...base, kind: "filler", items: [], note: this.fillerNote() };
     }
     return undefined;
   }
@@ -778,9 +802,18 @@ export class Director {
   }
 
   private owe(item: QueueItem): void {
-    const event = item.event;
-    if (event.kind !== "question" && !(event.kind === "chat" && event.text.includes("?"))) return;
-    this.owed = [...this.owed, { event, at: this.now() }].slice(-OWED_MAX);
+    if (!isQuestion(item.event)) return;
+    this.owed = [...this.owed, { event: item.event, at: this.now() }].slice(-OWED_MAX);
+  }
+
+  /** The oldest question still owed that the host can see in its room (not one that scrolled by). */
+  private takeOwed(now: number): QueueItem | undefined {
+    this.owed = this.owed.filter((owed) => now - owed.at < OWED_TTL_MS);
+    while (this.owed.length) {
+      const { event } = this.owed.shift() as (typeof this.owed)[number];
+      if (this.engine.conversation.canShow(event)) return { event, events: [event], priority: 0, expiresAt: Infinity, seq: 0 };
+    }
+    return undefined;
   }
 
   private takeMilestone(): { note: string; line: string } | undefined {
@@ -835,17 +868,11 @@ export class Director {
     return { ...base, segment: previous, kind: "segment_change", items: [], nextSegment };
   }
 
-  /** What a quiet moment is about: the game, a question the host owes, or the next idea in rotation. */
-  private fillerNote(now: number): string {
+  /** What a quiet moment is about: the game, or the next idea in rotation. */
+  private fillerNote(): string {
     const games = this.options.games?.fillerNote();
     if (games) return games;
     if (this.options.ranking?.isRevealing()) return "The loop's podium is on screen. Celebrate the top players by name in a line or two and invite everyone to play in the next loop.";
-    this.owed = this.owed.filter((owed) => now - owed.at < OWED_TTL_MS);
-    // Only a question the host actually saw in a room (not one that scrolled by).
-    while (this.owed.length) {
-      const ref = this.engine.conversation.ref((this.owed.shift() as (typeof this.owed)[number]).event);
-      if (ref) return `You didn't get to ${ref} earlier. Answer it now, saying who asked, then carry on.`;
-    }
     const segment = this.segment();
     const chat = this.engine.conversation.hasViewerChat();
     let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];

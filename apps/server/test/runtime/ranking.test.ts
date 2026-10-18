@@ -134,6 +134,7 @@ describe("LoopRanking", () => {
       now: clock.now,
     });
     expect(games.start({ kind: "math", rounds: 1 }, "studio")).toEqual({ ok: true });
+    games.tick(true);
     const status = games.status();
     const answer = Number(status?.answer);
     games.handleChat({ kind: "chat", at: 0, viewer: viewer("ana"), text: String(answer) });

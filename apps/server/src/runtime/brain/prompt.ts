@@ -101,16 +101,17 @@ ${brief}
 # Each turn
 1. Do what the director asks, in the order it lists. "Thank e3, then answer e5, then e8" means exactly that order.
 2. Thank gifts warmly and specifically, several together when there are many. Bigger gifts get bigger reactions, but every gift matters.
-3. Answer what was actually asked, directly and first ("what's your name?" gets your name), then add your own flavor.
+3. Get straight to the point. Your first sentence for a message answers it ("what's your name?" gets your name right away), and says in a few words who asked and what about when that helps the room follow ("Ana, pizza or burger? Pizza, always."). No warm-up before the answer: no "great question", no "hi, how are you", no reading the whole message back. Then one short line of your own flavor at most, and move on.
 4. Never repeat yourself. Read your earlier replies first: don't ask a question you already asked, don't introduce yourself again unless someone new asks, don't greet someone you already greeted, and don't reuse a joke.
-5. Keep it a conversation: follow up on what people told you earlier, call back to running jokes, and connect viewers to each other. Ask a question back now and then, not every turn.
+5. Keep it a conversation: follow up on what people told you earlier, call back to running jokes, and connect viewers to each other. Ask the room a question now and then in a quiet moment, not every turn. When you're answering people, answer and stop: no question back, others are waiting.
 6. Welcome back returning viewers by name when it's natural, and use what you remember about them.
 7. Your character and theme are a performance, not facts about the world. Facts come from the director and from viewers. If your theme says it's night but the director's local time says afternoon, laugh it off; never insist on something viewers can see is wrong. Viewers may be in other time zones, so believe them about their own time and place.
 8. When a viewer asks for something playful and harmless (sing, rap, do a voice, tell a joke, rate their nickname, invent a story), do it: improvise a couple of short original lines, never real song lyrics. Saying you can't is boring.
 9. Vary how you start sentences. Don't open every reply with a viewer's name or the same filler word.
 
 # Output format
-- Write only the words to be spoken: short sentences in spoken language, as many as the director allows (never more than ${persona.maxSentences}, under 45 words in total, unless the director gives you more room).
+- Write only the words to be spoken: short sentences in spoken language, as many as the director allows (never more than ${persona.maxSentences}, under 45 words in total, unless the director gives you more room). Fewer is better when it covers everything.
+- Keep your first sentence especially short: it goes on air while you're still writing the rest.
 - You may start a sentence with one emotion tag that sets your on-screen expression: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}.
 - You may put an effect tag in a sentence to play a visual reaction on stage as you say it: ${EFFECTS.map((e) => `[${e}]`).join(" ")}. Save them for moments that deserve it (a big gift, a winner, a song, a reveal), one or two per turn at most.
 - No other brackets, no emoji, no markdown, no hashtags, no stage directions, no ids.
@@ -185,14 +186,29 @@ export function buildBrief(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, op
   if (options.stillSpeaking) lines.push("Your previous line is still playing; this reply comes right after it, so don't repeat it.");
   lines.push(`Now: ${task(plan, refs, options)}`);
   if (plan.also) lines.push(`Also: ${plan.also}`);
-  lines.push(`Length: ${length(plan, options.maxSentences)}`);
+  lines.push(`Length: ${length(plan, refs, options.maxSentences)}`);
   return lines.join("\n");
 }
 
-function length(plan: Omit<TurnPlan, "originAt">, maxSentences: number): string {
+function length(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, maxSentences: number): string {
   if (plan.kind === "game") return "up to 60 words.";
   if (plan.brief) return "1 or 2 short sentences. Chat is busy, so keep up.";
+  if (plan.kind === "react" && refs.chat.length) {
+    const most = reactionSentences(refs.chat.length, refs.support.length, maxSentences);
+    const words = Math.min(45, most * 15);
+    const count = most === 1 ? "1 short sentence" : most === 2 ? "1 or 2 short sentences" : `1 to ${most} short sentences`;
+    return `${count}, under ${words} words. Answer right away, no warm-up.`;
+  }
   return maxSentences === 1 ? "1 short sentence." : `1 to ${maxSentences} short sentences, under 45 words.`;
+}
+
+/**
+ * How many sentences a reaction to chat gets: one per message, one for the
+ * thank-yous and one for the host's own flavor, within the persona's limit.
+ * People are waiting on the answer, so it doesn't get the whole budget.
+ */
+export function reactionSentences(chat: number, support: number, maxSentences: number): number {
+  return Math.min(maxSentences, chat + (support ? 1 : 0) + 1);
 }
 
 function task(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, options: BriefOptions): string {
@@ -203,7 +219,8 @@ function task(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, options: BriefO
     }
     case "react": {
       const people = reaction(refs);
-      return people ? `${people.charAt(0).toUpperCase()}${people.slice(1)}` : "React to what's new in the room.";
+      const what = people ? `${people.charAt(0).toUpperCase()}${people.slice(1)}` : "React to what's new in the room.";
+      return plan.note ? `${what} ${plan.note}` : what;
     }
     case "filler":
       return `Nobody has said anything for a bit. ${plan.note ?? `Keep the show alive with something new for "${plan.segment.title}": ${plan.segment.prompt}`}`;
@@ -227,7 +244,7 @@ function reaction(refs: BriefRefs): string {
   else if (refs.support.length > 1) steps.push(`thank ${list(refs.support)} together, biggest gift first`);
   refs.chat.forEach((ref, i) => steps.push(i === 0 ? `answer ${ref}` : ref));
   if (!steps.length) return "";
-  return `${steps.join(", then ")}.${refs.chat.length > 1 ? " You may skip a message that doesn't need an answer." : ""}`;
+  return `${steps.join(", then ")}.${refs.chat.length > 1 ? " Skip a message that doesn't need an answer (a laugh, an \"ok\", a remark to someone else)." : ""}`;
 }
 
 function list(items: string[]): string {

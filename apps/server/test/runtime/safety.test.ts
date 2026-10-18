@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { SafetyGate, type Moderator } from "../../src/runtime/safety/gate";
+import type Anthropic from "@anthropic-ai/sdk";
+import { ClaudeModerator, SafetyGate, type Moderator } from "../../src/runtime/safety/gate";
 import { checkSpokenOutput, looksLikeInjection } from "../../src/runtime/safety/rules";
 
 describe("rules", () => {
@@ -88,5 +89,32 @@ describe("Portuguese manipulation attempts", () => {
     ];
     for (const text of attacks) expect(looksLikeInjection(text), text).toBe(true);
     for (const text of chat) expect(looksLikeInjection(text), text).toBe(false);
+  });
+});
+
+describe("ClaudeModerator", () => {
+  function fakeClient(calls: Array<Record<string, unknown>>) {
+    return {
+      messages: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          return {
+            content: [{ type: "text", text: JSON.stringify({ safe: true, reason: "ok" }) }],
+            stop_reason: "end_turn",
+            usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+          };
+        },
+      },
+    } as unknown as Anthropic;
+  }
+  const settings = { strictness: "standard" as const, avoidTopics: [] };
+
+  it("judges without thinking where the model allows it, since every line waits for the verdict", async () => {
+    const haiku: Array<Record<string, unknown>> = [];
+    expect(await new ClaudeModerator({ client: fakeClient(haiku), model: "claude-haiku-5-5", settings }).review("Oi, gente!")).toEqual({ safe: true });
+    expect(haiku[0]?.thinking).toEqual({ type: "disabled" });
+    const sonnet: Array<Record<string, unknown>> = [];
+    await new ClaudeModerator({ client: fakeClient(sonnet), model: "claude-sonnet-5-5", settings }).review("Oi, gente!");
+    expect(sonnet[0]).not.toHaveProperty("thinking"); // Sonnet 5.5 rejects disabled thinking
   });
 });

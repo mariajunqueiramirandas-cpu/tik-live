@@ -180,7 +180,14 @@ export class ChannelRuntime {
       this.now,
     );
     stage.setCueListener((cue, at) => {
-      if (cue.meta?.first) this.latency.record(at - cue.meta.originAt);
+      const meta = cue.meta;
+      if (!meta?.first) return;
+      const { originAt, startedAt, writtenAt } = meta;
+      const stages =
+        startedAt !== undefined && writtenAt !== undefined && cue.readyAt !== undefined
+          ? { waitMs: startedAt - originAt, writeMs: writtenAt - startedAt, voiceMs: cue.readyAt - writtenAt, queueMs: at - cue.readyAt }
+          : undefined;
+      this.latency.record(at - originAt, stages);
     });
 
     const sounds = () => this.channel.persona.sound?.effects !== false;
@@ -194,6 +201,7 @@ export class ChannelRuntime {
       language: () => this.speech.ttsLanguage ?? "pt-BR",
       sounds,
       ranking: this.ranking,
+      streamDelayMs: ctx.config.STREAM_DELAY_MS,
       now: this.now,
       log: this.log,
     });
@@ -210,6 +218,7 @@ export class ChannelRuntime {
       speech: this.speech,
       stage,
       deadAirMs: 7_000,
+      streamDelayMs: ctx.config.STREAM_DELAY_MS,
       startInStandby: !simulated,
       games: this.games,
       ranking: this.ranking,
@@ -637,6 +646,7 @@ export class ChannelRuntime {
       ...(speechLanguage ? { speechLanguage } : {}),
       model: ctx.config.HOST_MODEL ?? this.plan.models.host,
       effort: ctx.config.HOST_EFFORT,
+      thinking: ctx.config.HOST_THINKING,
       onUsage: (u) => this.usage(u),
       log: this.log,
     });

@@ -69,6 +69,17 @@ describe("TurnEngine", () => {
     expect(host.requests[1]?.context.brief).toContain("Your previous line is still playing");
   });
 
+  it("stamps each line with when its turn started and when it was written, for the latency breakdown", async () => {
+    const { engine, host, plan, speech, clock } = setup();
+    host.replies.push([{ text: "Oi, Ana!", emotion: "happy" }]);
+    const arrived = clock.now();
+    clock.advance(1_500); // the message waited for the turn
+    await engine.run(plan({ kind: "react", originAt: arrived }));
+    await new Promise((r) => setImmediate(r));
+    expect(speech.activeMeta()).toMatchObject({ first: true, originAt: arrived, startedAt: arrived + 1_500, writtenAt: arrived + 1_500 });
+    expect(speech.nowPlaying()?.readyAt).toBe(arrived + 1_500);
+  });
+
   it("never says the ids the brief uses, and drops a line it already said", async () => {
     const { engine, host, plan, speech } = setup();
     host.replies.push([{ text: "Thanks e12 for the rose (e12)!", emotion: "happy" }]);

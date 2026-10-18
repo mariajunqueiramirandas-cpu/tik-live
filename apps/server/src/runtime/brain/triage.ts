@@ -12,6 +12,11 @@ export interface QueueItem {
   seq: number;
 }
 
+/** A message that asks something: a TikTok question, or chat with a question mark. */
+export function isQuestion(event: LiveEvent): boolean {
+  return event.kind === "question" || (event.kind === "chat" && event.text.includes("?"));
+}
+
 export type TriageResult = { queued: true; item: QueueItem } | { queued: false; reason: string };
 
 export interface TriageOptions {
@@ -22,7 +27,11 @@ export interface TriageOptions {
   maxQueue?: number;
 }
 
-/** How long each kind of event stays worth reacting to. Old chat is worse than no reply. */
+/**
+ * How long each kind of event stays worth reacting to. Old chat is worse than
+ * no reply, but a question (or a message to the host by name) is still worth
+ * answering a minute later.
+ */
 const TTL_MS: Partial<Record<LiveEvent["kind"], number>> = {
   chat: 25_000,
   question: 60_000,
@@ -35,6 +44,10 @@ const TTL_MS: Partial<Record<LiveEvent["kind"], number>> = {
 const FLOOD_WINDOW_MS = 15_000;
 const FLOOD_MAX_MESSAGES = 3;
 const DUPLICATE_WINDOW_MS = 60_000;
+/** Expired questions kept for the director to come back to. */
+const LAPSED_MAX = 5;
+/** A viewer who shares again this soon isn't thanked again: one thank-you per sharer, not one per tap. */
+const SHARE_THANKS_MS = 5 * 60_000;
 
 /**
  * Decides which audience events deserve the host's attention, and in what
@@ -43,8 +56,11 @@ const DUPLICATE_WINDOW_MS = 60_000;
  */
 export class Triage {
   private queue: QueueItem[] = [];
+  /** Questions that expired before the host got to them. */
+  private lapsed: QueueItem[] = [];
   private seq = 0;
   private readonly history = new Map<string, Array<{ text: string; at: number }>>();
+  private readonly shared = new Map<string, number>();
   private readonly now: () => number;
   readonly dropped = new Map<string, number>();
 
@@ -62,7 +78,7 @@ export class Triage {
     const priority = this.score(event);
     if (typeof priority === "string") return this.drop(priority);
 
-    const ttl = TTL_MS[event.kind];
+    const ttl = TTL_MS[isQuestion(event) || this.mentionsHost(event) ? "question" : event.kind];
     if (ttl === undefined) return this.drop("not queueable");
 
     if ((event.kind === "chat" || event.kind === "question") && this.isDuplicateQueued(event.text)) {
@@ -119,6 +135,14 @@ export class Triage {
     return this.queue.length;
   }
 
+  /** Removes and returns the questions that expired unanswered since the last call, oldest first. */
+  takeLapsed(): QueueItem[] {
+    this.prune();
+    const lapsed = this.lapsed.sort((a, b) => a.seq - b.seq);
+    this.lapsed = [];
+    return lapsed;
+  }
+
   peek(): readonly QueueItem[] {
     this.prune();
     return this.queue;
@@ -126,11 +150,20 @@ export class Triage {
 
   clear(): void {
     this.queue = [];
+    this.lapsed = [];
   }
 
   private prune(): void {
     const now = this.now();
-    this.queue = this.queue.filter((item) => item.expiresAt > now);
+    this.queue = this.queue.filter((item) => {
+      if (item.expiresAt > now) return true;
+      if (isQuestion(item.event)) this.lapsed = [...this.lapsed, item].slice(-LAPSED_MAX);
+      return false;
+    });
+  }
+
+  private mentionsHost(event: LiveEvent): boolean {
+    return (event.kind === "chat" || event.kind === "question") && event.text.toLowerCase().includes(this.options.hostName.toLowerCase());
   }
 
   private drop(reason: string): TriageResult {
@@ -145,7 +178,7 @@ export class Triage {
       case "gift":
         return 100 + 15 * Math.log10(event.diamonds + 1);
       case "share":
-        return 50;
+        return this.isRepeatShare(event.viewer.id) ? "repeated share" : 50;
       case "follow":
         return 45;
       case "join":
@@ -159,7 +192,7 @@ export class Triage {
         let priority = event.kind === "question" ? 70 : 40;
         const text = event.text.toLowerCase();
         if (text.includes("?")) priority += 15;
-        if (text.includes(this.options.hostName.toLowerCase())) priority += 15;
+        if (this.mentionsHost(event)) priority += 15;
         const record = memory.get(event.viewer.id);
         if (record && record.visits > 1) priority += 10;
         if (record && record.messages <= 1) priority += 5;
@@ -207,6 +240,15 @@ export class Triage {
     this.queue[index] = merged;
     this.queue.sort((a, b) => b.priority - a.priority);
     return merged;
+  }
+
+  private isRepeatShare(viewerId: string): boolean {
+    const now = this.now();
+    const last = this.shared.get(viewerId);
+    if (last !== undefined && now - last < SHARE_THANKS_MS) return true;
+    this.shared.set(viewerId, now);
+    if (this.shared.size > 5_000) this.shared.delete(this.shared.keys().next().value as string);
+    return false;
   }
 
   private isDuplicateQueued(text: string): boolean {
