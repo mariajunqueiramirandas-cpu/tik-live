@@ -29,6 +29,7 @@ import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
 import type { RoomEntry } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
+import type { HostFacts } from "./host-facts";
 import type { ViewerMemory } from "./memory";
 import { describeClock, displayName, type TurnKind, type TurnPlan } from "./prompt";
 import { isQuestion, type QueueItem, type Triage, type TriageResult } from "./triage";
@@ -99,6 +100,8 @@ export interface DirectorOptions {
   ranking?: LoopRanking;
   /** Keeps a running summary of the show and notes about viewers. */
   chronicler?: Chronicler;
+  /** What the host has said about itself on this channel (ADR-0033). */
+  hostFacts?: HostFacts;
   /** What the host may do besides talking (play music). */
   actions?: HostActions;
   /** Terms never spoken, for viewer names and the chronicler's notes. */
@@ -343,6 +346,7 @@ export class Director {
       persona: () => this.persona,
       blocklist,
       ...(options.chronicler ? { chronicler: options.chronicler } : {}),
+      ...(options.hostFacts ? { hostFacts: options.hostFacts } : {}),
       ...(options.actions ? { actions: options.actions } : {}),
       ...(options.lastStream ? { lastStream: options.lastStream } : {}),
       onTurn: (turn) => options.hooks?.onTurn?.(turn),

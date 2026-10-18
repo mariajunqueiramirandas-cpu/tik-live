@@ -65,7 +65,7 @@ const MAX_PENDING = 200;
 /** Rough characters per token, for budgeting the conversation (mixed languages, Claude tokenizer). */
 const CHARS_PER_TOKEN = 3;
 /** How much the recap of turns dropped without a summary keeps of each kind. */
-const RECAP_MAX = { viewers: 20, gifts: 8, questions: 3, shows: 4, text: 100 };
+const RECAP_MAX = { viewers: 20, gifts: 8, questions: 3, asked: 5, shows: 4, text: 100 };
 const UNSAID_WHY: Record<UnsaidReason, string> = {
   cut: "cut before it aired: something more urgent came in",
   blocked: "blocked by the safety filter, never aired",
@@ -93,7 +93,7 @@ export class Conversation {
   private pending: Array<{ id: number; entry: RoomEntry }> = [];
   private exchanges: Exchange[] = [];
   private head = "";
-  /** Turns that left without a summary to fold into, so the host keeps the thread of the show. */
+  /** What happened in turns that left the conversation, kept word for word (a summary can drop it), so the host keeps the thread of the show. */
   private recap: Recap | null = null;
   private nextEntryId = 1;
   private nextExchangeId = 1;
@@ -289,10 +289,11 @@ export class Conversation {
   /**
    * Folds old turns into a summary: turns up to `throughId` leave the
    * conversation, except the newest `keep`, and `head` takes their place
-   * (null keeps the current head, and the turns that leave go into the
-   * recap instead, so what happened in them isn't lost). This rewrites the
-   * cached prefix once, so it only happens when the conversation has grown
-   * past its budget. Returns how many turns left.
+   * (null keeps the current head). Either way the turns that leave go into
+   * the recap: who talked, who gave, what was asked and what the host asked
+   * the room, kept exactly, whatever the summary kept of them. This rewrites
+   * the cached prefix once, so it only happens when the conversation has
+   * grown past its budget. Returns how many turns left.
    */
   roll(head: string | null, throughId: number, keep: number): number {
     const limit = Math.max(0, this.exchanges.length - keep);
@@ -302,7 +303,7 @@ export class Conversation {
     const gone = this.exchanges.splice(0, drop);
     for (const exchange of gone) for (const id of exchange.ids) this.seen.delete(id);
     if (head !== null) this.head = head;
-    else this.remember(gone);
+    this.remember(gone);
     // The turns that introduced these viewers are gone: introduce them again.
     this.described.clear();
     return drop;
@@ -329,7 +330,7 @@ export class Conversation {
 
   /** Folds turns leaving without a summary into the recap: who talked, who gave, what was asked, what happened. */
   private remember(exchanges: readonly Exchange[]): void {
-    const recap = (this.recap ??= { turns: 0, viewers: [], gifts: new Map(), questions: [], shows: [], lastLine: "" });
+    const recap = (this.recap ??= { turns: 0, viewers: [], gifts: new Map(), questions: [], asked: [], shows: [], lastLine: "" });
     const name = (viewer: Extract<RoomEntry, { event: LiveEvent }>["event"]["viewer"]) => clip(displayName(viewer, this.options.blocklist()), 30);
     for (const exchange of exchanges) {
       recap.turns += 1;
@@ -348,6 +349,10 @@ export class Conversation {
         } else if (entry.kind === "show") {
           recap.shows = [...recap.shows, clip(entry.text, RECAP_MAX.text)].slice(-RECAP_MAX.shows);
         }
+      }
+      // The questions the host put to the room, so it doesn't ask one again once the turn is gone.
+      for (const line of exchange.reply.split("\n").map(spokenLine)) {
+        if (/\?$/.test(line)) recap.asked = [...recap.asked.filter((q) => q !== line), clip(line, RECAP_MAX.text)].slice(-RECAP_MAX.asked);
       }
       const last = exchange.reply.split("\n").at(-1)?.trim();
       if (last && last !== PASS) recap.lastLine = clip(last, RECAP_MAX.text * 2);
@@ -400,6 +405,8 @@ interface Recap {
   viewers: string[];
   gifts: Map<string, { who: string; gift: string; count: number; diamonds: number }>;
   questions: string[];
+  /** Questions the host asked the room, most recent last. */
+  asked: string[];
   shows: string[];
   lastLine: string;
 }
@@ -413,9 +420,15 @@ function renderRecap(recap: Recap): string {
   }
   if (recap.gifts.size) lines.push(`Gifts: ${[...recap.gifts.values()].map((g) => `${g.who} ${g.count}x ${g.gift}`).join(", ")}.`);
   if (recap.questions.length) lines.push(`Questions asked: ${recap.questions.map((q) => `"${q}"`).join("; ")}.`);
+  if (recap.asked.length) lines.push(`You already asked the room: ${recap.asked.map((q) => `"${q}"`).join("; ")}.`);
   if (recap.shows.length) lines.push(`On the show: ${recap.shows.join("; ")}.`);
   if (recap.lastLine) lines.push(`Your last line then: "${recap.lastLine}"`);
   return `<earlier turns="${recap.turns}">\n${escapeForPrompt(lines.join("\n") || "Nothing worth keeping.")}\n</earlier>`;
+}
+
+/** A line of a reply as it was spoken: without its emotion and effect tags. */
+function spokenLine(line: string): string {
+  return line.replace(/\[[a-z_]+\]\s*/gi, "").replace(/\s{2,}/g, " ").trim();
 }
 
 /** Words only, lowercase, one space apart: how a name is matched against what the host said. */

@@ -205,6 +205,7 @@ erDiagram
   app_user ||--o{ channel : owns
   app_user ||--o| subscription : "billing state"
   channel ||--o{ viewer : remembers
+  channel ||--o| host_memory : "what the host said about itself"
   channel ||--o{ stream_session : "goes live"
   stream_session ||--o{ session_sample : "per-minute stats"
   stream_session ||--o{ utterance : "spoken and blocked lines"

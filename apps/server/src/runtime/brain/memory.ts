@@ -16,6 +16,7 @@ export interface ViewerRecord {
   shares: number;
   /** A few recent things they said, newest last. */
   recentLines: string[];
+  /** Harmless things they shared, as "topic: fact" (older notes may have no topic), newest last. */
   notes: string[];
 }
 
@@ -28,7 +29,10 @@ export interface ViewerPersistence {
 /** A gap longer than this between two sightings counts as a new visit. */
 export const NEW_VISIT_GAP_MS = 3 * 60 * 60 * 1000;
 const RECENT_LINES = 3;
-const MAX_NOTES = 5;
+const MAX_NOTES = 8;
+/** How many notes the host reads about a viewer at once (the newest). */
+const NOTES_SHOWN = 4;
+const TOPIC_MAX = 30;
 const MAX_CACHED = 20_000;
 
 export interface ViewerMemoryOptions {
@@ -113,20 +117,25 @@ export class ViewerMemory {
       parts.push(`has gifted ${r.diamonds} diamonds total (${top})`);
     }
     if (r.follows > 0) parts.push("follows the channel");
-    if (r.notes.length > 0) parts.push(`notes: ${r.notes.slice(-3).join("; ")}`);
+    if (r.notes.length > 0) parts.push(`notes: ${r.notes.slice(-NOTES_SHOWN).join("; ")}`);
     if (r.visits > 1 && r.recentLines.length > 0) {
       parts.push(`once said: ${r.recentLines.slice(-2).map((line) => `"${clip(line, 60)}"`).join(", ")}`);
     }
     return parts.join("; ");
   }
 
-  /** Remembers something harmless a viewer shared (the chronicler's notes). Keeps the newest few. */
-  addNote(id: string, note: string): void {
+  /**
+   * Remembers something harmless a viewer shared (the chronicler's notes).
+   * A note on a topic the viewer already has replaces the old one (they got a
+   * new pet, changed teams), so the host never reads two answers to the same
+   * thing. Keeps the newest few.
+   */
+  addNote(id: string, note: string, topic?: string): void {
     const record = this.viewers.get(id);
-    if (!record) return;
-    const lower = note.toLowerCase();
-    if (record.notes.some((existing) => existing.toLowerCase() === lower)) return;
-    record.notes = [...record.notes, note].slice(-MAX_NOTES);
+    const fact = note.trim();
+    if (!record || !fact) return;
+    const key = topic === undefined ? undefined : cleanTopic(topic);
+    record.notes = withNote(record.notes, key ? `${key}: ${fact}` : fact);
     this.dirty.add(id);
   }
 
@@ -232,6 +241,7 @@ export class ViewerMemory {
       follows: stored.follows + current.follows,
       shares: stored.shares + current.shares,
       recentLines: [...stored.recentLines, ...current.recentLines].slice(-RECENT_LINES),
+      notes: current.notes.reduce(withNote, stored.notes),
     });
   }
 
@@ -244,4 +254,25 @@ export class ViewerMemory {
       this.loaded.delete(record.id);
     }
   }
+}
+
+/** A note's topic ("pet" in "pet: a dog called Thor"), lowercase, or undefined for a note without one. */
+export function noteTopic(note: string): string | undefined {
+  const at = note.indexOf(": ");
+  return at > 0 ? cleanTopic(note.slice(0, at)) : undefined;
+}
+
+/** "Favorite  Food" -> "favorite food"; undefined when empty or too long to be a topic. */
+export function cleanTopic(topic: string): string | undefined {
+  const clean = topic.trim().toLowerCase().replace(/\s+/g, " ");
+  return clean && clean.length <= TOPIC_MAX ? clean : undefined;
+}
+
+/** `notes` with `note` added last: an exact repeat stays where it is, and a note on the same topic replaces the old one. */
+function withNote(notes: string[], note: string): string[] {
+  const lower = note.toLowerCase();
+  if (notes.some((existing) => existing.toLowerCase() === lower)) return notes;
+  const topic = noteTopic(note);
+  const kept = topic ? notes.filter((existing) => noteTopic(existing) !== topic) : notes;
+  return [...kept, note].slice(-MAX_NOTES);
 }

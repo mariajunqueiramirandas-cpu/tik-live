@@ -200,7 +200,7 @@ describe("TurnEngine", () => {
     expect(memory.get("ana")?.notes).toEqual(["loves cats"]);
     await engine.run(plan());
     const context = host.requests.at(-1)!.context;
-    expect(context.head).toBe("<earlier>\nAna asked about cats; the host promised a song.\n</earlier>");
+    expect(context.head).toStartWith("<earlier>\nAna asked about cats; the host promised a song.\n</earlier>");
     expect(context.history).toHaveLength(2);
   });
 

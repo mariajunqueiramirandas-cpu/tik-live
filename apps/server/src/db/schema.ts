@@ -83,6 +83,15 @@ export const viewer = pgTable(
   ],
 );
 
+/** What the host has said about itself on a channel (ADR-0033), so it stays the same character across streams. */
+export const hostMemory = pgTable("host_memory", {
+  channelId: uuid("channel_id")
+    .primaryKey()
+    .references(() => channel.id, { onDelete: "cascade" }),
+  facts: jsonb("facts").$type<Array<{ topic: string; fact: string; at: number }>>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+
 export const streamSession = pgTable(
   "stream_session",
   {

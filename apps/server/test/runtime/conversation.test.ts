@@ -173,12 +173,27 @@ describe("Conversation", () => {
     const before = conversation.tokens();
     expect(conversation.roll("<earlier>\nAna chatted a lot.\n</earlier>", 8, 3)).toBe(7);
     const context = conversation.context(conversation.draft(), "now");
-    expect(context.head).toBe("<earlier>\nAna chatted a lot.\n</earlier>");
+    // The summary, then what the turns that left had, word for word (a summary can drop who was there).
+    expect(context.head).toStartWith("<earlier>\nAna chatted a lot.\n</earlier>\n\n");
+    expect(context.head).toContain('<earlier turns="7">\nTalked with: ana.');
     expect(context.history.map((exchange) => exchange.reply)).toEqual(["reply 7", "reply 8", "reply 9"]);
     expect(conversation.tokens()).toBeLessThan(before);
     // Only turns the summary covers can go.
     expect(conversation.roll("<earlier>\nlater\n</earlier>", 8, 1)).toBe(1);
     expect(conversation.exchangesAfter(0).map((exchange) => exchange.reply)).toEqual(["reply 8", "reply 9"]);
+  });
+
+  it("remembers the questions the host asked the room after their turns leave", () => {
+    const { conversation, see } = setup();
+    const replies = ["[happy] Oi Ana!\nPizza ou hambúrguer?", "[excited] Boa! [confetti]", "[thinking] E qual é o seu time?\nPizza ou hambúrguer?", "Valeu!"];
+    for (const reply of replies) {
+      see(chat("ana", "oi"));
+      conversation.commit(conversation.draft(), "brief", reply, 0);
+    }
+    conversation.roll("<earlier>\nThe host chatted with Ana.\n</earlier>", 3, 1);
+    const { head } = conversation.context(conversation.draft(), "now");
+    // Without tags, once each, most recent last.
+    expect(head).toContain('You already asked the room: "E qual é o seu time?"; "Pizza ou hambúrguer?".');
   });
 
   it("starts a new stream from a clean slate, and refuses turns written for the last one", () => {

@@ -15,6 +15,13 @@
       "when": 1792271489136,
       "tag": "0001_show_summary",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792296832118,
+      "tag": "0002_host_memory",
+      "breakpoints": true
     }
   ]
 }
