@@ -70,6 +70,41 @@ test("captions and alerts appear when the host speaks and gifts arrive", async (
   expect(gold, "gold gift text").toBeGreaterThan(0);
 });
 
+test("up next and the top likers show under the badge, and leave when emptied", async ({ page }) => {
+  // The panel's top-left corner area, clear of the orb and the alerts.
+  const lit = async () => {
+    let n = 0;
+    for (let y = 340; y <= 640; y += 12) for (let x = 84; x <= 420; x += 20) if (brightness(await probe(page, x, y)) > 450) n++;
+    return n;
+  };
+  await page.evaluate(() => (window as any).__lab.frame(2));
+  const before = await lit();
+  await page.evaluate(() => {
+    (window as any).__lab.hud(true);
+    (window as any).__lab.frame(4);
+  });
+  expect(await lit(), "text in the panels").toBeGreaterThan(before + 8);
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+  // A vote takes the ranking card's place, then gives it back.
+  await page.evaluate(() => {
+    const lab = (window as any).__lab;
+    lab.apply({ t: "vote", vote: { title: "Jogo do quadro final", options: ["Quiz", "Charadas", "Dedo mais rápido"], tally: [4, 1, 9] } });
+    lab.frame(5);
+    lab.apply({ t: "boost", boost: "double", by: "duda" });
+    lab.frame(5.5);
+  });
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+  await page.evaluate(() => {
+    (window as any).__lab.apply({ t: "vote", vote: null });
+    (window as any).__lab.frame(5.6);
+  });
+  await page.evaluate(() => {
+    (window as any).__lab.hud(false);
+    (window as any).__lab.frame(8);
+  });
+  expect(await lit(), "panels faded out").toBeLessThanOrEqual(before + 2);
+});
+
 test("the stage recovers from a lost GPU context", async ({ page }) => {
   await page.evaluate(() => (window as any).__lab.frame(2));
   expect(brightness(await probe(page, 540, 625))).toBeGreaterThan(300);

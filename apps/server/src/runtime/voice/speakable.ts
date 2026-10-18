@@ -2,7 +2,7 @@
  * Text -> what a Brazilian Portuguese voice reads well: prices, numbers,
  * times and dates in words, and nothing without a spoken form (emoji, links,
  * brackets). A port of the self-hosted voice's normalizer
- * (services/tts/tts/text.py) for the Fish Audio voice (ADR-0028), plus what a
+ * (services/tts/tts/text.py) for the Fish Audio voice (ADR-0030), plus what a
  * live host needs: numbers agree with the noun after them ("mil duzentas e
  * cinquenta curtidas"), "7x8" is "sete vezes oito", and "@" before a name is
  * silent. The caption on stage keeps the line as written.

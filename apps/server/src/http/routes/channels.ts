@@ -112,7 +112,7 @@ export function channelRoutes(deps: AppDeps) {
       if (input.source !== undefined) patch.source = input.source;
       if (input.persona !== undefined) patch.persona = input.persona;
       if (input.voice !== undefined) {
-        // Fish voices are a list the operator vouches for (ADR-0028); any other id is refused.
+        // Fish voices are a list the operator vouches for (ADR-0030); any other id is refused.
         if (input.voice.provider === "fish" && input.voice.voiceId && !deps.voices.hasFishVoice(input.voice.voiceId)) {
           return problem(c, 400, "voice_not_found", "Essa voz não está disponível. Escolha uma da lista.");
         }

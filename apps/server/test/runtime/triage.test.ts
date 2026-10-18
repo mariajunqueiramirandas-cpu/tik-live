@@ -33,6 +33,17 @@ describe("Triage", () => {
     expect(gifts).toEqual(["maria 1x Lion 29999", "maria 10x Rose 10", "joe 1x Rose 1"]);
   });
 
+  it("thanks a viewer for sharing once, not once per share", () => {
+    const { clock, triage, ingest } = setup();
+    const share = (handle: string) => ingest({ kind: "share", at: clock.now(), viewer: viewer(handle) });
+    expect(share("bebe").queued).toBe(true);
+    expect(share("bebe")).toEqual({ queued: false, reason: "repeated share" });
+    expect(share("ana").queued).toBe(true);
+    clock.advance(5 * 60_000);
+    expect(share("bebe").queued).toBe(true);
+    expect(triage.pending()).toBe(1); // the earlier shares expired meanwhile
+  });
+
   it("boosts questions and messages that mention the host", () => {
     const { triage, ingest } = setup();
     ingest(chat("a", "nice stream"));
@@ -70,12 +81,25 @@ describe("Triage", () => {
 
   it("expires stale chat but keeps gifts longer", () => {
     const { triage, ingest, clock } = setup();
-    ingest(chat("a", "what's up?"));
+    ingest(chat("a", "nice stream"));
     ingest(gift("b", "Rose", 1));
     clock.advance(30_000);
     const left = triage.take(5);
     expect(left).toHaveLength(1);
     expect(left[0]?.event.kind).toBe("gift");
+    expect(triage.takeLapsed()).toEqual([]); // plain chat just goes
+  });
+
+  it("keeps questions for a minute, then hands the ones nobody got to back", () => {
+    const { triage, ingest, clock } = setup();
+    ingest(chat("lumy", "gato ou cachorro?"));
+    ingest(chat("ana", "blip, sing something"));
+    clock.advance(30_000);
+    expect(triage.pending()).toBe(2); // a question, and a message to the host by name
+    clock.advance(31_000);
+    expect(triage.pending()).toBe(0);
+    expect(triage.takeLapsed().map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["lumy"]);
+    expect(triage.takeLapsed()).toEqual([]);
   });
 
   it("only queues joins from returning viewers", () => {

@@ -148,6 +148,12 @@ export class Conversation {
     return `e${id}`;
   }
 
+  /** True when the host has seen the event in a room, or will in the next one. */
+  canShow(event: LiveEvent): boolean {
+    const id = this.ids.get(event);
+    return id !== undefined && (this.seen.has(id) || this.pending.some((item) => item.id === id));
+  }
+
   /** Moments waiting for the next turn. */
   pendingCount(): number {
     return this.pending.length;

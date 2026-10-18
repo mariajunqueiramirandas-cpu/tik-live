@@ -421,6 +421,20 @@ export class Engine implements StageEngine {
       case "fx":
         this.play(message.fx, message.intensity ?? 1);
         break;
+      case "boost": {
+        const { boost, by } = message;
+        this.whenLoaded(() => this.fx?.boost(boost, by, this.time));
+        break;
+      }
+      case "vote":
+        this.text.card.setVote(message.vote, this.time, this.scale);
+        break;
+      case "schedule":
+        this.text.upNext.set(message.items, this.time, this.scale);
+        break;
+      case "leaders":
+        this.text.card.set(message.board, message.rows, message.windowMin, this.time, this.scale);
+        break;
       case "game": {
         const { scene } = message;
         this.gameMix.target = scene ? 1 : 0;
@@ -439,6 +453,7 @@ export class Engine implements StageEngine {
     this.colors.setTarget([...hexToRgb(look.primary), ...hexToRgb(look.secondary), ...hexToRgb(look.background)]);
     this.character.style.target = look.character === "orb" ? 1 : 0;
     this.text.setGlow(look.primary, this.scale);
+    this.text.setColors(look.primary, look.secondary, this.scale);
     if (nameChanged) this.text.chrome.setBadge(disclosureText(name), this.scale);
   }
 

@@ -1,4 +1,4 @@
-/** A Fish Audio voice creators can pick (ADR-0028). */
+/** A Fish Audio voice creators can pick (ADR-0030). */
 export interface FishVoice {
   /** Fish Audio's voice (model) id: 32 hex characters. */
   id: string;
@@ -13,7 +13,7 @@ export const FISH_VOICE_ID = /^[0-9a-f]{32}$/;
  * The built-in voices: Brazilian voices from Fish Audio's public library,
  * each made with Fish's voice designer from a written description, so none
  * imitates a real person. Each was checked on Drama 3 for a native Brazilian
- * accent, the same speaker from line to line, and live-host energy (ADR-0028).
+ * accent, the same speaker from line to line, and live-host energy (ADR-0030).
  * The names are ours; each comment keeps the voice's Fish title and author.
  */
 export const FISH_VOICES: FishVoice[] = [
@@ -61,7 +61,7 @@ export const FISH_VOICES: FishVoice[] = [
   },
 ];
 
-/** Bia: the highest-rated voice for a live host in the checks behind ADR-0028. */
+/** Bia: the highest-rated voice for a live host in the checks behind ADR-0030. */
 export const DEFAULT_FISH_VOICE = "4b0adc6775774eb48b92c7e99ac92a89";
 
 /**

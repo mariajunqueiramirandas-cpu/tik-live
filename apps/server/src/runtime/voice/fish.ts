@@ -31,7 +31,7 @@ const MP3_BITRATE_BPS = 128_000;
 /**
  * How each emotion is acted. Drama 3 reads a direction in brackets before
  * the line; English directions were followed a little more often than
- * Portuguese ones (ADR-0028). Neutral lines get none.
+ * Portuguese ones (ADR-0030). Neutral lines get none.
  */
 export const FISH_DIRECTIONS: Record<Emotion, string | null> = {
   neutral: null,
@@ -59,7 +59,7 @@ export function fishInput(text: string, emotion: Emotion): string | null {
 }
 
 /**
- * Fish Audio's Drama 3 through OpenRouter (ADR-0028): Brazilian voices that
+ * Fish Audio's Drama 3 through OpenRouter (ADR-0030): Brazilian voices that
  * act each line's emotion, billed per byte of text.
  */
 export class FishTts implements TtsProvider {

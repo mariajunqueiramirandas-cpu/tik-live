@@ -162,7 +162,7 @@ streams over the studio WebSocket ([protocol.md](protocol.md#studio)).
 
 `{ enabled, providers, canChoose, defaultVoiceId, defaultPocketVoiceId, defaultFishVoiceId, voices: [{ id, provider, name, previewUrl, description, tags }] }`.
 `providers` lists the configured voice providers, the default (for new hosts)
-first: `fish` with an OpenRouter key ([ADR-0028](adr/0028-fish-audio-default-voice.md)),
+first: `fish` with an OpenRouter key ([ADR-0030](adr/0030-fish-audio-default-voice.md)),
 `elevenlabs` with a key, `pocket` with the self-hosted service
 ([ADR-0021](adr/0021-self-hosted-tts.md)). `enabled` is false when there are
 none; `canChoose` is false on plans limited to the default voice. Fish voices

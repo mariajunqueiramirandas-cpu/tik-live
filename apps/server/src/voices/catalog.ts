@@ -32,7 +32,7 @@ const SAMPLE_TEXT = "Oi, pessoal! Bem-vindos à live. Hoje eu comando o show, en
 
 /**
  * The voices creators can pick from: the server's Fish Audio voices (a list
- * in configuration, ADR-0028), the ElevenLabs voices available to the
+ * in configuration, ADR-0030), the ElevenLabs voices available to the
  * platform's account and the voices the Pocket TTS sidecar ships, the last
  * two fetched live (so voice ids never go stale) and cached. Fish comes first:
  * it is the default for new hosts.

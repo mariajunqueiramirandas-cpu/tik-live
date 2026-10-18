@@ -1,13 +1,32 @@
-import type { Effect, LiveEvent, Persona, Segment, Sound } from "@tik-live/shared";
+import {
+  GAME_LABELS,
+  LEADER_BOARDS,
+  LEADERS_MAX,
+  UP_NEXT_MAX,
+  type Effect,
+  type GameConfig,
+  type LeaderBoard,
+  type LeaderRow,
+  type LiveEvent,
+  type Persona,
+  type Segment,
+  type Sound,
+  type UpNextItem,
+  type UpNextKind,
+  type Viewer,
+} from "@tik-live/shared";
 import type { Logger } from "../../log";
 import type { GameMaster } from "../games/master";
+import type { LoopRanking } from "../games/ranking";
+import { FinalVote, voteOptions } from "../games/vote";
+import { GIFT_WINDOW_MS, LIKE_WINDOW_MS, RollingBoard } from "../leaderboards";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
 import type { RoomEntry } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
 import type { ViewerMemory } from "./memory";
-import { describeClock, type TurnKind, type TurnPlan } from "./prompt";
-import type { QueueItem, Triage, TriageResult } from "./triage";
+import { describeClock, displayName, type TurnKind, type TurnPlan } from "./prompt";
+import { isQuestion, type QueueItem, type Triage, type TriageResult } from "./triage";
 import { TurnEngine } from "./turns";
 
 export interface StreamStats {
@@ -30,6 +49,12 @@ export interface StageNotifier {
   stats(stats: { viewers: number; likes: number }): void;
   fx?(fx: Effect, intensity?: number): void;
   sfx?(sound: Sound): void;
+  /** What's coming up on the show, soonest first (ADR-0028). */
+  schedule?(items: UpNextItem[]): void;
+  /** Chat's vote on the last segment's game, or null when it closes (ADR-0029). */
+  vote?(vote: { title: string; options: string[]; tally: number[] } | null): void;
+  /** A ranking: the top likers over the last 15 minutes, or gifters over the last hour. */
+  leaders?(board: LeaderBoard, rows: LeaderRow[], windowMin: number): void;
 }
 
 /** Observability hooks for the studio feed and analytics. */
@@ -53,10 +78,18 @@ export interface DirectorOptions {
   hooks?: DirectorHooks;
   /** Silence (ms) before the host fills dead air when people are watching. */
   deadAirMs: number;
+  /**
+   * How far behind real time viewers watch the stream. After the host asks
+   * the room something, replies can't arrive before viewers have heard it,
+   * so dead air waits this much longer.
+   */
+  streamDelayMs?: number;
   /** Wait for the first real event before talking (avoids talking to an empty room). */
   startInStandby?: boolean;
   /** Runs chat minigames, when the channel has them. */
   games?: GameMaster;
+  /** The minigame ranking for one loop of the run of show, revealed on a podium when the loop ends (ADR-0028). */
+  ranking?: LoopRanking;
   /** Keeps a running summary of the show and notes about viewers. */
   chronicler?: Chronicler;
   /** What the host may do besides talking (play music). */
@@ -82,10 +115,18 @@ const REACT_CHAT = 3;
 const REACT_SUPPORT = 6;
 /** A segment this late moves on even while chat keeps the host busy. */
 const SEGMENT_OVERDUE_MS = 30_000;
-/** Questions the host moved past come back in a quiet moment, if they're this fresh. */
+/** Questions the host moved past (or that expired while it was busy) come back at the next free moment, if they're this fresh. */
 const OWED_TTL_MS = 3 * 60_000;
 const OWED_MAX = 3;
 const CHAT_SAMPLE = 12;
+/** A ranking goes to the stage at most this often. */
+const LEADERS_EVERY_MS = 1_000;
+const WINDOWS: Record<LeaderBoard, number> = { likes: LIKE_WINDOW_MS, gifts: GIFT_WINDOW_MS };
+const PODIUM_TITLE = "Pódio geral";
+/** The vote on the last segment's game opens this long before the second-to-last segment ends (or soon after it starts). */
+const VOTE_LEAD_MS = 3 * 60_000;
+const VOTE_MIN_DELAY_MS = 20_000;
+const VOTE_TITLE = "Jogo do quadro final";
 const SUPPORT_KINDS: ReadonlyArray<LiveEvent["kind"]> = ["gift", "follow", "share", "join"];
 
 /**
@@ -165,13 +206,18 @@ export interface DirectorState {
  * 4. a segment change that is overdue (a busy chat can't hold the show in one segment forever);
  * 5. reactions: gifts and follows first, then messages oldest first; a like milestone rides along;
  * 6. a like milestone on its own;
- * 7. the segment change, on time, in a quiet moment;
- * 8. dead-air filler, including questions the host moved past earlier.
+ * 7. a question the host moved past, or that expired while it was busy;
+ * 8. the segment change, on time, in a quiet moment;
+ * 9. dead-air filler.
  *
  * The host moves forward through chat: once it answers a message, older
  * messages it didn't pick are passed over (they're still in the room it
  * saw), so it never jumps back to something older than what it just
- * answered, except when it says so in a quiet moment.
+ * answered, except to come back to a question it owes, saying who asked.
+ * Questions that expire while the host is busy are owed the same way.
+ *
+ * A game round that's ready to go up holds new turns until the host stops
+ * talking, so the round opens when the host can read it out.
  *
  * Turn-taking (ADR-0022): one turn is written at a time, and the next one
  * starts while the last sentence of the previous one is playing, so events
@@ -208,8 +254,26 @@ export class Director {
   /** Questions passed over on a busy stretch. */
   private owed: Array<{ event: LiveEvent; at: number }> = [];
   private fillerBeat = 0;
+  /** The host's last line asked the room something. */
+  private askedRoom = false;
   private recentChat: string[] = [];
   private music: { title: string; endsAt: number } | null = null;
+  /** Who sent the most likes (last 15 minutes) and diamonds (last hour). */
+  private readonly boards: Record<LeaderBoard, RollingBoard>;
+  private readonly boardSent: Record<LeaderBoard, { revision: number; at: number }> = {
+    likes: { revision: -1, at: -Infinity },
+    gifts: { revision: -1, at: -Infinity },
+  };
+  private scheduleKey = "";
+  /** Chat's vote on the last segment's game, while the second-to-last segment runs. */
+  private vote: { ballot: FinalVote; closesAt: number } | null = null;
+  /** The game chat picked for this loop's last segment. */
+  private finalGame: GameConfig | null = null;
+  /** Loops completed this stream (rotates the games on offer). */
+  private loops = 0;
+  private voteCue: { note: string; line: string; history: string } | null = null;
+  private voteKey = "";
+  private voteSentAt = -Infinity;
   private readonly engine: TurnEngine;
   private readonly now: () => number;
 
@@ -220,6 +284,7 @@ export class Director {
     this.segmentStartedAt = this.startedAt;
     this.lastEventAt = this.startedAt;
     this.standby = options.startInStandby ?? false;
+    this.boards = { likes: new RollingBoard(this.now, LIKE_WINDOW_MS), gifts: new RollingBoard(this.now, GIFT_WINDOW_MS) };
     const blocklist = options.blocklist ?? (() => []);
     this.engine = new TurnEngine({
       host: options.host,
@@ -247,6 +312,7 @@ export class Director {
     this.timer = undefined;
     this.engine.stop();
     this.options.games?.stop();
+    this.options.ranking?.stop();
   }
 
   segment(): Segment {
@@ -256,6 +322,10 @@ export class Director {
   /** Applies an edited persona without restarting the show. */
   reconfigure(persona: Persona): void {
     const currentId = this.segment().id;
+    if (persona.segments.length !== this.persona.segments.length || persona.finalVote === false) {
+      this.vote = null;
+      this.finalGame = null;
+    }
     this.persona = persona;
     const index = persona.segments.findIndex((s) => s.id === currentId);
     if (index >= 0) {
@@ -297,6 +367,14 @@ export class Director {
       // What was waiting belongs to the stream that ended.
       this.options.triage.clear();
       this.options.games?.stop();
+      // So do its loop's ranking and who was liking and gifting.
+      this.options.ranking?.stop();
+      this.clearBoards();
+      this.vote = null;
+      this.voteCue = null;
+      this.finalGame = null;
+      this.loops = 0;
+      this.publishHud(this.now(), true);
       this.options.hooks?.onEvent?.(event, null);
       return;
     }
@@ -331,6 +409,7 @@ export class Director {
           this.options.stage.fx?.("hearts", 2);
           this.sound("levelup");
         }
+        this.boards.likes.add(event.viewer.id, this.boardName(event.viewer), event.count);
         this.options.stage.stats({ viewers: this.viewers, likes: this.counters.likes });
         this.options.hooks?.onEvent?.(event, null);
         return;
@@ -338,6 +417,9 @@ export class Director {
       case "gift":
         this.counters.gifts += 1;
         this.counters.diamonds += event.diamonds;
+        this.boards.gifts.add(event.viewer.id, this.boardName(event.viewer), event.diamonds);
+        // Gifts during an open round power it up for everyone (ADR-0029).
+        this.options.games?.handleGift(event);
         this.options.stage.alert(event);
         this.sound(event.diamonds >= 1_000 ? "fanfare" : event.diamonds >= 100 ? "levelup" : event.diamonds >= 10 ? "chime" : "pop");
         this.remember({ at: event.at, kind: "support", event });
@@ -352,7 +434,6 @@ export class Director {
         this.counters.shares += 1;
         this.options.stage.alert(event);
         this.sound("whoosh");
-        this.remember({ at: event.at, kind: "support", event });
         break;
       case "chat":
       case "question":
@@ -360,6 +441,11 @@ export class Director {
         // An answer to a game round is the game's, not a message for the host.
         if (this.options.games?.handleChat(event)) {
           this.options.hooks?.onEvent?.(event, { queued: false, reason: "game answer" });
+          return;
+        }
+        // So is a ballot in the vote on the last segment's game.
+        if (this.vote?.ballot.cast(event.viewer.id, event.text)) {
+          this.options.hooks?.onEvent?.(event, { queued: false, reason: "vote" });
           return;
         }
         break;
@@ -376,7 +462,8 @@ export class Director {
       if (event.kind === "chat" || event.kind === "question") {
         this.remember({ at: event.at, kind: "viewer", event });
         this.recentChat = [...this.recentChat, event.text].slice(-CHAT_SAMPLE);
-      } else if (event.kind === "join") {
+      } else if (event.kind === "join" || event.kind === "share") {
+        // A repeat share isn't queued, so the host isn't nudged to thank it again.
         this.remember({ at: event.at, kind: "support", event });
       }
       this.yieldTo(eventUrgency(event));
@@ -386,6 +473,7 @@ export class Director {
   /** A line was performed on stage. Lines the owner typed join the conversation as theirs. */
   noteSpoken(text: string, _meta?: CueMeta, operator = false): void {
     this.recentLines = [...this.recentLines, text].slice(-RECENT_LINES);
+    this.askedRoom = /\?[^\p{L}\p{N}]*$/u.test(text);
     if (operator) this.remember({ at: this.now(), kind: "show", text: `The channel owner had you say: "${text}"` });
   }
 
@@ -445,6 +533,63 @@ export class Director {
     return true;
   }
 
+  /**
+   * What's coming up, soonest first (ADR-0028): this segment's next game,
+   * the loop's podium when this is the last segment, then the next segments.
+   * Estimates: a segment waits for a game in progress and a quiet moment, so
+   * anything overdue reads as "now".
+   */
+  upNext(now = this.now()): Array<{ kind: UpNextKind; title: string; at: number }> {
+    const items: Array<{ kind: UpNextKind; title: string; at: number }> = [];
+    const segments = this.persona.segments;
+    const segment = this.segment();
+    const games = this.options.games;
+    const ranking = this.options.ranking;
+    const revealing = ranking?.isRevealing() === true;
+    const segmentEndsAt = this.segmentStartedAt + segment.minutes * 60_000;
+    let at = Math.max(now, segmentEndsAt);
+    const current = this.segmentGame(this.segmentIndex);
+    if (current && games && !games.isActive() && !revealing) {
+      const gameAt = Math.max(now, this.segmentStartedAt + SEGMENT_GAME_DELAY_MS, games.lastEndedAt() + GAME_BREAK_MS);
+      if (segmentEndsAt - gameAt >= MIN_GAME_WINDOW_MS) items.push({ kind: "game", title: gameTitle(current), at: gameAt });
+    }
+    const podium = () => {
+      if (ranking?.hasScores() && !revealing) items.push({ kind: "podium", title: PODIUM_TITLE, at });
+    };
+    if (segments.length === 1) {
+      podium();
+      return items.slice(0, UP_NEXT_MAX);
+    }
+    // Through the end of the loop and back to its first segment.
+    for (let k = 1; k <= segments.length && items.length < UP_NEXT_MAX; k++) {
+      const index = (this.segmentIndex + k) % segments.length;
+      if (index === 0) podium();
+      const next = segments[index] as Segment;
+      const choosing = this.vote !== null && index === segments.length - 1;
+      items.push({ kind: "segment", title: choosing ? `${next.title} · o chat escolhe`.slice(0, 60) : segmentTitle(next, this.segmentGame(index)), at });
+      at += next.minutes * 60_000;
+    }
+    return items.slice(0, UP_NEXT_MAX);
+  }
+
+  /** Chat's vote on the last segment's game, for the studio. */
+  voteStatus(now = this.now()): { segment: string; options: Array<{ label: string; votes: number }>; closesInSec: number } | null {
+    const vote = this.vote;
+    if (!vote) return null;
+    const tally = vote.ballot.tally();
+    const last = this.persona.segments[this.persona.segments.length - 1] as Segment;
+    return {
+      segment: last.title,
+      options: vote.ballot.labels.map((label, i) => ({ label, votes: tally[i] ?? 0 })),
+      closesInSec: Math.max(0, Math.ceil((vote.closesAt - now) / 1000)),
+    };
+  }
+
+  /** The top likers over the last 15 minutes and gifters over the last hour. */
+  leaders(n = LEADERS_MAX): Record<LeaderBoard, LeaderRow[]> {
+    return { likes: this.boards.likes.top(n), gifts: this.boards.gifts.top(n) };
+  }
+
   /** Recent chat messages, for matching a game's language to the room. */
   chatSample(): string[] {
     return this.recentChat;
@@ -466,6 +611,7 @@ export class Director {
     this.peakViewers = this.viewers;
     this.nextMilestone = LIKE_MILESTONES[0] as number;
     this.pendingMilestone = undefined;
+    this.clearBoards();
   }
 
   state(): DirectorState {
@@ -487,15 +633,21 @@ export class Director {
   async tick(): Promise<void> {
     if (this.standby) return;
     // Game clocks run even while a turn is being written; a game waits for the host to finish talking.
-    this.options.games?.tick(this.options.speech.isIdle() && !this.engine.inFlight);
-    if (this.paused || this.engine.inFlight) return;
+    const idle = this.options.speech.isIdle() && !this.engine.inFlight;
+    this.options.games?.tick(idle);
+    this.options.ranking?.tick(idle);
     const now = this.now();
+    this.maybeOpenVote(now);
+    this.publishHud(now);
+    if (this.paused || this.engine.inFlight) return;
     this.maybeStartSegmentGame(now);
     this.engine.maintain(now, !this.reactOnly());
     if (now < this.cooldownUntil || (!this.skipGap && now - this.lastTurnAt < MIN_TURN_GAP_MS)) return;
     // Start the next turn while the last sentence is still playing, but never
     // stack up more than one turn of queued speech.
     if (this.options.speech.pending() > 0) return;
+    // A game round goes up as soon as the host stops talking: don't start something else first.
+    if (this.options.games?.wantsFloor()) return;
 
     const plan = this.chooseTurn(now);
     if (plan) await this.runTurn(plan);
@@ -533,7 +685,8 @@ export class Director {
   private chooseTurn(now: number): TurnPlan | undefined {
     const { triage, speech } = this.options;
     const games = this.options.games;
-    const game = games?.hostContext();
+    const ranking = this.options.ranking;
+    const game = [games?.hostContext() ?? ranking?.hostContext(), this.voteContext()].filter(Boolean).join("\n") || undefined;
     const segment = this.segment();
     const segmentEndsAt = this.segmentStartedAt + segment.minutes * 60_000;
     const base = {
@@ -553,11 +706,18 @@ export class Director {
       return { ...base, kind: "opening", items: focus.items };
     }
 
-    // Game moments are time-bound (a question just went up, an answer is being revealed).
-    const cue = games?.takeCue();
+    // Game moments are time-bound (a question just went up, an answer is being revealed, a podium place).
+    const cue = games?.takeCue() ?? ranking?.takeCue();
     if (cue) {
       this.remember({ at: now, kind: "show", text: cue.history });
       return { ...base, kind: "game", items: [], note: cue.note, line: cue.line };
+    }
+
+    if (this.voteCue) {
+      const voteCue = this.voteCue;
+      this.voteCue = null;
+      this.remember({ at: now, kind: "show", text: voteCue.history });
+      return { ...base, kind: "game", items: [], note: voteCue.note, line: voteCue.line };
     }
 
     if (this.pendingRequest !== undefined) {
@@ -566,12 +726,13 @@ export class Director {
       return { ...base, kind: "request", items: [], note };
     }
 
-    // A game in progress finishes before the segment moves on (a forced change already stopped a segment's game).
-    const gameHolds = this.forcedSegment === undefined && games?.isActive() === true;
+    // A game in progress (or the podium) finishes before the segment moves on (a forced change already stopped a segment's game).
+    const gameHolds = this.forcedSegment === undefined && (games?.isActive() === true || ranking?.isRevealing() === true);
     const segmentDue = this.persona.segments.length > 1 && !gameHolds && now >= segmentEndsAt;
     // Overdue because chat kept the host talking past the end (not because the room was empty): move on now.
     const heldUp = segmentDue && now - segmentEndsAt >= SEGMENT_OVERDUE_MS && this.lastTurnAt >= segmentEndsAt;
-    if (this.forcedSegment !== undefined || (heldUp && !this.reactOnly())) return this.changeSegment(now, base);
+    if (this.forcedSegment !== undefined) return this.changeSegment(now, base);
+    if (heldUp && !this.reactOnly()) return this.advance(now, base);
 
     if (triage.pending() > 0) {
       const focus = this.takeFocus();
@@ -592,14 +753,28 @@ export class Director {
     const milestone = this.takeMilestone();
     if (milestone) return { ...base, kind: "milestone", items: [], note: milestone.note, line: milestone.line };
 
+    // A question the host moved past, or that expired while it was busy (a game, a segment change), comes back now.
+    for (const item of triage.takeLapsed()) this.owe(item);
+    const owed = this.takeOwed(now);
+    if (owed) {
+      return { ...base, kind: "react", items: [owed], note: "It came in a bit earlier and you didn't get to it: say who asked. Skip it if you already answered it." };
+    }
+
     if (this.reactOnly()) return undefined;
 
-    if (segmentDue && speech.isIdle()) return this.changeSegment(now, base);
+    if (segmentDue && speech.isIdle()) return this.advance(now, base);
+    // A show with one segment loops it: each time it runs out is the end of a loop.
+    if (this.persona.segments.length === 1 && !gameHolds && now >= segmentEndsAt && speech.isIdle()) {
+      this.segmentStartedAt = now;
+      const podium = this.endLoop(now, base);
+      if (podium) return podium;
+    }
 
-    const deadAir = deadAirFor(this.viewers, this.options.deadAirMs);
+    // Replies to a question can't come in before viewers have heard it.
+    const deadAir = deadAirFor(this.viewers, this.options.deadAirMs) + (this.askedRoom ? (this.options.streamDelayMs ?? 0) : 0);
     const quietFor = speech.silenceMs();
     if (quietFor >= deadAir && now - this.lastTurnAt >= deadAir) {
-      return { ...base, kind: "filler", items: [], note: this.fillerNote(now) };
+      return { ...base, kind: "filler", items: [], note: this.fillerNote() };
     }
     return undefined;
   }
@@ -627,9 +802,18 @@ export class Director {
   }
 
   private owe(item: QueueItem): void {
-    const event = item.event;
-    if (event.kind !== "question" && !(event.kind === "chat" && event.text.includes("?"))) return;
-    this.owed = [...this.owed, { event, at: this.now() }].slice(-OWED_MAX);
+    if (!isQuestion(item.event)) return;
+    this.owed = [...this.owed, { event: item.event, at: this.now() }].slice(-OWED_MAX);
+  }
+
+  /** The oldest question still owed that the host can see in its room (not one that scrolled by). */
+  private takeOwed(now: number): QueueItem | undefined {
+    this.owed = this.owed.filter((owed) => now - owed.at < OWED_TTL_MS);
+    while (this.owed.length) {
+      const { event } = this.owed.shift() as (typeof this.owed)[number];
+      if (this.engine.conversation.canShow(event)) return { event, events: [event], priority: 0, expiresAt: Infinity, seq: 0 };
+    }
+    return undefined;
   }
 
   private takeMilestone(): { note: string; line: string } | undefined {
@@ -643,11 +827,39 @@ export class Director {
     };
   }
 
+  /** Moves to the next segment in the rotation; the last one ends the loop, and its podium goes first. */
+  private advance(now: number, base: Omit<TurnPlan, "kind" | "items">): TurnPlan {
+    if (this.segmentIndex === this.persona.segments.length - 1) {
+      const podium = this.endLoop(now, base);
+      if (podium) return podium;
+    }
+    return this.changeSegment(now, base);
+  }
+
+  /**
+   * Every segment has played: reveals the loop's podium (the segment change
+   * waits for it) and opens with its first moment. Without scores, the next
+   * loop just starts.
+   */
+  private endLoop(now: number, base: Omit<TurnPlan, "kind" | "items">): TurnPlan | undefined {
+    const ranking = this.options.ranking;
+    if (!ranking?.startReveal()) return undefined;
+    const cue = ranking.takeCue();
+    if (!cue) return undefined;
+    this.remember({ at: now, kind: "show", text: cue.history });
+    return { ...base, game: ranking.hostContext(), kind: "game", items: [], note: cue.note, line: cue.line };
+  }
+
   private changeSegment(now: number, base: Omit<TurnPlan, "kind" | "items">): TurnPlan {
     const nextIndex = this.forcedSegment ?? (this.segmentIndex + 1) % this.persona.segments.length;
     this.forcedSegment = undefined;
     const previous = this.segment();
     const nextSegment = this.persona.segments[nextIndex] as Segment;
+    if (this.vote) this.closeVote(nextIndex === this.persona.segments.length - 1, now);
+    if (nextIndex === 0) {
+      this.loops += 1;
+      this.finalGame = null;
+    }
     this.segmentIndex = nextIndex;
     this.segmentStartedAt = now;
     this.options.stage.segment(nextSegment);
@@ -656,21 +868,120 @@ export class Director {
     return { ...base, segment: previous, kind: "segment_change", items: [], nextSegment };
   }
 
-  /** What a quiet moment is about: the game, a question the host owes, or the next idea in rotation. */
-  private fillerNote(now: number): string {
+  /** What a quiet moment is about: the game, or the next idea in rotation. */
+  private fillerNote(): string {
     const games = this.options.games?.fillerNote();
     if (games) return games;
-    this.owed = this.owed.filter((owed) => now - owed.at < OWED_TTL_MS);
-    // Only a question the host actually saw in a room (not one that scrolled by).
-    while (this.owed.length) {
-      const ref = this.engine.conversation.ref((this.owed.shift() as (typeof this.owed)[number]).event);
-      if (ref) return `You didn't get to ${ref} earlier. Answer it now, saying who asked, then carry on.`;
-    }
+    if (this.options.ranking?.isRevealing()) return "The loop's podium is on screen. Celebrate the top players by name in a line or two and invite everyone to play in the next loop.";
     const segment = this.segment();
     const chat = this.engine.conversation.hasViewerChat();
     let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     if (pick.needsChat && !chat) pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     return `Keep the show alive for "${segment.title}" (${segment.prompt}). This time, ${pick.beat}`;
+  }
+
+  /** The game a segment plays: its own, or for the last segment, the one chat voted for. */
+  private segmentGame(index: number): GameConfig | undefined {
+    const segments = this.persona.segments;
+    if (index === segments.length - 1 && this.finalGame) return this.finalGame;
+    return segments[index]?.game;
+  }
+
+  /** Opens the vote on the last segment's game near the end of the second-to-last segment (ADR-0029). */
+  private maybeOpenVote(now: number): void {
+    const segments = this.persona.segments;
+    if (this.vote || !this.opened || this.persona.finalVote === false || segments.length < 2) return;
+    if (this.segmentIndex !== segments.length - 2 || this.finalGame) return;
+    const endsAt = this.segmentStartedAt + this.segment().minutes * 60_000;
+    if (now < Math.max(this.segmentStartedAt + VOTE_MIN_DELAY_MS, endsAt - VOTE_LEAD_MS)) return;
+    const ballot = new FinalVote(voteOptions(this.loops));
+    this.vote = { ballot, closesAt: endsAt };
+    const last = segments[segments.length - 1] as Segment;
+    const options = ballot.labels.map((label, i) => `${i + 1}) ${label}`).join(", ");
+    this.voteCue = {
+      note: `Chat gets to choose the minigame for the final segment, "${last.title}": ${options}. Announce it with energy, read the options, and tell chat to type the number (one vote each). The vote closes when this segment ends.`,
+      line: `Vocês escolhem o jogo do quadro final! ${ballot.labels.map((label, i) => `${i + 1} para ${label}`).join(", ")}. Digitem o número!`,
+      history: `A vote opened for the final segment's game: ${options}.`,
+    };
+    this.sound("start");
+    this.options.log?.info("vote on the last segment's game opened");
+  }
+
+  /** Ends the vote: on the way into the last segment, the winner becomes its game. */
+  private closeVote(apply: boolean, now: number): void {
+    const vote = this.vote;
+    this.vote = null;
+    this.voteCue = null;
+    if (!vote || !apply) return;
+    const winner = vote.ballot.winner();
+    const last = this.persona.segments[this.persona.segments.length - 1] as Segment;
+    if (!winner) {
+      this.remember({ at: now, kind: "show", text: `Nobody voted for the final segment's game; "${last.title}" goes ahead as planned.` });
+      return;
+    }
+    this.finalGame = { kind: winner, rounds: last.game?.rounds ?? 5, ...(last.game?.topic ? { topic: last.game.topic } : {}) };
+    const tally = vote.ballot.tally();
+    const votes = vote.ballot.labels.map((label, i) => `${label} ${tally[i] ?? 0}`).join(", ");
+    this.remember({ at: now, kind: "show", text: `Chat voted (${votes}): the final segment plays ${GAME_LABELS[winner]}. Say so when you introduce it.` });
+    this.options.stage.fx?.("confetti", 1.2);
+    this.sound("reveal");
+  }
+
+  /** The open vote as the host may see it. */
+  private voteContext(): string | undefined {
+    const vote = this.vote;
+    if (!vote) return undefined;
+    const tally = vote.ballot.tally();
+    return `Chat is voting the final segment's game (type the number): ${vote.ballot.labels.map((label, i) => `${i + 1}) ${label}: ${tally[i] ?? 0}`).join(", ")}.`;
+  }
+
+  /** Keeps the stage's "up next" and like ranking current (sent only when they change). */
+  private publishHud(now: number, force = false): void {
+    const stage = this.options.stage;
+    if (stage.vote) {
+      const vote = this.vote;
+      const tally = vote?.ballot.tally() ?? [];
+      const key = vote ? `${vote.ballot.labels.join("|")}:${tally.join(",")}` : "";
+      if (force || (key !== this.voteKey && (key === "" || this.voteKey === "" || now - this.voteSentAt >= LEADERS_EVERY_MS))) {
+        this.voteKey = key;
+        this.voteSentAt = now;
+        stage.vote(vote ? { title: VOTE_TITLE, options: vote.ballot.labels, tally } : null);
+      }
+    }
+    if (stage.schedule) {
+      const items = this.standby ? [] : this.upNext(now);
+      // Overdue items all read as "now", so their key doesn't change every tick.
+      const key = items.map((item) => `${item.kind}|${item.title}|${item.at > now ? Math.round(item.at / 1000) : 0}`).join("\n");
+      if (force || key !== this.scheduleKey) {
+        this.scheduleKey = key;
+        stage.schedule(items.map((item) => ({ kind: item.kind, title: item.title, inMs: Math.max(0, item.at - now) })));
+      }
+    }
+    if (stage.leaders) {
+      for (const board of LEADER_BOARDS) {
+        const sent = this.boardSent[board];
+        const revision = this.boards[board].revision();
+        if (force || (revision !== sent.revision && now - sent.at >= LEADERS_EVERY_MS)) {
+          sent.revision = revision;
+          sent.at = now;
+          stage.leaders(board, this.boards[board].top(LEADERS_MAX), WINDOWS[board] / 60_000);
+        }
+      }
+    }
+  }
+
+  private clearBoards(): void {
+    this.boards.likes.clear();
+    this.boards.gifts.clear();
+  }
+
+  /** How a viewer shows on a ranking: blocklisted or injection-looking names read "visitante". */
+  private boardName(viewer: Viewer): string {
+    return displayName(viewer, this.blocklist()).slice(0, 24);
+  }
+
+  private blocklist(): readonly string[] {
+    return this.options.blocklist?.() ?? [];
   }
 
   private remember(entry: RoomEntry): void {
@@ -684,9 +995,9 @@ export class Director {
   /** Starts the current segment's game when the segment has one and the room is ready for it. */
   private maybeStartSegmentGame(now: number): void {
     const games = this.options.games;
-    const config = this.segment().game;
+    const config = this.segmentGame(this.segmentIndex);
     // Not gated on a quiet room: on a busy stream it never is, and the game's cue gets its own turn.
-    if (!games || !config || !this.opened || games.isActive() || this.reactOnly()) return;
+    if (!games || !config || !this.opened || games.isActive() || this.options.ranking?.isRevealing() || this.reactOnly()) return;
     if (now - this.segmentStartedAt < SEGMENT_GAME_DELAY_MS || now - games.lastEndedAt() < GAME_BREAK_MS) return;
     const left = this.segmentStartedAt + this.segment().minutes * 60_000 - now;
     if (left < MIN_GAME_WINDOW_MS) return;
@@ -713,4 +1024,18 @@ export class Director {
     this.options.log?.warn(`turn failed; cooling down ${Math.round(backoff / 1000)}s`, result.error);
     this.options.hooks?.onTurnFailed?.(result.error);
   }
+}
+
+/** "Hora do quiz · Quiz", or just the title when it already names its game. */
+function segmentTitle(segment: Segment, config = segment.game): string {
+  if (!config) return segment.title;
+  const game = gameTitle(config);
+  const named = segment.title.toLowerCase().includes(GAME_LABELS[config.kind].toLowerCase());
+  return named ? segment.title : `${segment.title} · ${game}`.slice(0, 60);
+}
+
+/** "Quiz" or "Quiz: futebol". */
+function gameTitle(config: GameConfig): string {
+  const label = GAME_LABELS[config.kind];
+  return (config.topic ? `${label}: ${config.topic}` : label).slice(0, 60);
 }

@@ -268,7 +268,7 @@ that, a change of direction gets a new ADR instead of an edit.
 
 **Today:** with `OPENROUTER_API_KEY` set, new hosts speak with Fish Audio's
 Drama 3 through OpenRouter
-([ADR-0028](adr/0028-fish-audio-default-voice.md)), about **US$ 0.07** per
+([ADR-0030](adr/0030-fish-audio-default-voice.md)), about **US$ 0.07** per
 busy live hour, counted in each host's AI spend. The six built-in voices
 (Bia, Joana, Carol, Theo, Samuel, Lucas) are public voices on Fish Audio's
 platform, made with Fish's voice designer from a written description, so
@@ -278,7 +278,7 @@ taken down. Drama 3 is a preview model.
 **To decide:**
 
 - Whether Drama 3 stays the default voice. The alternatives, and what they
-  cost an hour, are in ADR-0028; switching is a configuration change.
+  cost an hour, are in ADR-0030; switching is a configuration change.
 - Whether Fish Audio's terms let a paid product use these community voices,
   or whether to use voices you own instead: design or clone your own in a
   Fish account and list them in `FISH_TTS_VOICES` (`id=Name,id=Name`), with

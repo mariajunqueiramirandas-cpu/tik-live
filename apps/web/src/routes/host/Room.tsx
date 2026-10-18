@@ -10,6 +10,8 @@ import s from "./studio.module.css";
 
 /** Chat the minigame took as an answer: not skipped, just not for the host to reply to. */
 const GAME_ANSWER = "game answer";
+/** A ballot in the vote on the last segment's game (ADR-0029). */
+const VOTE = "vote";
 
 function EventRow({ event }: { event: LiveEventSummary }) {
   switch (event.kind) {
@@ -52,12 +54,12 @@ function EventRow({ event }: { event: LiveEventSummary }) {
         </div>
       );
     default:
-      if (event.filtered === GAME_ANSWER) {
+      if (event.filtered === GAME_ANSWER || event.filtered === VOTE) {
         return (
           <div className={cx(s.item, s.answered)}>
             <Gamepad2 aria-hidden className={s.itemIcon} />
             <p>
-              <strong>{event.who}</strong> respondeu <span className={s.answerText}>{event.text}</span>
+              <strong>{event.who}</strong> {event.filtered === VOTE ? "votou" : "respondeu"} <span className={s.answerText}>{event.text}</span>
             </p>
           </div>
         );

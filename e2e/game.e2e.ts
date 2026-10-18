@@ -96,7 +96,7 @@ test("every game scene draws its board, in its own accent, under a smaller chara
     // The board has text and shapes.
     expect(await count(page, [100, 600, 980, 1440], 12, "bright"), `${name}: board content`).toBeGreaterThan(40);
     const kind = name.replace(/-reveal$|4$/, "");
-    if (name.endsWith("-reveal") || kind === "scoreboard") continue;
+    if (name.endsWith("-reveal") || kind === "scoreboard" || kind === "podium") continue;
     // Open rounds: the timer bar (2/3 left) is in the scene's accent.
     expect(near(await probe(page, 200, 669), ACCENTS[kind]!), `${name}: timer in accent`).toBe(true);
   }
@@ -111,6 +111,19 @@ test("reveals highlight the right answer and the scoreboard builds a podium", as
   await open(page, "scene=scoreboard");
   await page.evaluate(() => (window as any).__lab.frame(3));
   expect(near(await probe(page, 540, 1120), [0xff, 0xd1, 0x5c], 60), "first place in gold").toBe(true);
+});
+
+test("the loop's podium keeps first place hidden until it's revealed", async ({ page }) => {
+  await open(page, "scene=podium");
+  await page.evaluate(() => (window as any).__lab.frame(3));
+  expect(await error(page)).toBeNull();
+  expect(near(await probe(page, 540, 1120), [0xff, 0xd1, 0x5c], 60), "first place still a question mark").toBe(false);
+  await page.evaluate(() => {
+    const lab = (window as any).__lab;
+    lab.apply({ t: "game", scene: { kind: "podium", title: "Pódio geral", places: [{ name: "mari.souza", points: 1240 }, { name: "lu.desenha", points: 985 }, { name: "duda", points: 610 }], suspense: null } });
+    lab.frame(4.5);
+  });
+  expect(near(await probe(page, 540, 1120), [0xff, 0xd1, 0x5c], 60), "first place in gold once revealed").toBe(true);
 });
 
 test("same-round updates stay in place, new rounds transition, null goes back to the show", async ({ page }) => {

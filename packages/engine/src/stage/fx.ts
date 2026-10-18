@@ -1,4 +1,4 @@
-import type { Effect } from "@tik-live/shared";
+import { BOOST_LABELS, type BoostKind, type Effect } from "@tik-live/shared";
 import type { MusicPlayer } from "../audio/music";
 import { Spring, SPRINGS } from "../anim/spring";
 import { hexToRgb, type Rgb } from "../color";
@@ -27,6 +27,14 @@ const WARM = palette("#FFD15C", "#FFFFFF", "#FFB347");
 const FIREWORKS = palette("#FF5FA2", "#FFD15C", "#7CF5FF", "#8CFF7A", "#FF6B5C", "#B98CFF");
 const WATER = palette("#BFF6FF", "#9BD8FF", "#E8FBFF");
 const NOTES = palette("#7CF5FF", "#FF5FD2", "#FFFFFF", "#FFD15C");
+const BOOST_HEX = "#7CF5FF";
+/** Gifts this close together build a combo. */
+const COMBO_GAP_S = 5;
+
+/** The combo after a gift at `now`: it grows while gifts keep coming, and starts over after a pause. */
+export function nextCombo(count: number, lastAt: number, now: number): number {
+  return now - lastAt <= COMBO_GAP_S ? count + 1 : 1;
+}
 
 /** Gift tiers by diamonds (TikTok's own coin value). */
 export function giftTier(diamonds: number): 0 | 1 | 2 | 3 {
@@ -83,7 +91,14 @@ export class FxLayer {
 
   private readonly banner: TextSprite;
   private bannerText: [string, string] = ["", ""];
+  private bannerColor = GOLD_HEX;
   private bannerUntil = -1;
+  /** A power-up banner waiting for a gift's banner to finish. */
+  private pendingBanner: { big: string; small: string } | null = null;
+  /** Gifts in quick succession: "COMBO ×5" over the character's head. */
+  private readonly combo: TextSprite;
+  private comboCount = 0;
+  private comboAt = -Infinity;
 
   private readonly chip: TextSprite;
   private chipTitle = "";
@@ -111,6 +126,7 @@ export class FxLayer {
     this.offerings.attachInstances(1, 4, this.offeringA);
     this.offerings.attachInstances(2, 4, this.offeringB);
     this.banner = new TextSprite(ctx.gl);
+    this.combo = new TextSprite(ctx.gl);
     this.chip = new TextSprite(ctx.gl);
     this.behind = { update: (dt, f) => this.update(dt, f), draw: (f) => this.drawBehind(f), repaint: (s) => this.repaint(s) };
     this.ahead = { update: () => {}, draw: (f) => this.drawAhead(f) };
@@ -191,6 +207,7 @@ export class FxLayer {
     if (kind === "share") return this.play("bubbles", 0.8, now);
     const tier = giftTier(diamonds);
     const flavor = giftFlavor(giftName);
+    this.bumpCombo(now);
     const count = Math.min(36, 4 + Math.round(Math.log10(diamonds + 1) * 7));
     for (let i = 0; i < count; i++) this.spawnOffering(i * 0.045, tier >= 3);
     if (tier === 0) {
@@ -213,8 +230,19 @@ export class FxLayer {
       this.character.move("jump", now, 1.2);
       this.screenFlash = 1;
       this.flash = 1.4;
-      this.showBanner(giftName || "Presente", name, now);
+      this.showBanner(truncate((giftName || "Presente").toUpperCase(), 18), `de ${truncate(name, 24)}`, now, GOLD_HEX, 3.2);
     }
+  }
+
+  /** A gift powered up the game round for everyone (ADR-0029): a cyan banner, after any gift banner. */
+  boost(boost: BoostKind, by: string, now: number): void {
+    this.now = now;
+    const big = BOOST_LABELS[boost].toUpperCase();
+    const small = `presente de ${truncate(by, 24)}`;
+    this.play("sparkles", 1.4, now);
+    this.character.move("jump", now, 0.8);
+    if (this.bannerUntil > now) this.pendingBanner = { big, small };
+    else this.showBanner(big, small, now, BOOST_HEX, 2);
   }
 
   /** New likes: hearts float up from the bottom right, at most six a second. */
@@ -225,6 +253,7 @@ export class FxLayer {
 
   repaint(scale: number): void {
     if (this.bannerText[0]) this.paintBanner(scale);
+    if (this.comboCount >= 2) this.paintCombo(scale);
     if (this.chipTitle) this.paintChip(scale);
   }
 
@@ -267,7 +296,20 @@ export class FxLayer {
       this.banner.offsetY.target = -30;
       this.bannerUntil = -1;
     }
+    if (this.pendingBanner && this.bannerUntil < 0 && this.banner.opacity.value < 0.05) {
+      const { big, small } = this.pendingBanner;
+      this.pendingBanner = null;
+      this.showBanner(big, small, t, BOOST_HEX, 2);
+    }
     this.banner.update(dt, t);
+    // The combo floats over the character's head and fades once the gifts stop.
+    if (this.comboCount >= 2 && t - this.comboAt > COMBO_GAP_S) {
+      this.comboCount = 0;
+      this.combo.opacity.target = 0;
+    }
+    this.combo.x = this.originX - this.combo.width / 2;
+    this.combo.y = this.originY - this.radius - this.combo.height - 24;
+    this.combo.update(dt, t);
     // "Now playing": the music player knows the track and when it ends.
     const playing = this.player.nowPlaying();
     if (playing && playing.title !== this.chipTitle) {
@@ -303,6 +345,7 @@ export class FxLayer {
 
   private drawAhead(f: Frame): void {
     this.drawParticles(f, 0);
+    this.ctx.drawSprite(this.combo);
     this.ctx.drawSprite(this.banner);
     if (this.chip.visible()) {
       this.ctx.drawSprite(this.chip);
@@ -381,9 +424,50 @@ export class FxLayer {
     this.arrivals.push({ at: start + duration, big });
   }
 
-  private showBanner(gift: string, from: string, now: number): void {
-    this.bannerText = [truncate(gift.toUpperCase(), 18), `de ${truncate(from, 24)}`];
-    this.bannerUntil = now + 3.2;
+  /** Counts a gift toward the combo; every fifth gift in a row showers gold, every tenth sets off fireworks. */
+  private bumpCombo(now: number): void {
+    this.comboCount = nextCombo(this.comboCount, this.comboAt, now);
+    this.comboAt = now;
+    if (this.comboCount < 2) return;
+    this.paintCombo(this.scale);
+    this.combo.opacity.target = 1;
+    if (this.combo.opacity.value < 0.1) this.combo.opacity.snap(0.2);
+    this.combo.offsetY.snap(-26);
+    this.combo.offsetY.target = 0;
+    if (this.comboCount % 5 === 0) {
+      this.rise(KIND.star, 34, WARM, 42);
+      this.play("confetti", 1, now);
+    }
+    if (this.comboCount % 10 === 0) {
+      this.play("fireworks", 2, now);
+      this.screenFlash = Math.max(this.screenFlash, 0.6);
+    }
+  }
+
+  private paintCombo(scale: number): void {
+    const label = `800 30px ${FONT_FAMILY}`;
+    const big = `800 64px ${FONT_FAMILY}`;
+    const count = `×${this.comboCount}`;
+    const hot = this.comboCount >= 10 ? "#FF5C6C" : this.comboCount >= 5 ? "#FF9F45" : GOLD_HEX;
+    const width = measureWith(label)("COMBO ") + measureWith(big)(count) + 60;
+    const height = 104;
+    this.combo.draw(width, height, scale, (ctx) => {
+      ctx.textBaseline = "alphabetic";
+      ctx.shadowColor = withAlpha(hot, 0.85);
+      ctx.shadowBlur = 26;
+      ctx.font = label;
+      ctx.fillStyle = INK;
+      ctx.fillText("COMBO ", 30, 72);
+      ctx.font = big;
+      ctx.fillStyle = hot;
+      ctx.fillText(count, 30 + measureWith(label)("COMBO "), 76);
+    });
+  }
+
+  private showBanner(big: string, small: string, now: number, color: string, seconds: number): void {
+    this.bannerText = [big, small];
+    this.bannerColor = color;
+    this.bannerUntil = now + seconds;
     this.paintBanner(this.scale);
     this.banner.opacity.snap(0);
     this.banner.opacity.target = 1;
@@ -403,7 +487,7 @@ export class FxLayer {
     s.draw(width, height, scale, (ctx) => {
       // Nearly opaque: during games it sits over the board.
       ctx.fillStyle = "rgba(14,6,34,0.95)";
-      ctx.strokeStyle = withAlpha(GOLD_HEX, 0.9);
+      ctx.strokeStyle = withAlpha(this.bannerColor, 0.9);
       ctx.lineWidth = 4;
       roundRect(ctx, 6, 6, width - 12, height - 12, 40);
       ctx.fill();
@@ -411,9 +495,9 @@ export class FxLayer {
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = big;
-      ctx.shadowColor = withAlpha(GOLD_HEX, 0.85);
+      ctx.shadowColor = withAlpha(this.bannerColor, 0.85);
       ctx.shadowBlur = 30;
-      ctx.fillStyle = GOLD_HEX;
+      ctx.fillStyle = this.bannerColor;
       ctx.fillText(gift, width / 2, 112, width - 60);
       ctx.shadowBlur = 0;
       ctx.font = small;

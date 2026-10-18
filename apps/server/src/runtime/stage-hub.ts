@@ -12,6 +12,10 @@ import {
   type Sound,
   type StageRole,
   type StageServerPayload,
+  type BoostKind,
+  type LeaderBoard,
+  type LeaderRow,
+  type UpNextItem,
 } from "@tik-live/shared";
 import type { Logger } from "../log";
 import type { AudioStore } from "./audio-store";
@@ -25,6 +29,8 @@ const START_GRACE_MS = 4_000;
 const END_GRACE_MS = 1_500;
 /** Stats change with every like; stages need them a few times a second at most. */
 const STATS_INTERVAL_MS = 250;
+
+type VoteView = NonNullable<Extract<StageServerPayload, { t: "vote" }>["vote"]>;
 
 export interface EngineTelemetry {
   fps: number;
@@ -76,6 +82,10 @@ export class StageHub implements SpeechOutput, StageNotifier {
   /** The piece playing now and when it ends, so a stage that reconnects picks it up. */
   private lastMusic: { track: MusicTrack; endsAt: number } | null = null;
   private lastStats: { viewers: number; likes: number } | undefined;
+  /** What's up next and when it was sent, so a stage that connects gets the countdowns from now. */
+  private lastSchedule: { items: UpNextItem[]; at: number } | null = null;
+  private readonly lastLeaders = new Map<LeaderBoard, { rows: LeaderRow[]; windowMin: number }>();
+  private lastVote: VoteView | null = null;
   private statsSentAt = 0;
   private statsTimer: ReturnType<typeof setTimeout> | undefined;
   private telemetry: EngineTelemetry | null = null;
@@ -98,6 +108,12 @@ export class StageHub implements SpeechOutput, StageNotifier {
     if (this.lastSegment) this.sendTo(peer, { t: "segment", title: this.lastSegment.title });
     if (this.lastStats) this.sendTo(peer, { t: "stats", ...this.lastStats });
     if (this.lastGame) this.sendTo(peer, { t: "game", scene: this.lastGame });
+    if (this.lastSchedule?.items.length) {
+      const elapsed = this.now() - this.lastSchedule.at;
+      this.sendTo(peer, { t: "schedule", items: this.lastSchedule.items.map((item) => ({ ...item, inMs: Math.max(0, item.inMs - elapsed) })) });
+    }
+    for (const [board, last] of this.lastLeaders) if (last.rows.length) this.sendTo(peer, { t: "leaders", board, ...last });
+    if (this.lastVote) this.sendTo(peer, { t: "vote", vote: this.lastVote });
     // A piece that's nearly over isn't worth restarting from the top.
     if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
     this.options.log?.debug(`${role} stage connected`);
@@ -291,6 +307,25 @@ export class StageHub implements SpeechOutput, StageNotifier {
 
   sfx(sound: Sound): void {
     this.broadcast({ t: "sfx", sound });
+  }
+
+  vote(vote: VoteView | null): void {
+    this.lastVote = vote;
+    this.broadcast({ t: "vote", vote });
+  }
+
+  boost(boost: BoostKind, by: string): void {
+    this.broadcast({ t: "boost", boost, by });
+  }
+
+  schedule(items: UpNextItem[]): void {
+    this.lastSchedule = { items, at: this.now() };
+    this.broadcast({ t: "schedule", items });
+  }
+
+  leaders(board: LeaderBoard, rows: LeaderRow[], windowMin: number): void {
+    this.lastLeaders.set(board, { rows, windowMin });
+    this.broadcast({ t: "leaders", board, windowMin, rows });
   }
 
   segment(segment: Segment): void {

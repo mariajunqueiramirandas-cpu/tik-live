@@ -1,4 +1,4 @@
-# ADR-0028: Fish Audio Drama 3, through OpenRouter, is the default voice
+# ADR-0030: Fish Audio Drama 3, through OpenRouter, is the default voice
 
 **Status:** Proposed
 **Date:** 2026-10-18

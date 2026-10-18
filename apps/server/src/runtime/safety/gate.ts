@@ -52,6 +52,12 @@ export function moderationPolicy(settings: Pick<SafetySettings, "strictness" | "
   return policy;
 }
 
+/**
+ * Models that accept `thinking: {type: "disabled"}` at low to high effort.
+ * Claude Opus 5.5 and Claude Sonnet 5.5 don't: they always think.
+ */
+export const THINKING_OFF_MODELS: ReadonlySet<string> = new Set(["claude-haiku-5-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-opus-4-7"]);
+
 const VERDICT_SCHEMA = {
   type: "object",
   properties: {
@@ -96,6 +102,8 @@ export class ClaudeModerator implements Moderator {
       max_tokens: 2000,
       system: [{ type: "text", text: this.policy, cache_control: { type: "ephemeral" } }],
       output_config: { effort: "low", format: { type: "json_schema", schema: VERDICT_SCHEMA } },
+      // A one-sentence verdict doesn't need thinking, and every line of speech waits for it.
+      ...(THINKING_OFF_MODELS.has(this.options.model) ? { thinking: { type: "disabled" as const } } : {}),
       messages: [
         {
           role: "user",

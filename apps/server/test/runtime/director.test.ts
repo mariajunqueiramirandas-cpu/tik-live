@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import type { GameScene, UpNextItem } from "@tik-live/shared";
 import { deadAirFor, Director, nextLikeMilestone, type StageNotifier } from "../../src/runtime/brain/director";
 import type { HostBrain } from "../../src/runtime/brain/host";
 import { ViewerMemory } from "../../src/runtime/brain/memory";
@@ -6,6 +7,7 @@ import type { TurnRequest } from "../../src/runtime/brain/prompt";
 import type { Utterance } from "../../src/runtime/brain/sentences";
 import { Triage } from "../../src/runtime/brain/triage";
 import { GameMaster } from "../../src/runtime/games/master";
+import { LoopRanking } from "../../src/runtime/games/ranking";
 import { SafetyGate } from "../../src/runtime/safety/gate";
 import { SpeechPipeline, type SpeechOutput } from "../../src/runtime/voice/pipeline";
 import { NoTts } from "../../src/runtime/voice/tts";
@@ -26,7 +28,7 @@ class FakeHost implements HostBrain {
 const stage: StageNotifier = { alert: () => {}, segment: () => {}, stats: () => {} };
 const instantOutput: SpeechOutput = { play: async () => {}, interrupt: () => {} };
 
-function setup(options: { startInStandby?: boolean } = {}) {
+function setup(options: { startInStandby?: boolean; streamDelayMs?: number } = {}) {
   const clock = fakeClock();
   const memory = new ViewerMemory({ now: clock.now });
   const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
@@ -298,7 +300,7 @@ describe("Director turn-taking", () => {
 });
 
 describe("Director with games and context", () => {
-  function gameSetup() {
+  function gameSetup(output: SpeechOutput = instantOutput) {
     const clock = fakeClock(Date.UTC(2026, 9, 16, 17, 0)); // Friday 14:00 in São Paulo
     const memory = new ViewerMemory({ now: clock.now });
     const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
@@ -313,7 +315,7 @@ describe("Director with games and context", () => {
         },
       },
     });
-    const speech = new SpeechPipeline(new NoTts(), gate, instantOutput, {}, clock.now);
+    const speech = new SpeechPipeline(new NoTts(), gate, output, {}, clock.now);
     const host = new FakeHost();
     const sounds: string[] = [];
     const stageWithFx: StageNotifier = { ...stage, sfx: (sound) => sounds.push(sound) };
@@ -367,6 +369,29 @@ describe("Director with games and context", () => {
     expect(react.context.history.at(-1)?.room).toContain("round 1 of 2 opened");
   });
 
+  it("holds new turns while a round waits for the host to stop talking, then reads it first", async () => {
+    const output = new HeldOutput();
+    const { director, host, games, step } = gameSetup(output);
+    const flush = async () => {
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    };
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    await flush();
+    expect(output.played).toEqual(["line for opening"]); // still on stage
+    await step(5_000);
+    expect(games.isActive()).toBe(true);
+    expect(games.status()?.phase).toBe("preparing"); // ready, waiting for the host
+    director.handleEvent(chat("joe", "this game is fun"));
+    await step(2_000);
+    expect(host.turns.map((turn) => turn.kind)).toEqual(["opening"]); // the round goes first
+    output.finish();
+    await flush();
+    await step();
+    expect(games.status()?.phase).toBe("open");
+    expect(host.turns.map((turn) => turn.kind)).toEqual(["opening", "game"]);
+  });
+
   it("gives the moderator what a line replies to, and plays sounds for gifts", async () => {
     const { director, step, contexts, sounds } = gameSetup();
     await step();
@@ -396,14 +421,42 @@ describe("Director ordering", () => {
     const who = react.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""));
     expect(who).toEqual(["leo", "ana", "bia", "dani"]);
     expect(react.context.brief).toContain("Now: Thank e5 (gift), then answer e1 (chat), then e2 (chat), then e4 (chat).");
-    // caio's question is older than dani's, so it isn't answered after it...
+    // caio's question is older than dani's, so it isn't answered in the same breath, but right after, saying who asked.
     await step(2_000);
-    expect(host.turns.at(-1)).toBe(react);
-    // ...but comes back in the next quiet moment.
+    const owed = host.turns.at(-1)!;
+    expect(owed).not.toBe(react);
+    expect(owed.kind).toBe("react");
+    expect(owed.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["caio"]);
+    expect(owed.context.brief).toContain("Now: Answer e3 (chat). It came in a bit earlier and you didn't get to it: say who asked.");
+  });
+
+  it("comes back to a question that expired while the host couldn't get to it", async () => {
+    const { director, step, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.pause();
+    director.handleEvent(chat("lumy", "gato ou cachorro?"));
+    await step(61_000); // gone from the queue
+    director.resume();
+    await step(2_000);
+    const turn = host.turns.at(-1)!;
+    expect(turn.kind).toBe("react");
+    expect(turn.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["lumy"]);
+    expect(turn.context.brief).toContain("you didn't get to it: say who asked");
+  });
+
+  it("gives chat time to answer through the stream delay after the host asks something", async () => {
+    const { director, step, kinds } = setup({ streamDelayMs: 5_000 });
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.noteSpoken("Qual animal vocês querem que eu explore?");
     await step(8_000);
-    const filler = host.turns.at(-1)!;
-    expect(filler.kind).toBe("filler");
-    expect(filler.note).toBe("You didn't get to e3 earlier. Answer it now, saying who asked, then carry on.");
+    expect(kinds()).toEqual(["opening"]); // 7 s of dead air isn't enough: viewers only just heard it
+    await step(5_000);
+    expect(kinds()).toEqual(["opening", "filler"]);
+    director.noteSpoken("O polvo tem três corações.");
+    await step(8_000);
+    expect(kinds()).toEqual(["opening", "filler", "filler"]); // no question, the usual dead air
   });
 
   it("moves an overdue segment on even when chat keeps the host busy", async () => {
@@ -478,5 +531,186 @@ describe("Director references", () => {
     await step(2_000);
     expect(kinds()).toEqual(["opening", "opening"]);
     expect(host.turns[1]?.items).toEqual([]);
+  });
+});
+
+describe("Director: up next, top likers and the loop's podium (ADR-0028)", () => {
+  function loop(options: { segments?: typeof persona.segments } = {}) {
+    const clock = fakeClock();
+    const memory = new ViewerMemory({ now: clock.now });
+    const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
+    const speech = new SpeechPipeline(new NoTts(), new SafetyGate({ blocklist: [] }), instantOutput, {}, clock.now);
+    const host = new FakeHost();
+    const scenes: Array<GameScene | null> = [];
+    const schedules: UpNextItem[][] = [];
+    const likers: Array<Array<{ name: string; value: number }>> = [];
+    const gifters: Array<Array<{ name: string; value: number }>> = [];
+    const gameStage = { game: (scene: GameScene | null) => scenes.push(scene), fx: () => {}, sfx: () => {} };
+    const ranking = new LoopRanking({ stage: gameStage, sounds: () => false, now: clock.now });
+    const games = new GameMaster({
+      writer: null,
+      gate: { check: async () => ({ safe: true }) },
+      stage: gameStage,
+      blocklist: () => [],
+      language: () => "en",
+      sounds: () => false,
+      ranking,
+      now: clock.now,
+    });
+    const director = new Director({
+      persona: { ...persona, segments: options.segments ?? persona.segments },
+      host,
+      triage,
+      memory,
+      speech,
+      stage: { ...stage, schedule: (items) => schedules.push(items), leaders: (board, rows) => (board === "likes" ? likers : gifters).push(rows) },
+      games,
+      ranking,
+      deadAirMs: 600_000,
+      now: clock.now,
+    });
+    const step = async (ms = 0) => {
+      clock.advance(ms);
+      await director.tick();
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    };
+    const kinds = () => host.turns.map((t) => t.kind);
+    // Someone's watching, so the show runs its segments (an empty room only reacts).
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    return { clock, director, host, ranking, scenes, schedules, likers, gifters, step, kinds };
+  }
+
+  it("tells the stage what's up next, with the podium before the loop starts over", async () => {
+    const { director, ranking, schedules, step, clock } = loop();
+    const start = clock.now();
+    await step();
+    expect(schedules.at(-1)).toEqual([
+      { kind: "segment", title: "Segment B", inMs: 5 * 60_000 },
+      { kind: "segment", title: "Segment A", inMs: 10 * 60_000 },
+    ]);
+    expect(director.upNext()[0]).toEqual({ kind: "segment", title: "Segment B", at: start + 5 * 60_000 });
+    ranking.add("a", "ana", 10);
+    await step(1_000);
+    expect(schedules.at(-1)?.map((item) => `${item.kind}:${item.title}`)).toEqual(["segment:Segment B", "podium:Pódio geral", "segment:Segment A"]);
+    expect(schedules.at(-1)?.[1]?.inMs).toBe(5 * 60_000 - 1_000 + 5 * 60_000);
+    // Sent only when something changes, not every tick.
+    const sent = schedules.length;
+    await step(1_000);
+    expect(schedules).toHaveLength(sent);
+  });
+
+  it("lists the segment's next game", () => {
+    const { director, clock } = loop({
+      segments: [
+        { id: "a", title: "Quiz time", minutes: 10, prompt: "Quiz.", game: { kind: "trivia", rounds: 3, topic: "futebol" } },
+        { id: "b", title: "Chat", minutes: 5, prompt: "Chat." },
+      ],
+    });
+    expect(director.upNext()[0]).toEqual({ kind: "game", title: "Quiz: futebol", at: clock.now() + 4_000 });
+  });
+
+  it("reveals the podium when the last segment ends, then goes back to the first", async () => {
+    const { director, ranking, scenes, step, kinds } = loop();
+    await step();
+    await step(5 * 60_000);
+    expect(kinds()).toEqual(["opening", "segment_change"]);
+    expect(director.segment().id).toBe("b");
+    ranking.add("a", "ana", 30);
+    ranking.add("b", "bia", 10);
+    await step(5 * 60_000);
+    expect(kinds().at(-1)).toBe("game");
+    expect(ranking.isRevealing()).toBe(true);
+    expect(director.segment().id).toBe("b");
+    expect(scenes.at(-1)).toMatchObject({ kind: "podium", suspense: 2 });
+    for (let i = 0; i < 200 && ranking.isRevealing(); i++) await step(1_000);
+    expect(ranking.isRevealing()).toBe(false);
+    expect(scenes.at(-1)).toBeNull();
+    await step(2_000);
+    expect(kinds().at(-1)).toBe("segment_change");
+    expect(director.segment().id).toBe("a");
+    expect(ranking.rows()).toEqual([]);
+  });
+
+  it("moves straight on when nobody scored this loop", async () => {
+    const { director, ranking, step, kinds } = loop();
+    await step();
+    await step(5 * 60_000);
+    await step(5 * 60_000);
+    expect(kinds()).toEqual(["opening", "segment_change", "segment_change"]);
+    expect(director.segment().id).toBe("a");
+    expect(ranking.isRevealing()).toBe(false);
+  });
+
+  it("treats each run of a single segment as a loop", async () => {
+    const { director, ranking, step, kinds } = loop({ segments: [{ id: "a", title: "Only", minutes: 5, prompt: "Do it." }] });
+    await step();
+    ranking.add("a", "ana", 10);
+    expect(director.upNext()).toMatchObject([{ kind: "podium" }]);
+    await step(5 * 60_000);
+    expect(kinds().at(-1)).toBe("game");
+    expect(ranking.isRevealing()).toBe(true);
+    expect(director.state().segmentEndsInSec).toBe(5 * 60);
+  });
+
+  it("ranks likers over the last 15 minutes and clears them when the stream ends", async () => {
+    const { director, likers, step } = loop();
+    const like = (handle: string, count: number) => director.handleEvent({ kind: "like", at: 0, viewer: { id: handle, handle, nickname: handle }, count });
+    await step();
+    like("ana", 30);
+    like("bia", 50);
+    await step(1_000);
+    expect(likers.at(-1)).toEqual([
+      { name: "bia", value: 50 },
+      { name: "ana", value: 30 },
+    ]);
+    expect(director.leaders().likes).toEqual(likers.at(-1)!);
+    await step(10 * 60_000);
+    like("ana", 30);
+    await step(1_000);
+    expect(likers.at(-1)?.[0]).toEqual({ name: "ana", value: 60 });
+    await step(5 * 60_000);
+    expect(likers.at(-1)).toEqual([{ name: "ana", value: 30 }]);
+    director.handleEvent({ kind: "stream_end", at: 0, reason: "test" });
+    expect(likers.at(-1)).toEqual([]);
+  });
+
+  it("ranks gifters by diamonds over the last hour", async () => {
+    const { director, gifters, step } = loop();
+    await step();
+    director.handleEvent(gift("ana", "Rose", 1));
+    director.handleEvent(gift("bia", "Galaxy", 1_000));
+    await step(1_000);
+    expect(gifters.at(-1)).toEqual([
+      { name: "bia", value: 1_000 },
+      { name: "ana", value: 1 },
+    ]);
+    await step(61 * 60_000);
+    expect(director.leaders().gifts).toEqual([]);
+    expect(gifters.at(-1)).toEqual([]);
+  });
+});
+
+describe("Director: up next titles", () => {
+  it("names a segment's game once, even when the segment is named after it", () => {
+    const clock = fakeClock();
+    const memory = new ViewerMemory({ now: clock.now });
+    const director = new Director({
+      persona: {
+        ...persona,
+        segments: [
+          { id: "a", title: "Chat", minutes: 5, prompt: "Chat." },
+          { id: "b", title: "Charadas", minutes: 5, prompt: "Riddles.", game: { kind: "riddle", rounds: 3 } },
+          { id: "c", title: "Perguntas", minutes: 5, prompt: "Quiz.", game: { kind: "trivia", rounds: 3 } },
+        ],
+      },
+      host: new FakeHost(),
+      triage: new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now }),
+      memory,
+      speech: new SpeechPipeline(new NoTts(), new SafetyGate({ blocklist: [] }), instantOutput, {}, clock.now),
+      stage,
+      deadAirMs: 7_000,
+      now: clock.now,
+    });
+    expect(director.upNext().map((item) => item.title)).toEqual(["Charadas", "Perguntas · Quiz", "Chat"]);
   });
 });

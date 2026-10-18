@@ -57,7 +57,17 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   true or false, quick math, riddles and fastest finger. Viewers answer in
   chat, the game keeps score, and each game has its own scene on stage
   ([ADR-0023](docs/adr/0023-chat-minigames.md)). Run them from a segment or
-  start one from the studio.
+  start one from the studio. Every game's points add up over a loop of the
+  run of show, and when the last segment ends the top three are revealed on
+  a podium, one place at a time, before the ranking starts over.
+- **Up next and rankings**: the stage shows what's coming (the next game,
+  segment or podium) with a countdown, and a card that takes turns between
+  who sent the most likes in the last 15 minutes and the most diamonds in
+  the last hour ([ADR-0028](docs/adr/0028-up-next-likes-and-loop-ranking.md)).
+- **Gift combos, power-ups and a vote**: gifts in a row build a combo on
+  stage; gifts during a game round unlock power-ups for everyone (more time,
+  a hint, double points); and chat votes which minigame the last segment
+  plays ([ADR-0029](docs/adr/0029-gifts-power-ups-and-final-vote.md)).
 - **Reactions and music**: confetti, fireworks, hearts and character moves
   the host can cue, gift effects that scale with the gift, sound effects, and
   short original music the host writes as a score and the stage synthesizes
@@ -91,7 +101,7 @@ To give the host its real brain and voice, copy `.env.example` to `.env`:
   (Haiku 5.5 by default; `HOST_MODEL` and `MODERATION_MODEL` override it).
 - `OPENROUTER_API_KEY`: the host speaks out loud, in Brazilian voices that
   act each line's emotion (Fish Audio's Drama 3 through OpenRouter, about
-  US$ 0.07 a live hour, [ADR-0028](docs/adr/0028-fish-audio-default-voice.md)).
+  US$ 0.07 a live hour, [ADR-0030](docs/adr/0030-fish-audio-default-voice.md)).
   New hosts get this voice.
 - Or `ELEVENLABS_API_KEY` for ElevenLabs voices.
 - Or, free and in Brazilian Portuguese only: run the self-hosted voice
