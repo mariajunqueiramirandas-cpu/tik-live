@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { RUNTIME_STATUSES } from "./channel";
 import { injectEventSchema } from "./events";
-import { gameConfigSchema, gameSceneSchema, type GameStatus } from "./game";
+import { gameConfigSchema, gameSceneSchema, type GameStatus, type LoopRankingStatus } from "./game";
 import { MUSIC_LIBRARY, musicTrackSchema, SOUNDS } from "./music";
 import { effectSchema, emotionSchema, lookSchema } from "./persona";
 
@@ -18,6 +18,20 @@ const v = z.literal(PROTOCOL_VERSION);
 // Stage: server -> stage
 
 export const STAGE_ROLES = ["program", "preview", "broadcast"] as const;
+
+/** What can come up next on the show: a segment, a segment's minigame, or the loop's podium. */
+export const UP_NEXT_KINDS = ["segment", "game", "podium"] as const;
+export type UpNextKind = (typeof UP_NEXT_KINDS)[number];
+export const UP_NEXT_MAX = 4;
+export const LIKERS_MAX = 5;
+
+export const upNextItemSchema = z.object({
+  kind: z.enum(UP_NEXT_KINDS),
+  title: z.string().max(60),
+  /** How long until it starts, from when the message arrives. 0 means any moment now. */
+  inMs: z.number().min(0),
+});
+export type UpNextItem = z.infer<typeof upNextItemSchema>;
 export type StageRole = (typeof STAGE_ROLES)[number];
 
 export const stageServerMessageSchema = z.discriminatedUnion("t", [
@@ -65,6 +79,15 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({ v, t: z.literal("sfx"), sound: z.enum(SOUNDS) }),
   /** A minigame's scene, or null to go back to the show's normal stage (ADR-0023). */
   z.object({ v, t: z.literal("game"), scene: gameSceneSchema.nullable() }),
+  /** What's coming up on the show, soonest first, with times relative to receipt (ADR-0028). */
+  z.object({ v, t: z.literal("schedule"), items: z.array(upNextItemSchema).max(UP_NEXT_MAX) }),
+  /** Who sent the most likes in the last `windowMin` minutes, most first (ADR-0028). */
+  z.object({
+    v,
+    t: z.literal("likers"),
+    windowMin: z.number().int().min(1).max(120),
+    rows: z.array(z.object({ name: z.string().max(40), likes: z.number().int().min(1) })).max(LIKERS_MAX),
+  }),
   /** The server is restarting: keep the last frame and reconnect quietly. */
   z.object({ v, t: z.literal("hold") }),
 ]);
@@ -124,6 +147,12 @@ export interface RuntimeSnapshot {
   segments: Array<{ id: string; title: string }>;
   /** The minigame running now, if any. */
   game: GameStatus | null;
+  /** What's coming up on the show, soonest first (estimates: segments wait for games and quiet moments). */
+  upNext: Array<{ kind: UpNextKind; title: string; inSec: number }>;
+  /** Top likers over the last 15 minutes, most first. */
+  likers: Array<{ name: string; likes: number }>;
+  /** Minigame points summed over this loop of the run of show. */
+  ranking: LoopRankingStatus;
   /** The piece of music playing on stage, if any. */
   music: { title: string; endsInSec: number; byHost: boolean } | null;
   stats: { viewers: number; likes: number; diamonds: number; messages: number; follows: number; uptimeSec: number };

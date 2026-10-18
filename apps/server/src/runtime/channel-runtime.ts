@@ -29,6 +29,7 @@ import { ViewerMemory, type ViewerPersistence, type ViewerRecord } from "./brain
 import { toUtterance } from "./brain/sentences";
 import { Triage, type TriageResult } from "./brain/triage";
 import { GameMaster } from "./games/master";
+import { LoopRanking } from "./games/ranking";
 import { ClaudeGameWriter } from "./games/writer";
 import { LatencyTracker } from "./latency";
 import { ClaudeModerator, SafetyGate } from "./safety/gate";
@@ -94,6 +95,7 @@ export class ChannelRuntime {
   private speech!: SpeechPipeline;
   private director!: Director;
   private games!: GameMaster;
+  private ranking!: LoopRanking;
   /** The piece of music on stage, if any. */
   private music: { title: string; endsAt: number; byHost: boolean } | null = null;
   private hostMusicAt = -Infinity;
@@ -181,6 +183,8 @@ export class ChannelRuntime {
       if (cue.meta?.first) this.latency.record(at - cue.meta.originAt);
     });
 
+    const sounds = () => this.channel.persona.sound?.effects !== false;
+    this.ranking = new LoopRanking({ stage, sounds, now: this.now, log: this.log });
     this.games = new GameMaster({
       writer: ai ? new ClaudeGameWriter({ client: ai, model: ctx.config.HOST_MODEL ?? this.plan.models.host, onUsage: (u) => this.usage(u), log: this.log }) : null,
       gate: this.gate,
@@ -188,7 +192,8 @@ export class ChannelRuntime {
       blocklist: () => this.channel.safety.blocklist,
       // The product is Brazilian: games are in Portuguese unless the voice only speaks another language.
       language: () => this.speech.ttsLanguage ?? "pt-BR",
-      sounds: () => this.channel.persona.sound?.effects !== false,
+      sounds,
+      ranking: this.ranking,
       now: this.now,
       log: this.log,
     });
@@ -207,6 +212,7 @@ export class ChannelRuntime {
       deadAirMs: 7_000,
       startInStandby: !simulated,
       games: this.games,
+      ranking: this.ranking,
       ...(ai && this.host instanceof ClaudeHost
         ? {
             chronicler: new ClaudeChronicler({
@@ -338,6 +344,11 @@ export class ChannelRuntime {
       case "game_start":
         return this.games.start(command.game, "studio", this.director.chatSample());
       case "game_stop":
+        // The loop's podium is shown like a game, so the same button ends it.
+        if (this.ranking.isRevealing()) {
+          this.ranking.stop();
+          return { ok: true };
+        }
         if (!this.games.isActive()) return { ok: false, error: "Nenhum jogo está rolando." };
         this.games.stop();
         return { ok: true };
@@ -461,6 +472,9 @@ export class ChannelRuntime {
       segment: { id: segment.id, title: segment.title, endsInSec: d?.segmentEndsInSec ?? segment.minutes * 60 },
       segments: this.channel.persona.segments.map((s) => ({ id: s.id, title: s.title })),
       game: this.games?.status() ?? null,
+      upNext: (this.director?.upNext() ?? []).map((item) => ({ kind: item.kind, title: item.title, inSec: Math.max(0, Math.ceil((item.at - this.now()) / 1000)) })),
+      likers: this.director?.topLikers() ?? [],
+      ranking: this.ranking?.status() ?? { rows: [], games: 0, revealing: false },
       music: this.music && this.music.endsAt > this.now()
         ? { title: this.music.title, endsInSec: Math.ceil((this.music.endsAt - this.now()) / 1000), byHost: this.music.byHost }
         : null,

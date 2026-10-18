@@ -12,6 +12,7 @@ import {
   type Sound,
   type StageRole,
   type StageServerPayload,
+  type UpNextItem,
 } from "@tik-live/shared";
 import type { Logger } from "../log";
 import type { AudioStore } from "./audio-store";
@@ -76,6 +77,9 @@ export class StageHub implements SpeechOutput, StageNotifier {
   /** The piece playing now and when it ends, so a stage that reconnects picks it up. */
   private lastMusic: { track: MusicTrack; endsAt: number } | null = null;
   private lastStats: { viewers: number; likes: number } | undefined;
+  /** What's up next and when it was sent, so a stage that connects gets the countdowns from now. */
+  private lastSchedule: { items: UpNextItem[]; at: number } | null = null;
+  private lastLikers: { rows: Array<{ name: string; likes: number }>; windowMin: number } | null = null;
   private statsSentAt = 0;
   private statsTimer: ReturnType<typeof setTimeout> | undefined;
   private telemetry: EngineTelemetry | null = null;
@@ -98,6 +102,11 @@ export class StageHub implements SpeechOutput, StageNotifier {
     if (this.lastSegment) this.sendTo(peer, { t: "segment", title: this.lastSegment.title });
     if (this.lastStats) this.sendTo(peer, { t: "stats", ...this.lastStats });
     if (this.lastGame) this.sendTo(peer, { t: "game", scene: this.lastGame });
+    if (this.lastSchedule?.items.length) {
+      const elapsed = this.now() - this.lastSchedule.at;
+      this.sendTo(peer, { t: "schedule", items: this.lastSchedule.items.map((item) => ({ ...item, inMs: Math.max(0, item.inMs - elapsed) })) });
+    }
+    if (this.lastLikers?.rows.length) this.sendTo(peer, { t: "likers", ...this.lastLikers });
     // A piece that's nearly over isn't worth restarting from the top.
     if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
     this.options.log?.debug(`${role} stage connected`);
@@ -291,6 +300,16 @@ export class StageHub implements SpeechOutput, StageNotifier {
 
   sfx(sound: Sound): void {
     this.broadcast({ t: "sfx", sound });
+  }
+
+  schedule(items: UpNextItem[]): void {
+    this.lastSchedule = { items, at: this.now() };
+    this.broadcast({ t: "schedule", items });
+  }
+
+  likers(rows: Array<{ name: string; likes: number }>, windowMin: number): void {
+    this.lastLikers = { rows, windowMin };
+    this.broadcast({ t: "likers", windowMin, rows });
   }
 
   segment(segment: Segment): void {

@@ -25,6 +25,7 @@ import {
   type RoundContent,
   type WrittenKind,
 } from "./content";
+import type { LoopRanking } from "./ranking";
 import type { GameWriter } from "./writer";
 
 /** What the host should say about a game moment. */
@@ -54,6 +55,8 @@ export interface GameMasterOptions {
   language: () => string | undefined;
   /** Whether the stage may play sounds for game moments. */
   sounds: () => boolean;
+  /** Adds every point to the loop's ranking (ADR-0028). */
+  ranking?: LoopRanking;
   /** The game's status changed (for the studio). */
   onChange?: () => void;
   now?: () => number;
@@ -189,6 +192,7 @@ export class GameMaster {
 
   start(config: GameConfig, source: "segment" | "studio", chatSample: string[] = []): { ok: true } | { ok: false; error: string } {
     if (this.game) return { ok: false, error: "Já tem um jogo rolando. Pare esse primeiro." };
+    if (this.options.ranking?.isRevealing()) return { ok: false, error: "O pódio da rodada está sendo revelado. Espere terminar." };
     const now = this.now();
     const game: ActiveGame = {
       config,
@@ -384,6 +388,8 @@ export class GameMaster {
     if (game.phase === "results") lines.push("The game just ended.");
     const board = this.leaderboard(game).slice(0, 3);
     if (board.length) lines.push(`Leaderboard: ${board.map((row) => `${row.name} ${row.points}`).join(", ")}.`);
+    const standings = this.options.ranking?.standings();
+    if (standings) lines.push(standings);
     return lines.join("\n");
   }
 
@@ -593,6 +599,7 @@ export class GameMaster {
     const board = this.leaderboard(game);
     const label = GAME_LABELS[game.config.kind];
     const scored = board.length > 0 && game.config.kind !== "poll";
+    this.options.ranking?.gameFinished();
     this.publish();
     this.sound(scored ? "fanfare" : "chime");
     if (scored) this.options.stage.fx("fireworks", 2);
@@ -637,6 +644,7 @@ export class GameMaster {
     row.name = name;
     row.points += points;
     game.scores.set(id, row);
+    this.options.ranking?.add(id, name, points);
   }
 
   private leaderboard(game: ActiveGame): Array<{ name: string; points: number }> {
