@@ -37,6 +37,7 @@ fixa os termos para que tudo soe como um produto só. Documentação técnica
 | say something | falar algo |
 | segment | quadro |
 | run of show | roteiro |
+| automatic run of show | roteiro automático |
 | viewer | espectador |
 | chat | chat |
 | gift | presente |

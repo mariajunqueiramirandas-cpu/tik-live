@@ -1,3 +1,4 @@
+export * from "./auto-show";
 export * from "./brand";
 export * from "./broadcast";
 export * from "./channel";

@@ -39,7 +39,9 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
 - **Dashboard** (React): create hosts from presets, edit the character with
   a live preview, set safety rules and voice, watch a live studio with a
   stage monitor, the room's chat and the host's transcript, a kill switch,
-  and analytics per stream. Works on a phone.
+  and analytics per stream. Works on a phone. One switch in the Roteiro tab
+  hands the whole run of show to the host, which plans a fresh one every
+  loop ([ADR-0035](docs/adr/0035-automatic-run-of-show.md)).
 - **Stage engine**: a WebGL2 renderer built for a 1080×1920 browser source.
   An orb character (or a voice line) with nine emotions and vowel-shaped
   lip sync, gift and follow alerts, captions, a frame loop that doesn't

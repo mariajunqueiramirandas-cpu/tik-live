@@ -118,6 +118,12 @@ export const personaSchema = z.object({
   /** Upper bound on sentences per turn (keeps the host snappy). */
   maxSentences: z.number().int().min(1).max(6).default(3),
   segments: z.array(segmentSchema).min(1).max(12),
+  /**
+   * The host plans the run of show by itself (ADR-0035): talk segments and
+   * minigames, drawn again every loop. The creator's segments stay saved for
+   * when it's turned off. Off when unset.
+   */
+  autoShow: z.boolean().optional(),
   /** Chat votes which minigame the run of show's last segment plays (ADR-0029). On when unset. */
   finalVote: z.boolean().optional(),
   /**

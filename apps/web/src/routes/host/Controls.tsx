@@ -487,7 +487,6 @@ function MusicPane({ store, music, disabled, host, musicOff, characterUrl }: { s
 export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean }) {
   const snapshot = useStudio(store, (st) => st.snapshot);
   const { channel } = useHost();
-  const segmentGames = new Map(channel.persona.segments.flatMap((seg) => (seg.game ? [[seg.id, seg.game.kind] as const] : [])));
   const connected = useStudio(store, (st) => st.connection === "open");
   const sayRef = useRef<HTMLTextAreaElement>(null);
   const paused = snapshot?.paused ?? false;
@@ -570,7 +569,7 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
           <ul role="list" aria-labelledby="segment-heading" className={s.segmentList}>
             {snapshot.segments.map((segment) => {
               const current = segment.id === snapshot.segment.id;
-              const game = segmentGames.get(segment.id);
+              const game = segment.game;
               return (
                 <li key={segment.id}>
                   <button

@@ -1,4 +1,5 @@
 import {
+  autoShow,
   clip,
   GAME_KINDS,
   GAME_LABELS,
@@ -13,6 +14,7 @@ import {
   type LeaderRow,
   type LiveEvent,
   type Persona,
+  runOfShow,
   type Segment,
   type Sound,
   type SupportCard,
@@ -110,6 +112,8 @@ export interface DirectorOptions {
   lastStream?: string;
   /** How actively the host asks for gifts (the channel's safety setting); "light" when unset. */
   giftAsks?: () => GiftAsks;
+  /** Varies the automatic run of show between streams (ADR-0035); random when unset. */
+  showSeed?: number;
   log?: Logger;
   now?: () => number;
 }
@@ -280,6 +284,9 @@ export class Director {
   private lastEventAt: number;
   private cooldownUntil = 0;
   private failures = 0;
+  /** The run of show this loop plays: the creator's segments, or the automatic plan (ADR-0035). */
+  private show: Segment[];
+  private readonly showSeed: number;
   private segmentIndex = 0;
   /** The kind drawn for each "random" segment, kept until the show moves on so the preview and the game agree. */
   private readonly segmentDraws = new Map<number, GameKind>();
@@ -333,6 +340,8 @@ export class Director {
   constructor(private readonly options: DirectorOptions) {
     this.now = options.now ?? Date.now;
     this.persona = options.persona;
+    this.showSeed = options.showSeed ?? Math.floor(Math.random() * 2 ** 31);
+    this.show = runOfShow(this.persona, 0, this.showSeed);
     this.startedAt = this.now();
     this.segmentStartedAt = this.startedAt;
     this.lastEventAt = this.startedAt;
@@ -370,17 +379,28 @@ export class Director {
   }
 
   segment(): Segment {
-    return (this.persona.segments[this.segmentIndex] ?? this.persona.segments[0]) as Segment;
+    return (this.show[this.segmentIndex] ?? this.show[0]) as Segment;
+  }
+
+  /** The run of show this loop plays, in order. */
+  segments(): readonly Segment[] {
+    return this.show;
   }
 
   /** Applies an edited persona without restarting the show. */
   reconfigure(persona: Persona): void {
     const currentId = this.segment().id;
-    if (persona.segments.length !== this.persona.segments.length || persona.finalVote === false) {
+    const wasAuto = this.persona.autoShow === true;
+    const isAuto = persona.autoShow === true;
+    // The automatic plan doesn't depend on the persona: it stays as it is until the loop ends.
+    const show = isAuto ? (wasAuto ? this.show : autoShow(this.loops, this.showSeed)) : persona.segments;
+    if (wasAuto !== isAuto || show.length !== this.show.length || persona.finalVote === false) {
       this.vote = null;
       this.finalGame = null;
     }
+    if (wasAuto !== isAuto) this.segmentDraws.clear();
     this.persona = persona;
+    this.show = show;
     if (!this.supportOn()) {
       this.hideSupport();
       this.supportCardAt = Infinity;
@@ -388,7 +408,7 @@ export class Director {
     } else if (this.opened && this.supportCardAt === Infinity) {
       this.scheduleSupport(this.now());
     }
-    const index = persona.segments.findIndex((s) => s.id === currentId);
+    const index = show.findIndex((s) => s.id === currentId);
     if (index >= 0) {
       this.segmentIndex = index;
     } else {
@@ -595,7 +615,7 @@ export class Director {
   }
 
   forceSegment(id: string): boolean {
-    const index = this.persona.segments.findIndex((s) => s.id === id);
+    const index = this.show.findIndex((s) => s.id === id);
     if (index === -1) return false;
     this.forcedSegment = index;
     // A segment's game ends with it; the creator's own game keeps going.
@@ -611,7 +631,7 @@ export class Director {
    */
   upNext(now = this.now()): Array<{ kind: UpNextKind; title: string; at: number }> {
     const items: Array<{ kind: UpNextKind; title: string; at: number }> = [];
-    const segments = this.persona.segments;
+    const segments = this.show;
     const segment = this.segment();
     const games = this.options.games;
     const ranking = this.options.ranking;
@@ -647,7 +667,7 @@ export class Director {
     const vote = this.vote;
     if (!vote) return null;
     const tally = vote.ballot.tally();
-    const last = this.persona.segments[this.persona.segments.length - 1] as Segment;
+    const last = this.show[this.show.length - 1] as Segment;
     return {
       segment: last.title,
       options: vote.ballot.labels.map((label, i) => ({ label, votes: tally[i] ?? 0 })),
@@ -800,7 +820,7 @@ export class Director {
 
     // A game in progress (or the podium) finishes before the segment moves on (a forced change already stopped a segment's game).
     const gameHolds = this.forcedSegment === undefined && (games?.isActive() === true || ranking?.isRevealing() === true);
-    const segmentDue = this.persona.segments.length > 1 && !gameHolds && now >= segmentEndsAt;
+    const segmentDue = this.show.length > 1 && !gameHolds && now >= segmentEndsAt;
     // Overdue because chat kept the host talking past the end (not because the room was empty): move on now.
     const heldUp = segmentDue && now - segmentEndsAt >= SEGMENT_OVERDUE_MS && this.lastTurnAt >= segmentEndsAt;
     if (this.forcedSegment !== undefined) return this.changeSegment(now, base);
@@ -842,7 +862,7 @@ export class Director {
 
     if (segmentDue && speech.isIdle()) return this.advance(now, base);
     // A show with one segment loops it: each time it runs out is the end of a loop.
-    if (this.persona.segments.length === 1 && !gameHolds && now >= segmentEndsAt && speech.isIdle()) {
+    if (this.show.length === 1 && !gameHolds && now >= segmentEndsAt && speech.isIdle()) {
       this.segmentStartedAt = now;
       const podium = this.endLoop(now, base);
       if (podium) return podium;
@@ -912,7 +932,7 @@ export class Director {
 
   /** Moves to the next segment in the rotation; the last one ends the loop, and its podium goes first. */
   private advance(now: number, base: Omit<TurnPlan, "kind" | "items">): TurnPlan {
-    if (this.segmentIndex === this.persona.segments.length - 1) {
+    if (this.segmentIndex === this.show.length - 1) {
       const podium = this.endLoop(now, base);
       if (podium) return podium;
     }
@@ -934,15 +954,17 @@ export class Director {
   }
 
   private changeSegment(now: number, base: Omit<TurnPlan, "kind" | "items">): TurnPlan {
-    const nextIndex = this.forcedSegment ?? (this.segmentIndex + 1) % this.persona.segments.length;
+    const nextIndex = this.forcedSegment ?? (this.segmentIndex + 1) % this.show.length;
     this.forcedSegment = undefined;
     const previous = this.segment();
-    const nextSegment = this.persona.segments[nextIndex] as Segment;
-    if (this.vote) this.closeVote(nextIndex === this.persona.segments.length - 1, now);
+    if (this.vote) this.closeVote(nextIndex === this.show.length - 1, now);
     if (nextIndex === 0) {
       this.loops += 1;
       this.finalGame = null;
+      // A new loop of the automatic run of show is planned afresh.
+      if (this.persona.autoShow) this.show = autoShow(this.loops, this.showSeed);
     }
+    const nextSegment = this.show[nextIndex] as Segment;
     this.segmentIndex = nextIndex;
     this.segmentDraws.clear();
     this.segmentStartedAt = now;
@@ -1039,7 +1061,7 @@ export class Director {
 
   /** The game a segment plays: its own, or for the last segment, the one chat voted for. */
   private segmentGame(index: number): GameConfig | undefined {
-    const segments = this.persona.segments;
+    const segments = this.show;
     if (index === segments.length - 1 && this.finalGame) return this.finalGame;
     const game = segments[index]?.game;
     if (!game) return undefined;
@@ -1058,7 +1080,7 @@ export class Director {
 
   /** Opens the vote on the last segment's game near the end of the second-to-last segment (ADR-0029). */
   private maybeOpenVote(now: number): void {
-    const segments = this.persona.segments;
+    const segments = this.show;
     if (this.vote || !this.opened || this.persona.finalVote === false || segments.length < 2) return;
     if (this.segmentIndex !== segments.length - 2 || this.finalGame) return;
     const endsAt = this.segmentStartedAt + this.segment().minutes * 60_000;
@@ -1083,7 +1105,7 @@ export class Director {
     this.voteCue = null;
     if (!vote || !apply) return;
     const winner = vote.ballot.winner();
-    const last = this.persona.segments[this.persona.segments.length - 1] as Segment;
+    const last = this.show[this.show.length - 1] as Segment;
     if (!winner) {
       this.remember({ at: now, kind: "show", text: `Nobody voted for the final segment's game; "${last.title}" goes ahead as planned.` });
       return;
