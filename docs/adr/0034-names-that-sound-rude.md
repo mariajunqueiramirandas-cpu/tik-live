@@ -55,19 +55,12 @@ It plugs in at every way a name reaches the voice:
 4. **Viewer memory** no longer keeps a line the rules dropped, so a prank
    can't come back next stream as what a regular "once said".
 
-**The models think about it too**, for the puns the lists don't know:
+**The models are told too**, for the puns the lists don't know:
 
-- **The moderator thinks when a sentence needs it.** It used to run with
-  thinking off, to keep the verdict fast. Now it runs adaptive thinking at
-  low effort. An ordinary line skips thinking and costs no extra latency;
-  a line with an odd name or a double meaning gets a moment of thought,
-  which is where a verdict goes wrong. Its policy now judges how a sentence
-  sounds, with the classic puns as examples, and errs toward leaving a name
-  out: the host can always greet someone without it, but it can't take a
-  prank back. `MODERATION_THINKING=off` restores the fastest verdict.
-  Thinking is asked for through the API, not with a "reasoning" field in the
-  verdict: the model reasons in its thinking, and the verdict stays as it
-  was.
+- **The moderator judges how a sentence sounds**, with the classic puns as
+  examples, and errs toward leaving a name out: the host can always greet
+  someone without it, but it can't take a prank back. It keeps running with
+  thinking off: every line of speech waits for its verdict.
 - **The host is reminded at the moment it matters.** Its safety rules say to
   sound names out and to leave out of a shout-out any name that isn't
   clearly ordinary ("salve pro seu amigo!"). On top of that, when a turn
@@ -78,9 +71,8 @@ It plugs in at every way a name reaches the voice:
 
 ## Consequences
 
-- The check itself is free and instant: string work on text that was
-  already being checked. The moderator's thinking costs output tokens and
-  a little latency, only on the lines it stops to think about.
+- Free and instant: string work on text that was already being checked,
+  and a few lines in prompts that were already being sent.
 - The lists catch the known pranks deterministically; new ones rely on the
   host's and the moderator's judgment until someone adds them to the list
   (one line each, in `sounds.ts`).

@@ -109,16 +109,12 @@ describe("ClaudeModerator", () => {
   }
   const settings = { strictness: "standard" as const, avoidTopics: [] };
 
-  it("thinks when a sentence needs it, at low effort, unless thinking is turned off", async () => {
-    const adaptive: Array<Record<string, unknown>> = [];
-    expect(await new ClaudeModerator({ client: fakeClient(adaptive), model: "claude-haiku-5-5", settings }).review("Oi, gente!")).toEqual({ safe: true });
-    expect(adaptive[0]).not.toHaveProperty("thinking"); // adaptive is the default
-    expect(adaptive[0]?.output_config).toMatchObject({ effort: "low" });
-    const off: Array<Record<string, unknown>> = [];
-    await new ClaudeModerator({ client: fakeClient(off), model: "claude-haiku-5-5", settings, thinking: "off" }).review("Oi, gente!");
-    expect(off[0]?.thinking).toEqual({ type: "disabled" });
+  it("judges without thinking where the model allows it, since every line waits for the verdict", async () => {
+    const haiku: Array<Record<string, unknown>> = [];
+    expect(await new ClaudeModerator({ client: fakeClient(haiku), model: "claude-haiku-5-5", settings }).review("Oi, gente!")).toEqual({ safe: true });
+    expect(haiku[0]?.thinking).toEqual({ type: "disabled" });
     const sonnet: Array<Record<string, unknown>> = [];
-    await new ClaudeModerator({ client: fakeClient(sonnet), model: "claude-sonnet-5-5", settings, thinking: "off" }).review("Oi, gente!");
+    await new ClaudeModerator({ client: fakeClient(sonnet), model: "claude-sonnet-5-5", settings }).review("Oi, gente!");
     expect(sonnet[0]).not.toHaveProperty("thinking"); // Sonnet 5.5 rejects disabled thinking
   });
 });

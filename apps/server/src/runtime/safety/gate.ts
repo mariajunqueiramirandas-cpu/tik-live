@@ -85,14 +85,6 @@ export interface ClaudeModeratorOptions {
   client: Anthropic;
   model: string;
   settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks">;
-  /**
-   * "adaptive" (the default) lets the model think when a sentence needs it:
-   * at low effort it skips thinking on an ordinary line and stops to sound
-   * out an odd name or weigh a double meaning, which is where a verdict goes
-   * wrong. "off" never thinks, for the fastest verdict, on models that allow
-   * it (THINKING_OFF_MODELS).
-   */
-  thinking?: "adaptive" | "off";
   onUsage?: (usage: UsageReport) => void;
 }
 
@@ -118,14 +110,13 @@ export class ClaudeModerator implements Moderator {
     const cached = this.cache.get(key);
     if (cached) return cached;
 
-    const thinkingOff = this.options.thinking === "off" && THINKING_OFF_MODELS.has(this.options.model);
     const response = await this.options.client.messages.create(wellFormedDeep({
       model: this.options.model,
-      // Thinking counts toward the cap; low effort keeps it short.
-      max_tokens: 4000,
+      max_tokens: 2000,
       system: [{ type: "text", text: this.policy, cache_control: { type: "ephemeral" } }],
       output_config: { effort: "low", format: { type: "json_schema", schema: VERDICT_SCHEMA } },
-      ...(thinkingOff ? { thinking: { type: "disabled" as const } } : {}),
+      // A one-sentence verdict doesn't need thinking, and every line of speech waits for it.
+      ...(THINKING_OFF_MODELS.has(this.options.model) ? { thinking: { type: "disabled" as const } } : {}),
       messages: [
         {
           role: "user",

@@ -54,12 +54,6 @@ const envSchema = z.object({
   MODERATION_ENABLED: bool.default(true),
   /** Deployment override for every plan's moderator model; unset = each plan's own. */
   MODERATION_MODEL: z.string().optional(),
-  /**
-   * "adaptive" lets the moderator think when a sentence needs it (an odd
-   * name, a double meaning) and skip it on ordinary lines; "off" never
-   * thinks, for the fastest verdict, on models that allow it (ADR-0034).
-   */
-  MODERATION_THINKING: z.enum(["adaptive", "off"]).default("adaptive"),
   /** Concurrent ElevenLabs requests across all hosts in this process (protects rate limits). */
   ELEVENLABS_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
   MODERATION_FAIL_OPEN: bool.default(false),
