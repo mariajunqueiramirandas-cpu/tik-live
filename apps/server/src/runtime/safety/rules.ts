@@ -1,3 +1,5 @@
+import { asksForRudeName, lineSoundsRude } from "./sounds";
+
 /**
  * Fast, deterministic checks shared by chat triage (input) and the speech
  * gate (output). These run on every message, so they must stay cheap.
@@ -57,6 +59,8 @@ export function checkChatInput(text: string, blocklist: readonly string[]): Rule
   if (isNoise(text)) return { ok: false, reason: "noise" };
   if (containsContactInfo(text)) return { ok: false, reason: "link or contact info" };
   if (looksLikeInjection(text)) return { ok: false, reason: "prompt injection" };
+  // "Manda um salve pro Tomas Turbando": a name that sounds rude when the host says it (ADR-0034).
+  if (asksForRudeName(text)) return { ok: false, reason: "rude name" };
   const term = containsBlockedTerm(text, blocklist);
   if (term) return { ok: false, reason: "blocked term" };
   return { ok: true };
@@ -67,5 +71,7 @@ export function checkSpokenOutput(text: string, blocklist: readonly string[]): R
   if (text.length > 400) return { ok: false, reason: "too long" };
   if (containsContactInfo(text)) return { ok: false, reason: "link or contact info" };
   if (containsBlockedTerm(text, blocklist)) return { ok: false, reason: "blocked term" };
+  // The voice reads sound, not spelling: "Oscar Alho" says "o caralho" (ADR-0034).
+  if (lineSoundsRude(text)) return { ok: false, reason: "sounds rude" };
   return { ok: true };
 }

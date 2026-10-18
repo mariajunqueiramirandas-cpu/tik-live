@@ -1,5 +1,6 @@
 import { clip, type LiveEvent, type Viewer } from "@tik-live/shared";
 import type { Logger } from "../../log";
+import { checkChatInput } from "../safety/rules";
 
 export interface ViewerRecord {
   id: string;
@@ -78,7 +79,8 @@ export class ViewerMemory {
       case "chat":
       case "question":
         record.messages += 1;
-        record.recentLines = [...record.recentLines, clip(event.text, 140)].slice(-RECENT_LINES);
+        // The host reads these on later streams ("once said"): never a line the rules kept from it today.
+        if (checkChatInput(event.text, []).ok) record.recentLines = [...record.recentLines, clip(event.text, 140)].slice(-RECENT_LINES);
         break;
       case "gift":
         record.diamonds += event.diamonds;

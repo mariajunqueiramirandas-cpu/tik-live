@@ -18,12 +18,14 @@ const SKIPPED: Record<string, string> = {
   "duplicate of queued message": "já está na fila para resposta",
   "talking to another viewer": "conversa entre espectadores",
   "no reply needed": "não precisa de resposta",
+  "rude name": "pede para falar um nome que soa ofensivo",
 };
 
 const BLOCKED: Record<string, string> = {
   ...RULES,
   "moderator unavailable": "moderação indisponível",
   "moderator declined to review": "a moderação recusou revisar",
+  "sounds rude": "soa ofensivo quando falado",
 };
 
 /** Why a chat message was skipped. Unknown codes show as they are. */

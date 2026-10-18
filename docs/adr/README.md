@@ -39,6 +39,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0031](0031-not-every-message-needs-an-answer.md) | Not every message needs an answer, and chat can't hold the show | Proposed |
 | [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed |
 | [0033](0033-host-memory.md) | Host memory that's cheap, fast and accurate | Proposed |
+| [0034](0034-names-that-sound-rude.md) | Names that sound rude out loud | Proposed |
 
 ## Evidence used
 

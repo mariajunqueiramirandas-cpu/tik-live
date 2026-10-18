@@ -4,7 +4,7 @@ import type { Logger } from "../../log";
 import { THINKING_OFF_MODELS } from "../safety/gate";
 import type { UsageReport } from "../usage";
 import { PLAY_MUSIC_TOOL, PLAY_MUSIC_TOOL_NAME, readMusicCall } from "./music-tool";
-import { buildSystemPrompt, reactionSentences, type BriefLayout, type TurnRequest } from "./prompt";
+import { buildSystemPrompt, displayName, reactionSentences, type BriefLayout, type TurnRequest } from "./prompt";
 import { effectTags, SentenceSplitter, toUtterance, type Emotion, type Utterance } from "./sentences";
 
 /** Things the host can do besides talking. */
@@ -328,8 +328,7 @@ export class ScriptedHost implements HostBrain {
   }
 
   private lines(turn: TurnRequest): string[] {
-    const name = (item: TurnRequest["items"][number]) =>
-      "viewer" in item.event ? item.event.viewer.nickname || item.event.viewer.handle : "visitante";
+    const name = (item: TurnRequest["items"][number]) => ("viewer" in item.event ? displayName(item.event.viewer, []) : "visitante");
     switch (turn.kind) {
       case "opening":
         return [`[excited] ${this.persona.catchphrases[0] ?? "Oi, gente!"} ${this.persona.name} está no ar!`, `[happy] Bem-vindos ao ${turn.segment.title}.`];
