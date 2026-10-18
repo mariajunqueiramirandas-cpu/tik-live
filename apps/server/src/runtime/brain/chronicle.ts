@@ -56,7 +56,7 @@ const MAX_HOST_FACTS = 6;
 
 const SYSTEM = `You keep the running notes for an AI host of a live TikTok stream, so it remembers what happened earlier in the show.
 Given the previous summary and the newest stretch of the show (viewer messages, gifts, the host's lines, show moments, in order), write:
-- summary: an updated account of the show so far, in English, under 150 words: running jokes, topics, questions the host asked and their answers, games and who won, who's been chatting and what about, who gifted, and promises the host made ("I'll sing later") or questions it still owes. Drop stale detail to stay short.
+- summary: an updated account of the show so far, in English, under 150 words: running jokes, topics, questions the host asked and their answers, games and who won, who's been chatting and what about, who gifted, and promises the host made ("I'll sing later") or questions it still owes. The host reads it at the start of every turn, and it's cut at 1,200 characters, so keep what the host will need next and drop stale detail.
 - notes: up to 6 short notes (under 15 words each) about individual viewers, only harmless things they chose to share or did on stream: favorite food, a pet's name, what they're up to, a game they won, a running joke with the host. Use the viewer's id exactly as given in the room data. Never note real names, ages, locations, schools, contact details, health, relationships, or anything sensitive. If there's nothing worth noting, return no notes.
   Each note has a topic (one to three lowercase English words, the same words every time for the same kind of thing: "pet", "favorite food", "team", "game wins", "running joke") and a quote: a few words copied exactly from that viewer's own message, or from the show line, that shows it. A note without a quote from that viewer is wrong; leave it out.
 - host_facts: up to 6 things the host said about itself in this stretch that it should keep saying the same way: its favorite things, tastes, opinions it committed to, its made-up backstory. Each has a topic (lowercase English, like "favorite food", "favorite team", "age", "hometown") and a quote copied exactly from the host's line. Only what the host itself stated, never what viewers said about it. If there's nothing, return none.
@@ -122,7 +122,8 @@ export class ClaudeChronicler implements Chronicler {
         model,
         max_tokens: 4000,
         system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],
-        output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
+        // Off the air and run every few minutes at most: worth the care, since what it keeps the host believes.
+        output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
         messages: [
           {
             role: "user",

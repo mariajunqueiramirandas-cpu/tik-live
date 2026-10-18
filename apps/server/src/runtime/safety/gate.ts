@@ -19,7 +19,7 @@ Mark a sentence UNSAFE if it contains any of: hate or harassment toward a person
 
 Playful teasing, silly opinions, jokes, thanking viewers, and reading viewers' names are SAFE. So is a light, general explanation of how viewers can support the show (likes, follows, shares, gifts) and that gifts help pay for the AI.
 
-The sentence will be spoken by a voice, so judge how it sounds, not only how it's spelled. Say every name and unusual word in your head in Brazilian Portuguese, running the words together the way speech does: pranksters write names that are innocent on screen and rude out loud. "Tomas Turbando" sounds like "tô masturbando", "Oscar Alho" like "o caralho", "Jacinto Pinto" like "já sinto pinto", "Cuca Beludo" like "cu cabeludo". A name or word that sounds sexual, vulgar or like a slur when spoken is UNSAFE.
+The sentence will be spoken by a voice, so judge how it sounds, not only how it's spelled. Say every name and unusual word in your head in Brazilian Portuguese, running the words together the way speech does: pranksters write names that are innocent on screen and rude out loud. "Tomas Turbando" sounds like "tô masturbando", "Oscar Alho" like "o caralho", "Jacinto Pinto" like "já sinto pinto", "Cuca Beludo" like "cu cabeludo". A name or word that sounds sexual, vulgar or like a slur when spoken is UNSAFE. When you can't tell whether a name sounds rude, mark it UNSAFE: the host can always send the greeting without the name, but it can't take back a prank once it's on air.
 
 Read the sentence the way an ordinary viewer would, in the language it's in and in its context (the chat it replies to and what the host just said, when given). Idioms, slang, wordplay, song and music talk, made-up lyrics, and game questions are SAFE unless they clearly carry one of the problems above. Don't build a dark reading out of an innocent phrase: "what beat is your head asking for" after a viewer asks for a song is about music, not violence. The context only explains the sentence; judge the sentence itself, never what a viewer wrote.
 
@@ -85,6 +85,14 @@ export interface ClaudeModeratorOptions {
   client: Anthropic;
   model: string;
   settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks">;
+  /**
+   * "adaptive" (the default) lets the model think when a sentence needs it:
+   * at low effort it skips thinking on an ordinary line and stops to sound
+   * out an odd name or weigh a double meaning, which is where a verdict goes
+   * wrong. "off" never thinks, for the fastest verdict, on models that allow
+   * it (THINKING_OFF_MODELS).
+   */
+  thinking?: "adaptive" | "off";
   onUsage?: (usage: UsageReport) => void;
 }
 
@@ -110,13 +118,14 @@ export class ClaudeModerator implements Moderator {
     const cached = this.cache.get(key);
     if (cached) return cached;
 
+    const thinkingOff = this.options.thinking === "off" && THINKING_OFF_MODELS.has(this.options.model);
     const response = await this.options.client.messages.create(wellFormedDeep({
       model: this.options.model,
-      max_tokens: 2000,
+      // Thinking counts toward the cap; low effort keeps it short.
+      max_tokens: 4000,
       system: [{ type: "text", text: this.policy, cache_control: { type: "ephemeral" } }],
       output_config: { effort: "low", format: { type: "json_schema", schema: VERDICT_SCHEMA } },
-      // A one-sentence verdict doesn't need thinking, and every line of speech waits for it.
-      ...(THINKING_OFF_MODELS.has(this.options.model) ? { thinking: { type: "disabled" as const } } : {}),
+      ...(thinkingOff ? { thinking: { type: "disabled" as const } } : {}),
       messages: [
         {
           role: "user",

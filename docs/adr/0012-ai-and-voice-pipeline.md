@@ -27,7 +27,7 @@ tenants.
 | Call | Default | Settings |
 |---|---|---|
 | Host turn | `claude-opus-5-5` | Streamed; `output_config.effort: "low"` (Opus 5.5 can't disable thinking, so effort is the latency control); `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`; stop after `maxSentences + 1` |
-| Moderation | `claude-opus-5-5` | `output_config.format` JSON schema `{ safe, reason }`; effort `low`; thinking off on models that allow it (Claude Haiku 5.5), since every line waits for the verdict; results cached per normalized sentence; a refusal counts as unsafe |
+| Moderation | `claude-opus-5-5` | `output_config.format` JSON schema `{ safe, reason }`; effort `low` with adaptive thinking, which skips ordinary lines and thinks over an odd name or a double meaning (ADR-0034; `MODERATION_THINKING=off` turns it off where the model allows it, for the fastest verdict); results cached per normalized sentence; a refusal counts as unsafe |
 
 The model for each call is a **per-plan setting** in `packages/shared/plans.ts`
 plus a deployment override, not a hard-coded constant. The defaults stay on

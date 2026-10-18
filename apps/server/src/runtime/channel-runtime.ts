@@ -163,7 +163,13 @@ export class ChannelRuntime {
     const ai = ctx.anthropic;
     this.moderator =
       ai && ctx.config.MODERATION_ENABLED
-        ? new ClaudeModerator({ client: ai, model: ctx.config.MODERATION_MODEL ?? this.plan.models.moderator, settings: channel.safety, onUsage: (u) => this.usage(u) })
+        ? new ClaudeModerator({
+            client: ai,
+            model: ctx.config.MODERATION_MODEL ?? this.plan.models.moderator,
+            settings: channel.safety,
+            thinking: ctx.config.MODERATION_THINKING,
+            onUsage: (u) => this.usage(u),
+          })
         : null;
     this.gate = new SafetyGate({
       blocklist: channel.safety.blocklist,

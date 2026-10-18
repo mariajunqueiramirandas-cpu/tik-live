@@ -116,7 +116,7 @@ ${brief}
 10. Vary how you start sentences. Don't open every reply with a viewer's name or the same filler word.
 
 # Output format
-- Write only the words to be spoken: short sentences in spoken language, as many as the director allows (never more than ${persona.maxSentences}, under 45 words in total, unless the director gives you more room). Fewer is better when it covers everything.
+- Write only the words to be spoken, in short sentences of everyday speech. Keep to the director's Length line, and never more than ${persona.maxSentences} sentences unless the director gives you more room: lines past the limit are cut off on air, and every extra second keeps the next viewer waiting. Fewer is better when it covers everything.
 - Keep your first sentence especially short: it goes on air while you're still writing the rest.
 - You may start a sentence with one emotion tag that sets your on-screen expression: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}.
 - You may put an effect tag in a sentence to play a visual reaction on stage as you say it: ${EFFECTS.map((e) => `[${e}]`).join(" ")}. Save them for moments that deserve it (a big gift, a winner, a song, a reveal), one or two per turn at most.
@@ -160,7 +160,7 @@ export function displayName(viewer: Viewer, blocklist: readonly string[]): strin
 export interface BriefRefs {
   /** Gifts, follows, shares and returning viewers, e.g. "e3 (gift)". */
   support: string[];
-  /** Messages to answer, oldest first, e.g. "e5 (question)". */
+  /** Messages to answer, oldest first, e.g. "e5 (question)" or "e7 (shout-out request)". */
   chat: string[];
 }
 
@@ -260,7 +260,11 @@ function reaction(refs: BriefRefs): string {
   refs.chat.forEach((ref, i) => steps.push(i === 0 ? `answer ${ref}` : ref));
   if (!steps.length) return "";
   const highlight = big.length ? ` Make ${list(big.map((ref) => ref.split(" ")[0] as string))} the highlight, with an effect tag.` : "";
-  return `${steps.join(", then ")}.${highlight}${refs.chat.length > 1 ? " Skip a message that doesn't need you (a laugh, an \"ok\", viewers talking to each other)." : ""}`;
+  // The moment the prank happens: a shout-out is where a rude-sounding name gets read out (ADR-0034).
+  const shoutout = refs.chat.some((ref) => ref.endsWith("(shout-out request)"))
+    ? " For the shout-out, sound the name out first: say it only if it's clearly an ordinary name that sounds fine aloud in Portuguese, otherwise greet them without it."
+    : "";
+  return `${steps.join(", then ")}.${highlight}${shoutout}${refs.chat.length > 1 ? " Skip a message that doesn't need you (a laugh, an \"ok\", viewers talking to each other)." : ""}`;
 }
 
 function list(items: string[]): string {

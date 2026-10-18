@@ -3,6 +3,7 @@ import { clip, viewerName, type LiveEvent, type Persona } from "@tik-live/shared
 import type { Logger } from "../../log";
 import { escapeForPrompt } from "../safety/gate";
 import { containsBlockedTerm, containsContactInfo, looksLikeInjection } from "../safety/rules";
+import { asksForShoutout } from "../safety/sounds";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
 import { Conversation, PASS, type Draft, type UnsaidReason } from "./conversation";
@@ -355,7 +356,7 @@ export class TurnEngine {
       const ref = [...item.events].reverse().map((event) => this.conversation.ref(event, draft)).find(Boolean);
       if (!ref) continue;
       const kind = item.event.kind;
-      if (kind === "chat" || kind === "question") refs.chat.push(`${ref} (${kind})`);
+      if (item.event.kind === "chat" || item.event.kind === "question") refs.chat.push(`${ref} (${asksForShoutout(item.event.text) ? "shout-out request" : kind})`);
       else if (item.event.kind === "gift" && item.event.diamonds >= BIG_GIFT_DIAMONDS) refs.support.push(`${ref} (big gift)`);
       else refs.support.push(`${ref} (${kind === "join" ? "returning viewer" : kind})`);
     }

@@ -185,3 +185,11 @@ export function asksForRudeName(text: string): boolean {
 export function lineSoundsRude(text: string): boolean {
   return words(text).some(rudeWord) || asksForRudeName(text);
 }
+
+/** "Manda um salve pro...", "fala oi pra...": a viewer asking the host to greet someone, usually by name. */
+const SHOUT_OUT = /(?:^|[^\p{L}])(?:salves?|manda(?:r)? (?:um |uns )?(?:oi|beijos?|abraços?|abracos?|alô|alo)|parab[eé]ns|fala (?:um )?oi|um grito)(?=[^\p{L}]).{0,20}?(?:^|[^\p{L}])(?:pro|pra|para|ao|à|a|pros|pras)(?=[^\p{L}]|$)/iu;
+
+/** True when a message asks the host for a shout-out: the turn reminds the host to say only a name that sounds fine. */
+export function asksForShoutout(text: string): boolean {
+  return SHOUT_OUT.test(text);
+}

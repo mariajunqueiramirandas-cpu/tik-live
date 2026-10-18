@@ -1,10 +1,16 @@
+import type { LiveEvent } from "@tik-live/shared";
 import { describe, expect, it } from "bun:test";
+import type { HostBrain } from "../../src/runtime/brain/host";
 import { ViewerMemory } from "../../src/runtime/brain/memory";
-import { displayName } from "../../src/runtime/brain/prompt";
+import { displayName, type TurnRequest } from "../../src/runtime/brain/prompt";
+import type { Utterance } from "../../src/runtime/brain/sentences";
 import { Triage } from "../../src/runtime/brain/triage";
+import { TurnEngine } from "../../src/runtime/brain/turns";
 import { SafetyGate } from "../../src/runtime/safety/gate";
-import { asksForRudeName, lineSoundsRude, nameSoundsRude, soundOf } from "../../src/runtime/safety/sounds";
-import { chat, viewer } from "./helpers";
+import { asksForRudeName, asksForShoutout, lineSoundsRude, nameSoundsRude, soundOf } from "../../src/runtime/safety/sounds";
+import { SpeechPipeline } from "../../src/runtime/voice/pipeline";
+import { NoTts } from "../../src/runtime/voice/tts";
+import { chat, persona, viewer } from "./helpers";
 
 describe("how words sound (ADR-0034)", () => {
   it("hears spellings that sound alike as the same", () => {
@@ -112,5 +118,41 @@ describe("where it plugs in", () => {
     const gate = new SafetyGate({ blocklist: [] });
     expect(await gate.check("Um salve pro Jacinto Pinto!")).toEqual({ safe: false, reason: "sounds rude" });
     expect(await gate.check("Um salve pro seu amigo!")).toEqual({ safe: true });
+  });
+});
+
+describe("shout-out requests", () => {
+  it("are told apart from other chat", () => {
+    for (const text of ["manda um salve pro meu primo Caio", "Salve pra galera de BH", "manda um beijo pra minha mãe", "fala oi pra Ana!", "parabéns pro meu irmão hoje"]) {
+      expect({ text, shoutout: asksForShoutout(text) }).toEqual({ text, shoutout: true });
+    }
+    for (const text of ["oi gente", "salve salve", "qual é o seu nome?", "valeu pela live", "manda a próxima pergunta"]) {
+      expect({ text, shoutout: asksForShoutout(text) }).toEqual({ text, shoutout: false });
+    }
+  });
+
+  it("remind the host, in that turn's brief, to sound the name out first", async () => {
+    class Host implements HostBrain {
+      readonly name = "script";
+      requests: TurnRequest[] = [];
+      async *generate(turn: TurnRequest): AsyncGenerator<Utterance> {
+        this.requests.push(turn);
+        yield { text: "Salve pro seu primo!", emotion: "happy" };
+      }
+      reconfigure(): void {}
+    }
+    const host = new Host();
+    const memory = new ViewerMemory();
+    const speech = new SpeechPipeline(new NoTts(), new SafetyGate({ blocklist: [] }), { play: () => new Promise(() => {}), interrupt: () => {} });
+    const engine = new TurnEngine({ host, speech, memory, persona: () => persona, blocklist: () => [] });
+    const plan = (text: string) => {
+      const event = chat("leo", text) as Extract<LiveEvent, { kind: "chat" }>;
+      engine.conversation.add({ at: 0, kind: "viewer", event });
+      return { kind: "react" as const, items: [{ event, events: [event], priority: 40, expiresAt: Infinity, queuedAt: 0, seq: 1 }], segment: persona.segments[0]!, stats: { viewers: 3, likes: 0, uptimeMinutes: 1 }, originAt: 0 };
+    };
+    await engine.run(plan("manda um salve pro meu primo Kaique"));
+    expect(host.requests[0]?.context.brief).toContain("Answer e1 (shout-out request). For the shout-out, sound the name out first");
+    await engine.run(plan("qual seu time?"));
+    expect(host.requests[1]?.context.brief).not.toContain("shout-out");
   });
 });
