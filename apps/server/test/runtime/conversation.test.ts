@@ -53,6 +53,29 @@ describe("Conversation", () => {
     expect(room).toContain('<chat id="e2" from="visitante"');
   });
 
+  it("knows when the host already named the viewer after seeing their message", () => {
+    const { conversation, see } = setup();
+    const ana = chat("Ana Clara", "gato ou cachorro?") as Extract<LiveEvent, { kind: "chat" }>;
+    const bia = chat("bia", "tudo bem?") as Extract<LiveEvent, { kind: "chat" }>;
+    const anon = chat("badword fan", "e aí?") as Extract<LiveEvent, { kind: "chat" }>;
+    see(ana);
+    see(bia);
+    see(anon);
+    expect(conversation.addressed(ana)).toBe(false);
+    conversation.commit(conversation.draft(), "brief", "[happy] Gato, sempre, Ana!\nOi, visitante!", 0);
+    // A short form of the nickname counts; a name inside another word doesn't.
+    expect(conversation.addressed(ana)).toBe(true);
+    expect(conversation.addressed(bia)).toBe(false);
+    // Everyone called "visitante" sounds the same, so that never counts.
+    expect(conversation.addressed(anon)).toBe(false);
+    conversation.commit(conversation.draft(), "brief", "Tudo ótimo, Bia.", 0);
+    expect(conversation.addressed(bia)).toBe(true);
+    // Before the host saw a message, nothing it said answers it.
+    const later = chat("ana clara", "e o seu nome?") as Extract<LiveEvent, { kind: "chat" }>;
+    see(later);
+    expect(conversation.addressed(later)).toBe(false);
+  });
+
   it("tells the host about a viewer once, and again only when there's something new", () => {
     const { conversation, see } = setup();
     see(chat("ana", "one"));

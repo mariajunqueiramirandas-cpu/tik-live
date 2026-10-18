@@ -182,7 +182,10 @@ the brief, stream the reply into speech, commit. It also:
    to three messages, **oldest first**. Messages older than the newest one
    answered are passed over (they're still in the room the host saw);
    questions among them come back in the next quiet moment ("you didn't get
-   to e7 earlier"). A pending like milestone rides along;
+   to e7 earlier"), unless a reply the host wrote after seeing it already
+   named whoever asked: the host sees the questions it moved past and often
+   answers them anyway, and asking again made it answer twice. A pending
+   like milestone rides along;
 6. a like milestone on its own;
 7. the segment change, on time, in a quiet moment;
 8. filler: the game's, an owed question, or the next of six rotating ideas

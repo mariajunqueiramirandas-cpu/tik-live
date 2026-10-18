@@ -158,6 +158,27 @@ export class Conversation {
     return id !== undefined && (this.seen.has(id) || this.pending.some((item) => item.id === id));
   }
 
+  /**
+   * True when a reply the host wrote once it could see `event` names its
+   * viewer: the host already got to them, so nothing should send it back.
+   * Viewers called "visitante" can't be told apart, so they never count.
+   */
+  addressed(event: LiveEvent): boolean {
+    const id = this.ids.get(event);
+    if (id === undefined || !("viewer" in event)) return false;
+    const name = spoken(displayName(event.viewer, this.options.blocklist()));
+    if (!name || name === "visitante") return false;
+    // The host may shorten a long nickname to its first word ("Ana Clara" -> "Ana").
+    const first = name.split(" ")[0] as string;
+    const forms = first !== name && first.length >= 3 ? [name, first] : [name];
+    const from = this.exchanges.findIndex((exchange) => exchange.ids.includes(id));
+    if (from === -1) return false;
+    return this.exchanges.slice(from).some((exchange) => {
+      const reply = ` ${spoken(exchange.reply)} `;
+      return forms.some((form) => reply.includes(` ${form} `));
+    });
+  }
+
   /** Moments waiting for the next turn. */
   pendingCount(): number {
     return this.pending.length;
@@ -392,6 +413,15 @@ function renderRecap(recap: Recap): string {
   if (recap.shows.length) lines.push(`On the show: ${recap.shows.join("; ")}.`);
   if (recap.lastLine) lines.push(`Your last line then: "${recap.lastLine}"`);
   return `<earlier turns="${recap.turns}">\n${escapeForPrompt(lines.join("\n") || "Nothing worth keeping.")}\n</earlier>`;
+}
+
+/** Words only, lowercase, one space apart: how a name is matched against what the host said. */
+function spoken(text: string): string {
+  return text
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 }
 
 function attr(value: string | number): string {

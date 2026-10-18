@@ -876,12 +876,17 @@ export class Director {
     this.owed = [...this.owed, { event: item.event, at: this.now() }].slice(-OWED_MAX);
   }
 
-  /** The oldest question still owed that the host can see in its room (not one that scrolled by). */
+  /**
+   * The oldest question still owed that the host can see in its room (not one
+   * that scrolled by) and hasn't already answered: it sees the questions it
+   * moved past and often answers them anyway, and asking again repeats it.
+   */
   private takeOwed(now: number): QueueItem | undefined {
     this.owed = this.owed.filter((owed) => now - owed.at < OWED_TTL_MS);
+    const conversation = this.engine.conversation;
     while (this.owed.length) {
       const { event } = this.owed.shift() as (typeof this.owed)[number];
-      if (this.engine.conversation.canShow(event)) return { event, events: [event], priority: 0, expiresAt: Infinity, seq: 0 };
+      if (conversation.canShow(event) && !conversation.addressed(event)) return { event, events: [event], priority: 0, expiresAt: Infinity, seq: 0 };
     }
     return undefined;
   }
