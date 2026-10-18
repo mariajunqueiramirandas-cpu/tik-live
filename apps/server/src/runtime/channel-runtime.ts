@@ -41,7 +41,8 @@ import { StreamRecorder } from "./stream-recorder";
 import type { StudioFeed } from "./studio-feed";
 import { UsageMeter, type UsageReport } from "./usage";
 import { SpeechPipeline, type SpeechCue } from "./voice/pipeline";
-import { ElevenLabsTts, NoTts, PocketTts, type TtsProvider } from "./voice/tts";
+import { chooseTts } from "./voice/choose";
+import { TtsError, type TtsProvider } from "./voice/tts";
 
 export interface RuntimeContext {
   db: Db;
@@ -70,6 +71,8 @@ const SAY_LIMIT_PER_MINUTE = 10;
 const BUDGET_WARN_RATIO = 0.8;
 /** The host composes at most one piece of music this often. */
 const HOST_MUSIC_GAP_MS = 90_000;
+/** The owner hears about a failing voice at most this often. */
+const VOICE_NOTICE_GAP_MS = 10 * 60_000;
 
 export type CommandResult = { ok: true } | { ok: false; error: string };
 
@@ -108,6 +111,7 @@ export class ChannelRuntime {
   private lastTickAt: number;
   private budgetWarned = false;
   private dailyCapNoticed = false;
+  private voiceNoticeAt = -Infinity;
   private sayTimes: number[] = [];
   private eventCounter = 0;
 
@@ -175,6 +179,7 @@ export class ChannelRuntime {
           });
         },
         onUsage: (u) => this.usage(u),
+        onTtsFailed: (err) => this.onVoiceFailed(err),
         log: this.log,
       },
       this.now,
@@ -653,16 +658,16 @@ export class ChannelRuntime {
   }
 
   private defaultTts(channel: ChannelRow): TtsProvider {
-    const { config } = this.options.ctx;
-    const curated = this.plan.limits.voices === "curated";
-    if (channel.voice.provider === "pocket" && config.pocketEnabled) {
-      const voice = (curated ? channel.voice.voiceId : null) ?? config.POCKET_TTS_VOICE;
-      return new PocketTts({ url: config.POCKET_TTS_URL!, secret: config.POCKET_TTS_SECRET!, voice });
-    }
-    if (!config.ELEVENLABS_API_KEY || channel.voice.provider !== "elevenlabs") return new NoTts();
-    const voiceId = curated ? channel.voice.voiceId ?? config.DEFAULT_VOICE_ID : config.DEFAULT_VOICE_ID;
-    if (!voiceId) return new NoTts();
-    return new ElevenLabsTts({ apiKey: config.ELEVENLABS_API_KEY, voiceId, model: config.ELEVENLABS_MODEL });
+    return chooseTts(channel.voice, this.plan, this.options.ctx.config);
+  }
+
+  /** A line aired as captions because the voice failed: tell the owner, at most every ten minutes. */
+  private onVoiceFailed(err: unknown): void {
+    if (this.now() - this.voiceNoticeAt < VOICE_NOTICE_GAP_MS) return;
+    this.voiceNoticeAt = this.now();
+    // The operator has to act on these (a key, credits, a spend limit); creators can't.
+    if (err instanceof TtsError && err.reason === "account") this.log.error(`the voice provider refused this server's account: ${err.message}`);
+    this.notice("warn", "voice_failed", "A voz não respondeu e uma fala saiu só em legenda. O apresentador continua no ar e volta a falar assim que a voz responder.");
   }
 
   private defaultSource(channel: ChannelRow): EventSource {

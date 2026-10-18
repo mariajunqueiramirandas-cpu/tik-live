@@ -11,7 +11,12 @@ export type UsageReport =
       cacheWriteTokens: number;
       outputTokens: number;
     }
-  | { kind: "tts"; characters: number };
+  | {
+      kind: "tts";
+      characters: number;
+      /** Estimated spend, from providers billed per request. */
+      costUsd?: number;
+    };
 
 /**
  * Accumulates usage in memory between flushes (ADR-0005: never await the
@@ -40,6 +45,7 @@ export class UsageMeter {
   record(report: UsageReport): void {
     if (report.kind === "tts") {
       this.pending.ttsCharacters += report.characters;
+      this.addCost(report.costUsd ?? 0);
       return;
     }
     if (report.kind === "turn") this.pending.llmRequests += 1;
@@ -48,11 +54,14 @@ export class UsageMeter {
     this.pending.cacheReadTokens += report.cacheReadTokens;
     this.pending.cacheWriteTokens += report.cacheWriteTokens;
     this.pending.outputTokens += report.outputTokens;
-    const cost = estimateCostUsd(report.model, report);
-    this.pending.costUsd += cost;
-    this.spentToday();
-    this.today.costUsd += cost;
+    this.addCost(estimateCostUsd(report.model, report));
     this.window.push({ at: this.now(), tokens: report.inputTokens + report.cacheWriteTokens + report.outputTokens });
+  }
+
+  private addCost(costUsd: number): void {
+    this.pending.costUsd += costUsd;
+    this.spentToday();
+    this.today.costUsd += costUsd;
   }
 
   addRuntimeSeconds(seconds: number): void {

@@ -6,7 +6,8 @@
  *   bun scripts/load-test.ts --channels 50 --seconds 120 [--url http://localhost:8080] [--gate <password>] [--allow-ai]
  *
  * Practice mode uses simulated viewers. If the server has AI keys, every host
- * makes real (paid) Claude calls, so that needs --allow-ai.
+ * makes real (paid) Claude calls, so that needs --allow-ai. Hosts speak in
+ * captions unless --allow-ai is passed: the voice is a paid call too.
  */
 import { parseArgs } from "node:util";
 
@@ -37,7 +38,7 @@ async function api<T>(path: string, user: string, init: RequestInit & { json?: u
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
-const config = await api<{ ai: { enabled: boolean }; authMode: string }>("/api/config", "load-0");
+const config = await api<{ ai: { enabled: boolean }; voice: { enabled: boolean }; authMode: string }>("/api/config", "load-0");
 if (config.authMode !== "dev") throw new Error("The load test uses dev sign-in (AUTH_MODE=dev).");
 if (config.ai.enabled && !values["allow-ai"]) throw new Error("This server has AI turned on: every host would make paid Claude calls. Pass --allow-ai to accept that.");
 
@@ -46,6 +47,9 @@ const created: Array<{ id: string; user: string; stageUrl: string }> = [];
 for (let i = 0; i < channels; i++) {
   const user = `load-${i % users}`;
   const { channel } = await api<{ channel: { id: string; stageUrl: string } }>("/api/channels", user, { method: "POST", json: { name: `Load ${i}` } });
+  if (config.voice.enabled && !values["allow-ai"]) {
+    await api(`/api/channels/${channel.id}`, user, { method: "PATCH", json: { voice: { provider: "none", voiceId: null } } });
+  }
   created.push({ id: channel.id, user, stageUrl: channel.stageUrl });
 }
 

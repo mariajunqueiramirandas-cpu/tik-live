@@ -93,6 +93,7 @@ export class StreamRecorder {
     if (!this.sessionId) return;
     if (report.kind === "tts") {
       this.counts.ttsCharacters += report.characters;
+      this.counts.costUsd += report.costUsd ?? 0;
       return;
     }
     this.counts.inputTokens += report.inputTokens + report.cacheReadTokens + report.cacheWriteTokens;

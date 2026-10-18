@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
+import { DEFAULT_FISH_VOICE, FISH_VOICE_ID, FISH_VOICES, parseFishVoices, type FishVoice } from "./voices/fish-voices";
 
 const bool = z
   .enum(["true", "false", "1", "0", "yes", "no", "on", "off"])
@@ -61,6 +62,19 @@ const envSchema = z.object({
   ELEVENLABS_MODEL: z.string().default("eleven_flash_v2_5"),
   DEFAULT_VOICE_ID: z.string().optional(),
 
+  /** Fish Audio voices through OpenRouter (ADR-0030): on with a key, and then new hosts' default voice. */
+  OPENROUTER_API_KEY: z.string().optional(),
+  /** OpenRouter's API root; point it at a proxy or a test server. */
+  OPENROUTER_BASE_URL: z.string().url().default("https://openrouter.ai/api/v1"),
+  /** The Fish Audio model on OpenRouter. Drama 3 acts each line's emotion. */
+  FISH_TTS_MODEL: z.string().min(1).max(100).default("fish-audio/drama-3"),
+  /** The voice for plans without voice choice, and the dashboard's "Voz padrão": a Fish Audio voice id. */
+  FISH_TTS_VOICE: z.string().regex(FISH_VOICE_ID, "must be a Fish Audio voice id (32 hex characters)").default(DEFAULT_FISH_VOICE),
+  /** Replaces the built-in voices: comma-separated id=Name pairs, for voices you have the rights to. */
+  FISH_TTS_VOICES: z.string().optional(),
+  /** Concurrent requests to OpenRouter's speech API from this process. */
+  FISH_TTS_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(8),
+
   /** Self-hosted Pocket TTS (services/tts, ADR-0021). On when both are set. */
   POCKET_TTS_URL: z.string().url().optional(),
   POCKET_TTS_SECRET: z.string().min(16).optional(),
@@ -98,6 +112,11 @@ export interface AppConfig extends Env {
   aiEnabled: boolean;
   ttsEnabled: boolean;
   pocketEnabled: boolean;
+  fishEnabled: boolean;
+  /** The Fish voices hosts may use: FISH_TTS_VOICES, or the built-in list. */
+  fishVoices: FishVoice[];
+  /** The voice providers this server has, the default (for new hosts) first. */
+  voiceProviders: Array<"fish" | "elevenlabs" | "pocket">;
 }
 
 export class ConfigError extends Error {}
@@ -139,19 +158,33 @@ export function loadConfig(source: Record<string, string | undefined> = process.
   if (env.POCKET_TTS_SECRET && !env.POCKET_TTS_URL) {
     throw new ConfigError("POCKET_TTS_SECRET requires POCKET_TTS_URL (the tts service, e.g. http://localhost:8793)");
   }
+  const fishVoices = env.FISH_TTS_VOICES ? parseFishVoices(env.FISH_TTS_VOICES) : FISH_VOICES;
+  if (typeof fishVoices === "string") throw new ConfigError(`FISH_TTS_VOICES ${fishVoices}`);
+  if (!fishVoices.some((voice) => voice.id === env.FISH_TTS_VOICE)) {
+    throw new ConfigError(`FISH_TTS_VOICE ${env.FISH_TTS_VOICE} isn't one of the voices: add it to FISH_TTS_VOICES as id=Name`);
+  }
   if (env.BROADCAST_ENABLED && !(env.BROADCASTER_URL && env.BROADCASTER_TOKEN)) {
     throw new ConfigError("BROADCAST_ENABLED requires BROADCASTER_URL and BROADCASTER_TOKEN");
   }
 
   const pocketEnabled = Boolean(env.POCKET_TTS_URL && env.POCKET_TTS_SECRET);
+  const fishEnabled = Boolean(env.OPENROUTER_API_KEY);
+  const voiceProviders = [
+    ...(fishEnabled ? (["fish"] as const) : []),
+    ...(env.ELEVENLABS_API_KEY ? (["elevenlabs"] as const) : []),
+    ...(pocketEnabled ? (["pocket"] as const) : []),
+  ];
   return {
     ...env,
     isProduction,
     publicOrigin: new URL(env.PUBLIC_URL).origin,
     billingEnabled: Boolean(env.MP_ACCESS_TOKEN),
     aiEnabled: Boolean(env.ANTHROPIC_API_KEY),
-    ttsEnabled: Boolean(env.ELEVENLABS_API_KEY) || pocketEnabled,
+    ttsEnabled: voiceProviders.length > 0,
     pocketEnabled,
+    fishEnabled,
+    fishVoices,
+    voiceProviders,
   };
 }
 

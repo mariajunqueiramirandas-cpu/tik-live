@@ -67,6 +67,9 @@ export async function createDeps(config: AppConfig, database: Database, override
     createLogger("voices"),
     overrides.fetch,
     config.pocketEnabled ? { url: config.POCKET_TTS_URL!, secret: config.POCKET_TTS_SECRET! } : null,
+    config.fishEnabled
+      ? { apiKey: config.OPENROUTER_API_KEY!, baseUrl: config.OPENROUTER_BASE_URL, model: config.FISH_TTS_MODEL, voices: config.fishVoices }
+      : null,
   );
   const audio = new AudioStore(undefined, undefined, now);
   const anthropic = overrides.anthropic !== undefined ? overrides.anthropic : config.aiEnabled ? new Anthropic({ apiKey: config.ANTHROPIC_API_KEY }) : null;

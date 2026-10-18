@@ -25,6 +25,7 @@ charging other people.
 | 10 | [Transactional email](#10-transactional-email) | None (in-app notices only) | Nothing yet |
 | 11 | [Accept the ADRs](#11-accept-the-adrs) | All "Proposed" | Nothing |
 | 12 | [Pre-launch checks only the owner can run](#12-pre-launch-checks-only-the-owner-can-run) | Not done | Paid launch |
+| 13 | [Voice provider and voice rights](#13-voice-provider-and-voice-rights) | Fish Audio Drama 3 through OpenRouter, six designed voices from Fish's public library (Bia by default) | Paid launch |
 
 ## 1. Prices, hours and AI models per plan
 
@@ -171,10 +172,13 @@ covers the steps ([ADR-0019](adr/0019-dokploy.md)). Owner-only parts:
   `DOMAIN` in the Environment tab.
 - **Anthropic API key** (`ANTHROPIC_API_KEY`), with a spend limit in the
   Anthropic console as a backstop to the in-product caps.
-- **ElevenLabs** plan and a default voice (`ELEVENLABS_API_KEY`,
-  `DEFAULT_VOICE_ID`). Without them hosts talk in captions only.
-  `ELEVENLABS_MAX_CONCURRENCY` (default 4) should match the plan's
-  concurrency limit.
+- **OpenRouter** key with credits (`OPENROUTER_API_KEY`) for the default
+  voice, Fish Audio's Drama 3 ([item 13](#13-voice-provider-and-voice-rights)),
+  with a monthly spend limit on the key. Without it, ElevenLabs or the
+  self-hosted voice, hosts talk in captions only.
+- **ElevenLabs** (optional) plan and a default voice (`ELEVENLABS_API_KEY`,
+  `DEFAULT_VOICE_ID`). `ELEVENLABS_MAX_CONCURRENCY` (default 4) should match
+  the plan's concurrency limit.
 - **Mercado Pago:** `MP_ACCESS_TOKEN` and `MP_WEBHOOK_SECRET`, plus the
   webhook URL `https://<domain>/api/billing/webhook` with the
   `subscription_preapproval` and `subscription_authorized_payment` topics.
@@ -259,3 +263,30 @@ that, a change of direction gets a new ADR instead of an edit.
   lip sync with a clap test
   ([ADR-0020](adr/0020-broadcast-pipeline-avx2.md) action item 6). No
   decision needed unless it's off.
+
+## 13. Voice provider and voice rights
+
+**Today:** with `OPENROUTER_API_KEY` set, new hosts speak with Fish Audio's
+Drama 3 through OpenRouter
+([ADR-0030](adr/0030-fish-audio-default-voice.md)), about **US$ 0.07** per
+busy live hour, counted in each host's AI spend. The six built-in voices
+(Bia, Joana, Carol, Theo, Samuel, Lucas) are public voices on Fish Audio's
+platform, made with Fish's voice designer from a written description, so
+none copies a real person; other people published them, and they could be
+taken down. Drama 3 is a preview model.
+
+**To decide:**
+
+- Whether Drama 3 stays the default voice. The alternatives, and what they
+  cost an hour, are in ADR-0030; switching is a configuration change.
+- Whether Fish Audio's terms let a paid product use these community voices,
+  or whether to use voices you own instead: design or clone your own in a
+  Fish account and list them in `FISH_TTS_VOICES` (`id=Name,id=Name`), with
+  `FISH_TTS_VOICE` as the default.
+- An OpenRouter account with credits and a spend limit. A key that runs out
+  makes every host fall back to captions (owners see a notice, and the
+  server logs an error).
+
+**Recommendation:** keep Drama 3. Before charging anyone, design two or
+three voices in a Fish account you own, so the default voice can't
+disappear, and set a monthly spend limit on the OpenRouter key.

@@ -24,6 +24,23 @@ export interface TokenUsage {
   outputTokens: number;
 }
 
+/**
+ * Text-to-speech list prices on OpenRouter, in USD per million UTF-8 bytes of
+ * input (direction tags included). Fish Audio bills bytes, so accented
+ * Portuguese costs a little more per character than ASCII.
+ */
+export const TTS_PRICES: Record<string, number> = {
+  "fish-audio/drama-3": 2,
+  "fish-audio/s2.1-pro": 15,
+  "fish-audio/s2-pro": 15,
+  "fish-audio/s1": 15,
+};
+
+/** Unknown models are priced like the dearest Fish model, so budgets err on the safe side. */
+export function estimateTtsCostUsd(model: string, inputBytes: number): number {
+  return (inputBytes * (TTS_PRICES[model] ?? 15)) / 1_000_000;
+}
+
 export function estimateCostUsd(model: string, usage: TokenUsage): number {
   const price = MODEL_PRICES[model] ?? MODEL_PRICES["claude-opus-5-5"]!;
   return (

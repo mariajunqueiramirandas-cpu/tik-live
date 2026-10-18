@@ -17,7 +17,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0009](0009-stage-engine.md) | WebGL2 stage engine | Proposed |
 | [0010](0010-frontend-stack.md) | Frontend stack | Proposed |
 | [0011](0011-design-direction.md) | Design direction | Proposed |
-| [0012](0012-ai-and-voice-pipeline.md) | AI and voice pipeline | Proposed (voice amended by 0021, pacing by 0022, prompt by 0025, models and context by 0026) |
+| [0012](0012-ai-and-voice-pipeline.md) | AI and voice pipeline | Proposed (voice amended by 0021 and 0030, pacing by 0022, prompt by 0025, models and context by 0026) |
 | [0013](0013-billing-and-plans.md) | Billing and plans | Proposed |
 | [0014](0014-cloud-broadcast.md) | Cloud broadcast | Proposed (pipeline amended by 0020) |
 | [0015](0015-deployment.md) | Deployment on a VPS | Proposed (amended by 0019) |
@@ -26,7 +26,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0018](0018-defer-authentication.md) | No authentication during development; Clerk or WorkOS later | Proposed |
 | [0019](0019-dokploy.md) | Deploy with Dokploy | Proposed |
 | [0020](0020-broadcast-pipeline-avx2.md) | Broadcast pipeline for CPU-only AVX2 hosts | Proposed |
-| [0021](0021-self-hosted-tts.md) | A self-hosted Brazilian Portuguese voice | Proposed |
+| [0021](0021-self-hosted-tts.md) | A self-hosted Brazilian Portuguese voice | Proposed (default voice amended by 0030) |
 | [0022](0022-host-turn-taking.md) | Host turn-taking and speech pacing | Proposed (scheduling amended by 0026) |
 | [0023](0023-chat-minigames.md) | Chat minigames, game scenes and stage reactions | Proposed |
 | [0024](0024-music-as-code.md) | Music as code | Proposed |
@@ -35,6 +35,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0027](0027-brazilian-portuguese-product.md) | The product is in Brazilian Portuguese | Accepted |
 | [0028](0028-up-next-likes-and-loop-ranking.md) | Up next, a 15-minute like ranking, and a loop ranking with a podium | Proposed |
 | [0029](0029-gifts-power-ups-and-final-vote.md) | A gift ranking, gift combos and power-ups, and chat's vote on the last segment | Proposed |
+| [0030](0030-fish-audio-default-voice.md) | Fish Audio Drama 3, through OpenRouter, is the default voice | Proposed |
 
 ## Evidence used
 

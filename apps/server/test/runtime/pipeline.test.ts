@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import type { Utterance } from "../../src/runtime/brain/sentences";
 import { SafetyGate, type Moderator } from "../../src/runtime/safety/gate";
 import { SpeechPipeline, type SpeechCue, type SpeechOutput } from "../../src/runtime/voice/pipeline";
-import type { AudioClip, TtsProvider } from "../../src/runtime/voice/tts";
+import type { UsageReport } from "../../src/runtime/usage";
+import { TtsError, type AudioClip, type TtsProvider } from "../../src/runtime/voice/tts";
 
 class RecordingOutput implements SpeechOutput {
   played: string[] = [];
@@ -55,6 +56,29 @@ describe("SpeechPipeline", () => {
     await settle(pipeline);
     expect(output.played).toEqual(["a fine line"]);
     expect(dropped).toEqual(["a bad line"]);
+  });
+
+  it("reports what a line's voice cost, and a failed voice before the line airs as captions", async () => {
+    const output = new RecordingOutput();
+    const usage: UsageReport[] = [];
+    const failures: unknown[] = [];
+    const tts: TtsProvider = {
+      name: "billed",
+      async synthesize(text: string): Promise<AudioClip | null> {
+        if (text.startsWith("broken")) throw new TtsError("voice down", "unavailable");
+        return { mime: "audio/mpeg", data: Buffer.alloc(16), durationMs: 900, costUsd: 0.0001 };
+      },
+    };
+    const pipeline = new SpeechPipeline(tts, new SafetyGate({ blocklist: [] }), output, {
+      onUsage: (u) => usage.push(u),
+      onTtsFailed: (err) => failures.push(err),
+    });
+    pipeline.enqueue(say("first line"));
+    pipeline.enqueue(say("broken line"));
+    await settle(pipeline);
+    expect(output.played).toEqual(["first line", "broken line"]);
+    expect(usage).toEqual([{ kind: "tts", characters: 10, costUsd: 0.0001 }]);
+    expect(failures).toEqual([expect.any(TtsError)]);
   });
 
   it("lets trusted operator lines skip the moderator", async () => {

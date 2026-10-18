@@ -7,6 +7,7 @@ import { createDeps } from "./deps";
 import { configureLogging, createLogger } from "./log";
 import { lagMonitor } from "./http/lag";
 import { RetentionJob } from "./runtime/retention";
+import { fishLimiter } from "./runtime/voice/fish";
 import { elevenLabsLimiter, pocketLimiter } from "./runtime/voice/tts";
 
 const log = createLogger("main");
@@ -18,6 +19,7 @@ async function main(): Promise<void> {
   configureLogging({ level: config.LOG_LEVEL, format: config.isProduction ? "json" : "pretty" });
   elevenLabsLimiter.limit = config.ELEVENLABS_MAX_CONCURRENCY;
   pocketLimiter.limit = config.POCKET_TTS_MAX_CONCURRENCY;
+  fishLimiter.limit = config.FISH_TTS_MAX_CONCURRENCY;
 
   const database = await openDatabase(config.DATABASE_URL, MIGRATIONS);
   await database.migrate();

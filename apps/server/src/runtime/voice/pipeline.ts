@@ -83,6 +83,8 @@ export interface SpeechPipelineEvents {
   onSpoken?: (cue: SpeechCue) => void;
   onDropped?: (text: string, reason: string, emotion: Emotion, meta?: CueMeta) => void;
   onUsage?: (usage: UsageReport) => void;
+  /** Synthesis failed and the line airs as captions. */
+  onTtsFailed?: (err: unknown) => void;
   log?: Logger;
 }
 
@@ -245,11 +247,14 @@ export class SpeechPipeline {
     const [verdict, audio] = await Promise.all([
       trusted ? Promise.resolve({ safe: true as const }) : this.safety.check(utterance.text, context),
       tts.synthesize(utterance.text, utterance.emotion, signal).catch((err: unknown) => {
-        if (!signal.aborted) this.events.log?.warn("TTS failed; falling back to captions", err);
+        if (!signal.aborted) {
+          this.events.log?.warn("TTS failed; falling back to captions", err);
+          this.events.onTtsFailed?.(err);
+        }
         return null;
       }),
     ]);
-    if (audio) this.events.onUsage?.({ kind: "tts", characters: utterance.text.length });
+    if (audio) this.events.onUsage?.({ kind: "tts", characters: utterance.text.length, ...(audio.costUsd ? { costUsd: audio.costUsd } : {}) });
     // Dropped while preparing: it will never be performed, so it isn't reported either.
     if (signal.aborted) return null;
     if (!verdict.safe) {

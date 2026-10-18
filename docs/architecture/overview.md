@@ -77,7 +77,8 @@ flowchart LR
   obs -- RTMP video --> tiktok
   platform -- optional cloud broadcast<br/>RTMP --> tiktok
   platform -- host turns, moderation --> anthropic[(Claude API)]
-  platform -- text-to-speech --> eleven[(ElevenLabs)]
+  platform -- text-to-speech, default --> openrouter[(OpenRouter<br/>Fish Audio Drama 3)]
+  platform -- text-to-speech, optional --> eleven[(ElevenLabs)]
   platform -- text-to-speech, pt-BR, optional --> pocket[[tts sidecar<br/>Pocket TTS, self-hosted]]
   platform -- subscriptions, webhooks --> mp[(Mercado Pago)]
   platform -- transactional email, later --> mail[(Resend)]

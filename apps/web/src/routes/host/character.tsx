@@ -244,6 +244,12 @@ function TimeZoneField({ name, value, onChange }: { name: string; value: string 
   );
 }
 
+const PROVIDER_LABELS: Record<Exclude<VoiceSettings["provider"], "none">, string> = {
+  fish: "Voz Fish Audio",
+  elevenlabs: "Voz ElevenLabs",
+  pocket: "Voz em português",
+};
+
 function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: VoiceSettings) => void }) {
   const { data, isPending } = useVoices();
   const [playing, setPlaying] = useState<HTMLAudioElement | null>(null);
@@ -251,14 +257,16 @@ function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: Voi
   if (!data?.enabled) {
     return (
       <Banner title="A voz não está configurada neste servidor">
-        Seu apresentador fala por legendas, com a boca se mexendo. Adicione uma chave da ElevenLabs ou o servidor de voz próprio para dar voz a ele.
+        Seu apresentador fala por legendas, com a boca se mexendo. Adicione uma chave do OpenRouter (vozes da Fish Audio), uma chave da ElevenLabs ou o servidor de voz próprio para dar voz a ele.
       </Banner>
     );
   }
   const provider = voice.provider === "none" || data.providers.includes(voice.provider) ? voice.provider : (data.providers[0] ?? "none");
   const voices = data.voices.filter((v) => v.provider === provider);
-  const defaultId = provider === "pocket" ? data.defaultPocketVoiceId : data.defaultVoiceId;
-  const selected = voices.find((v) => v.id === (voice.voiceId ?? defaultId));
+  const defaultId = provider === "fish" ? data.defaultFishVoiceId : provider === "pocket" ? data.defaultPocketVoiceId : data.defaultVoiceId;
+  // A voice saved for a provider this server doesn't have means nothing here.
+  const voiceId = provider === voice.provider ? voice.voiceId : null;
+  const selected = voices.find((v) => v.id === (voiceId ?? defaultId));
   const preview = (url: string | null) => {
     playing?.pause();
     if (!url) return;
@@ -275,18 +283,19 @@ function VoiceTab({ voice, onChange }: { voice: VoiceSettings; onChange: (v: Voi
         options={[
           ...data.providers.map((p) => ({
             value: p,
-            label: data.providers.length === 1 ? "Voz e legendas" : p === "pocket" ? "Voz em português" : "Voz ElevenLabs",
+            label: data.providers.length === 1 ? "Voz e legendas" : PROVIDER_LABELS[p],
           })),
           { value: "none" as const, label: "Só legendas" },
         ]}
       />
+      {provider === "fish" && <p className={s.note}>Vozes brasileiras que mudam o jeito de falar com a emoção de cada fala: animada, rindo, triste, sem graça.</p>}
       {provider === "pocket" && <p className={s.note}>Esta voz só fala português do Brasil, então o apresentador sempre fala em português, mesmo com espectadores que escrevem em outra língua.</p>}
       {provider !== "none" &&
         (data.canChoose ? (
           <Field label="Voz" hint="Escolha uma voz que combine com o personagem. Ela fica para todas as lives.">
             {(props) => (
               <div className={s.voiceRow}>
-                <Select {...props} value={voice.voiceId ?? ""} onChange={(e) => onChange({ provider, voiceId: e.target.value || null })}>
+                <Select {...props} value={voiceId ?? ""} onChange={(e) => onChange({ provider, voiceId: e.target.value || null })}>
                   <option value="">Voz padrão</option>
                   {voices.map((v) => (
                     <option key={v.id} value={v.id}>

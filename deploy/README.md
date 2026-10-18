@@ -55,7 +55,8 @@ Fill in `.env`. The essentials:
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24` |
 | `DEV_GATE_PASSWORD` | Required while `AUTH_MODE=dev` (no sign-in yet): the whole site asks for this password, except stage links, webhooks and health checks |
 | `ANTHROPIC_API_KEY` | Without it, hosts run an offline scripted brain |
-| `ELEVENLABS_API_KEY` | Without it (and without the self-hosted voice), hosts speak in captions only |
+| `OPENROUTER_API_KEY` | The default voice, Fish Audio's Drama 3 ([ADR-0030](../docs/adr/0030-fish-audio-default-voice.md)): an OpenRouter key with credits. Without it, ElevenLabs or the self-hosted voice, hosts speak in captions only |
+| `ELEVENLABS_API_KEY` | Optional: ElevenLabs voices next to Fish |
 | `POCKET_TTS_SECRET` | The self-hosted voice: `openssl rand -hex 24`, then `docker compose --profile tts up -d --build` |
 | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago; leave both empty to run without billing |
 
