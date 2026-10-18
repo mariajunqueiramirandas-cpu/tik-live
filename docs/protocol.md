@@ -333,7 +333,9 @@ Operational log lines for the Health panel.
 
 Something the owner should see as a toast: budget thresholds
 (`budget_warning`, `budget_reached`, `daily_cap_reached`), `paused` and
-`resumed`, `turn_failed`, plan limits reached, cloud broadcast failures.
+`resumed`, `turn_failed`, `voice_failed` (a line aired as captions because the
+voice didn't answer; at most every ten minutes), plan limits reached, cloud
+broadcast failures.
 `code` is stable; `message` is for people.
 
 #### `ack`

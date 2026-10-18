@@ -23,7 +23,8 @@ bun run dev
 | `/lab.html` | Engine lab: every emotion and look, `?demo` plays the scripted show |
 
 To try the real AI host or voice, copy `.env.example` to `.env` and set
-`ANTHROPIC_API_KEY` and/or `ELEVENLABS_API_KEY`. Every variable is
+`ANTHROPIC_API_KEY` and/or `OPENROUTER_API_KEY` (the default voice) or
+`ELEVENLABS_API_KEY`. Every variable is
 documented in `apps/server/src/config.ts`; production settings are in
 [`deploy/.env.example`](deploy/.env.example).
 
@@ -58,7 +59,7 @@ and the apps never import each other.
 | `bun run typecheck` | `tsc` in every workspace, plus the e2e and script files |
 | `bun run build` | Builds the web app (prerender and bundle budgets included), the server and the broadcaster |
 | `bun run e2e` | Playwright against a built app; run `bun run --filter @tik-live/web build` first |
-| `bun scripts/load-test.ts --channels 50 --seconds 120` | Simulated hosts against a running server; reports event-loop lag, memory and CPU. Offline host by default; `--allow-ai` makes real, paid Claude calls. |
+| `bun scripts/load-test.ts --channels 50 --seconds 120` | Simulated hosts against a running server; reports event-loop lag, memory and CPU. Offline host and captions by default; `--allow-ai` makes real, paid Claude and voice calls. |
 | `bun run --filter @tik-live/server db:generate` | Generates a migration after a schema change in `apps/server/src/db/schema.ts` |
 
 CI (`.github/workflows/ci.yml`) runs `typecheck`, `boundaries`, `test` and
@@ -70,8 +71,9 @@ CI (`.github/workflows/ci.yml`) runs `typecheck`, `boundaries`, `test` and
 
 - **Server:** API tests go through the real Hono app with an in-memory
   PGlite database (`apps/server/test/harness.ts`); outside services
-  (Anthropic, ElevenLabs, Mercado Pago, the broadcaster) are fakes passed in
-  through `AppDeps`. Tests never call a real paid API.
+  (Anthropic, ElevenLabs, OpenRouter, Mercado Pago, the broadcaster) are
+  fakes passed in through `AppDeps` or local stand-in servers. Tests never call
+  a real paid API.
 - **Engine:** pure logic (springs, the quality governor, text layout, the
   connection client) is unit tested; rendering is checked by Playwright,
   which reads pixels from `/lab.html?clock=manual`, where frames are

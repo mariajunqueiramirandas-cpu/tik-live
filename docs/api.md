@@ -137,7 +137,7 @@ TikTok account to go live; no AI calls), `live`, `stopping`, `failed`.
 | `GET /api/channels` | | `{ channels: ChannelListItem[] }`: each channel plus `lastStream` (`{ startedAt, endedAt, peakViewers, diamonds, viewers: number[] }` with at most 32 points, or `null`) |
 | `POST /api/channels` | `channelCreateSchema`: `{ name, tiktokUsername?, presetId? }` | `201 { channel }`. Without a handle the host uses the simulated audience. `402 plan_channel_limit` past the plan's channel count. |
 | `GET /api/channels/:id` | | `{ channel }` |
-| `PATCH /api/channels/:id` | `channelUpdateSchema`: any of `name`, `tiktokUsername`, `source`, `persona`, `voice`, `safety` | `{ channel }`. A running host picks up the change at once. `400 tiktok_handle_required` when `source` is `tiktok` with no handle. |
+| `PATCH /api/channels/:id` | `channelUpdateSchema`: any of `name`, `tiktokUsername`, `source`, `persona`, `voice`, `safety` | `{ channel }`. A running host picks up the change at once. `400 tiktok_handle_required` when `source` is `tiktok` with no handle; `400 voice_not_found` for a Fish `voiceId` not on the server's list. |
 | `DELETE /api/channels/:id` | | `204`; stops the host first. |
 | `POST /api/channels/:id/stage-key` | | `{ channel }` with a new `stageUrl`. Connected stages on the old link are closed with code `4001`. |
 | `POST /api/channels/:id/start` | | `{ channel }`. `402 plan_running_limit`, `402 plan_hours_exhausted`, `400 tiktok_handle_required`, `503 shutting_down`. |
@@ -160,11 +160,20 @@ streams over the studio WebSocket ([protocol.md](protocol.md#studio)).
 
 ### `GET /api/voices`
 
-`{ enabled, providers, canChoose, defaultVoiceId, defaultPocketVoiceId, voices: [{ id, provider, name, previewUrl, description, tags }] }`.
-`providers` lists the configured voice providers (`elevenlabs` with a key,
-`pocket` with the self-hosted service, [ADR-0021](adr/0021-self-hosted-tts.md));
-`enabled` is false when there are none; `canChoose` is false on plans limited
-to the default voice. The list is cached for an hour.
+`{ enabled, providers, canChoose, defaultVoiceId, defaultPocketVoiceId, defaultFishVoiceId, voices: [{ id, provider, name, previewUrl, description, tags }] }`.
+`providers` lists the configured voice providers, the default (for new hosts)
+first: `fish` with an OpenRouter key ([ADR-0028](adr/0028-fish-audio-default-voice.md)),
+`elevenlabs` with a key, `pocket` with the self-hosted service
+([ADR-0021](adr/0021-self-hosted-tts.md)). `enabled` is false when there are
+none; `canChoose` is false on plans limited to the default voice. Fish voices
+come from the server's configuration; the ElevenLabs and Pocket lists are
+cached for an hour.
+
+### `GET /api/voices/fish/:voice/sample`
+
+A short spoken sample of a Fish voice, `audio/mpeg`, synthesized once per
+voice. `404 voice_not_found` for a voice not on the server's list, `503
+voice_unavailable` when OpenRouter doesn't answer.
 
 ### `GET /api/voices/pocket/:voice/sample`
 

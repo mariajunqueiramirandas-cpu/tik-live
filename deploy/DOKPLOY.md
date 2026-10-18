@@ -60,7 +60,8 @@ every `.env`).
 | `POSTGRES_PASSWORD` | `openssl rand -hex 24`. Set it before the first deploy; Postgres keeps the first one |
 | `DEV_GATE_PASSWORD` | Required while `AUTH_MODE=dev` (no sign-in yet): the whole site asks for this password, except stage links, webhooks and health checks |
 | `ANTHROPIC_API_KEY` | Without it, hosts run an offline scripted brain |
-| `ELEVENLABS_API_KEY` | Without it (and without the self-hosted voice), hosts speak in captions only |
+| `OPENROUTER_API_KEY` | The default voice, Fish Audio's Drama 3 ([ADR-0028](../docs/adr/0028-fish-audio-default-voice.md)): an OpenRouter key with credits. Without it, ElevenLabs or the self-hosted voice, hosts speak in captions only |
+| `ELEVENLABS_API_KEY` | Optional: ElevenLabs voices next to Fish |
 | `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` | Mercado Pago; leave both empty to run without billing |
 
 ## 4. Domain
