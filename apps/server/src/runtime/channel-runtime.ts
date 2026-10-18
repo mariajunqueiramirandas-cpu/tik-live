@@ -473,8 +473,9 @@ export class ChannelRuntime {
       segments: this.channel.persona.segments.map((s) => ({ id: s.id, title: s.title })),
       game: this.games?.status() ?? null,
       upNext: (this.director?.upNext() ?? []).map((item) => ({ kind: item.kind, title: item.title, inSec: Math.max(0, Math.ceil((item.at - this.now()) / 1000)) })),
-      likers: this.director?.topLikers() ?? [],
+      leaders: this.director?.leaders() ?? { likes: [], gifts: [] },
       ranking: this.ranking?.status() ?? { rows: [], games: 0, revealing: false },
+      vote: this.director?.voteStatus() ?? null,
       music: this.music && this.music.endsAt > this.now()
         ? { title: this.music.title, endsInSec: Math.ceil((this.music.endsAt - this.now()) / 1000), byHost: this.music.byHost }
         : null,

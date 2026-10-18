@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { RUNTIME_STATUSES } from "./channel";
 import { injectEventSchema } from "./events";
-import { gameConfigSchema, gameSceneSchema, type GameStatus, type LoopRankingStatus } from "./game";
+import { BOOST_KINDS, gameConfigSchema, gameSceneSchema, type GameStatus, type LoopRankingStatus } from "./game";
 import { MUSIC_LIBRARY, musicTrackSchema, SOUNDS } from "./music";
 import { effectSchema, emotionSchema, lookSchema } from "./persona";
 
@@ -23,7 +23,15 @@ export const STAGE_ROLES = ["program", "preview", "broadcast"] as const;
 export const UP_NEXT_KINDS = ["segment", "game", "podium"] as const;
 export type UpNextKind = (typeof UP_NEXT_KINDS)[number];
 export const UP_NEXT_MAX = 4;
-export const LIKERS_MAX = 5;
+/** The stage's rankings: likes over the last 15 minutes, gifts (diamonds) over the last hour. */
+export const LEADER_BOARDS = ["likes", "gifts"] as const;
+export type LeaderBoard = (typeof LEADER_BOARDS)[number];
+export const LEADERS_MAX = 5;
+export interface LeaderRow {
+  name: string;
+  /** Likes, or diamonds for gifts. */
+  value: number;
+}
 
 export const upNextItemSchema = z.object({
   kind: z.enum(UP_NEXT_KINDS),
@@ -79,14 +87,29 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({ v, t: z.literal("sfx"), sound: z.enum(SOUNDS) }),
   /** A minigame's scene, or null to go back to the show's normal stage (ADR-0023). */
   z.object({ v, t: z.literal("game"), scene: gameSceneSchema.nullable() }),
-  /** What's coming up on the show, soonest first, with times relative to receipt (ADR-0028). */
-  z.object({ v, t: z.literal("schedule"), items: z.array(upNextItemSchema).max(UP_NEXT_MAX) }),
-  /** Who sent the most likes in the last `windowMin` minutes, most first (ADR-0028). */
+  /** A gift just powered up the game round on screen, for everyone (ADR-0029). */
+  z.object({ v, t: z.literal("boost"), boost: z.enum(BOOST_KINDS), by: z.string().max(40) }),
+  /** Chat's vote on the last segment's game, with the live tally, or null when it closes (ADR-0029). */
   z.object({
     v,
-    t: z.literal("likers"),
-    windowMin: z.number().int().min(1).max(120),
-    rows: z.array(z.object({ name: z.string().max(40), likes: z.number().int().min(1) })).max(LIKERS_MAX),
+    t: z.literal("vote"),
+    vote: z
+      .object({
+        title: z.string().max(60),
+        options: z.array(z.string().max(40)).min(2).max(3),
+        tally: z.array(z.number().int().min(0)).max(3),
+      })
+      .nullable(),
+  }),
+  /** What's coming up on the show, soonest first, with times relative to receipt (ADR-0028). */
+  z.object({ v, t: z.literal("schedule"), items: z.array(upNextItemSchema).max(UP_NEXT_MAX) }),
+  /** Who gave the most in the last `windowMin` minutes, most first: likes, or diamonds in gifts (ADR-0028, ADR-0029). */
+  z.object({
+    v,
+    t: z.literal("leaders"),
+    board: z.enum(LEADER_BOARDS),
+    windowMin: z.number().int().min(1).max(240),
+    rows: z.array(z.object({ name: z.string().max(40), value: z.number().int().min(1) })).max(LEADERS_MAX),
   }),
   /** The server is restarting: keep the last frame and reconnect quietly. */
   z.object({ v, t: z.literal("hold") }),
@@ -149,10 +172,12 @@ export interface RuntimeSnapshot {
   game: GameStatus | null;
   /** What's coming up on the show, soonest first (estimates: segments wait for games and quiet moments). */
   upNext: Array<{ kind: UpNextKind; title: string; inSec: number }>;
-  /** Top likers over the last 15 minutes, most first. */
-  likers: Array<{ name: string; likes: number }>;
+  /** Top likers over the last 15 minutes and top gifters (diamonds) over the last hour, most first. */
+  leaders: Record<LeaderBoard, LeaderRow[]>;
   /** Minigame points summed over this loop of the run of show. */
   ranking: LoopRankingStatus;
+  /** Chat's vote on the last segment's game, while it's open. */
+  vote: { segment: string; options: Array<{ label: string; votes: number }>; closesInSec: number } | null;
   /** The piece of music playing on stage, if any. */
   music: { title: string; endsInSec: number; byHost: boolean } | null;
   stats: { viewers: number; likes: number; diamonds: number; messages: number; follows: number; uptimeSec: number };

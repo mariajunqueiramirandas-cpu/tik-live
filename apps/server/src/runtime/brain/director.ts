@@ -1,20 +1,25 @@
 import {
   GAME_LABELS,
-  LIKERS_MAX,
+  LEADER_BOARDS,
+  LEADERS_MAX,
   UP_NEXT_MAX,
   type Effect,
   type GameConfig,
+  type LeaderBoard,
+  type LeaderRow,
   type LiveEvent,
   type Persona,
   type Segment,
   type Sound,
   type UpNextItem,
   type UpNextKind,
+  type Viewer,
 } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import type { GameMaster } from "../games/master";
 import type { LoopRanking } from "../games/ranking";
-import { LIKE_WINDOW_MS, LikeBoard } from "../likes";
+import { FinalVote, voteOptions } from "../games/vote";
+import { GIFT_WINDOW_MS, LIKE_WINDOW_MS, RollingBoard } from "../leaderboards";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
 import type { RoomEntry } from "./conversation";
@@ -46,8 +51,10 @@ export interface StageNotifier {
   sfx?(sound: Sound): void;
   /** What's coming up on the show, soonest first (ADR-0028). */
   schedule?(items: UpNextItem[]): void;
-  /** The top likers over the last `windowMin` minutes. */
-  likers?(rows: Array<{ name: string; likes: number }>, windowMin: number): void;
+  /** Chat's vote on the last segment's game, or null when it closes (ADR-0029). */
+  vote?(vote: { title: string; options: string[]; tally: number[] } | null): void;
+  /** A ranking: the top likers over the last 15 minutes, or gifters over the last hour. */
+  leaders?(board: LeaderBoard, rows: LeaderRow[], windowMin: number): void;
 }
 
 /** Observability hooks for the studio feed and analytics. */
@@ -106,9 +113,14 @@ const SEGMENT_OVERDUE_MS = 30_000;
 const OWED_TTL_MS = 3 * 60_000;
 const OWED_MAX = 3;
 const CHAT_SAMPLE = 12;
-/** The like ranking goes to the stage at most this often. */
-const LIKERS_EVERY_MS = 1_000;
+/** A ranking goes to the stage at most this often. */
+const LEADERS_EVERY_MS = 1_000;
+const WINDOWS: Record<LeaderBoard, number> = { likes: LIKE_WINDOW_MS, gifts: GIFT_WINDOW_MS };
 const PODIUM_TITLE = "Pódio geral";
+/** The vote on the last segment's game opens this long before the second-to-last segment ends (or soon after it starts). */
+const VOTE_LEAD_MS = 3 * 60_000;
+const VOTE_MIN_DELAY_MS = 20_000;
+const VOTE_TITLE = "Jogo do quadro final";
 const SUPPORT_KINDS: ReadonlyArray<LiveEvent["kind"]> = ["gift", "follow", "share", "join"];
 
 /**
@@ -233,11 +245,22 @@ export class Director {
   private fillerBeat = 0;
   private recentChat: string[] = [];
   private music: { title: string; endsAt: number } | null = null;
-  /** Who sent the most likes lately (a 15-minute window). */
-  private readonly likeBoard: LikeBoard;
+  /** Who sent the most likes (last 15 minutes) and diamonds (last hour). */
+  private readonly boards: Record<LeaderBoard, RollingBoard>;
+  private readonly boardSent: Record<LeaderBoard, { revision: number; at: number }> = {
+    likes: { revision: -1, at: -Infinity },
+    gifts: { revision: -1, at: -Infinity },
+  };
   private scheduleKey = "";
-  private likersRevision = -1;
-  private likersSentAt = -Infinity;
+  /** Chat's vote on the last segment's game, while the second-to-last segment runs. */
+  private vote: { ballot: FinalVote; closesAt: number } | null = null;
+  /** The game chat picked for this loop's last segment. */
+  private finalGame: GameConfig | null = null;
+  /** Loops completed this stream (rotates the games on offer). */
+  private loops = 0;
+  private voteCue: { note: string; line: string; history: string } | null = null;
+  private voteKey = "";
+  private voteSentAt = -Infinity;
   private readonly engine: TurnEngine;
   private readonly now: () => number;
 
@@ -248,7 +271,7 @@ export class Director {
     this.segmentStartedAt = this.startedAt;
     this.lastEventAt = this.startedAt;
     this.standby = options.startInStandby ?? false;
-    this.likeBoard = new LikeBoard(this.now);
+    this.boards = { likes: new RollingBoard(this.now, LIKE_WINDOW_MS), gifts: new RollingBoard(this.now, GIFT_WINDOW_MS) };
     const blocklist = options.blocklist ?? (() => []);
     this.engine = new TurnEngine({
       host: options.host,
@@ -286,6 +309,10 @@ export class Director {
   /** Applies an edited persona without restarting the show. */
   reconfigure(persona: Persona): void {
     const currentId = this.segment().id;
+    if (persona.segments.length !== this.persona.segments.length || persona.finalVote === false) {
+      this.vote = null;
+      this.finalGame = null;
+    }
     this.persona = persona;
     const index = persona.segments.findIndex((s) => s.id === currentId);
     if (index >= 0) {
@@ -327,9 +354,13 @@ export class Director {
       // What was waiting belongs to the stream that ended.
       this.options.triage.clear();
       this.options.games?.stop();
-      // So do its loop's ranking and who was liking.
+      // So do its loop's ranking and who was liking and gifting.
       this.options.ranking?.stop();
-      this.likeBoard.clear();
+      this.clearBoards();
+      this.vote = null;
+      this.voteCue = null;
+      this.finalGame = null;
+      this.loops = 0;
       this.publishHud(this.now(), true);
       this.options.hooks?.onEvent?.(event, null);
       return;
@@ -365,7 +396,7 @@ export class Director {
           this.options.stage.fx?.("hearts", 2);
           this.sound("levelup");
         }
-        this.likeBoard.add(event.viewer.id, displayName(event.viewer, this.blocklist()).slice(0, 24), event.count);
+        this.boards.likes.add(event.viewer.id, this.boardName(event.viewer), event.count);
         this.options.stage.stats({ viewers: this.viewers, likes: this.counters.likes });
         this.options.hooks?.onEvent?.(event, null);
         return;
@@ -373,6 +404,9 @@ export class Director {
       case "gift":
         this.counters.gifts += 1;
         this.counters.diamonds += event.diamonds;
+        this.boards.gifts.add(event.viewer.id, this.boardName(event.viewer), event.diamonds);
+        // Gifts during an open round power it up for everyone (ADR-0029).
+        this.options.games?.handleGift(event);
         this.options.stage.alert(event);
         this.sound(event.diamonds >= 1_000 ? "fanfare" : event.diamonds >= 100 ? "levelup" : event.diamonds >= 10 ? "chime" : "pop");
         this.remember({ at: event.at, kind: "support", event });
@@ -395,6 +429,11 @@ export class Director {
         // An answer to a game round is the game's, not a message for the host.
         if (this.options.games?.handleChat(event)) {
           this.options.hooks?.onEvent?.(event, { queued: false, reason: "game answer" });
+          return;
+        }
+        // So is a ballot in the vote on the last segment's game.
+        if (this.vote?.ballot.cast(event.viewer.id, event.text)) {
+          this.options.hooks?.onEvent?.(event, { queued: false, reason: "vote" });
           return;
         }
         break;
@@ -495,9 +534,10 @@ export class Director {
     const revealing = ranking?.isRevealing() === true;
     const segmentEndsAt = this.segmentStartedAt + segment.minutes * 60_000;
     let at = Math.max(now, segmentEndsAt);
-    if (segment.game && games && !games.isActive() && !revealing) {
+    const current = this.segmentGame(this.segmentIndex);
+    if (current && games && !games.isActive() && !revealing) {
       const gameAt = Math.max(now, this.segmentStartedAt + SEGMENT_GAME_DELAY_MS, games.lastEndedAt() + GAME_BREAK_MS);
-      if (segmentEndsAt - gameAt >= MIN_GAME_WINDOW_MS) items.push({ kind: "game", title: gameTitle(segment.game), at: gameAt });
+      if (segmentEndsAt - gameAt >= MIN_GAME_WINDOW_MS) items.push({ kind: "game", title: gameTitle(current), at: gameAt });
     }
     const podium = () => {
       if (ranking?.hasScores() && !revealing) items.push({ kind: "podium", title: PODIUM_TITLE, at });
@@ -511,15 +551,29 @@ export class Director {
       const index = (this.segmentIndex + k) % segments.length;
       if (index === 0) podium();
       const next = segments[index] as Segment;
-      items.push({ kind: "segment", title: segmentTitle(next), at });
+      const choosing = this.vote !== null && index === segments.length - 1;
+      items.push({ kind: "segment", title: choosing ? `${next.title} · o chat escolhe`.slice(0, 60) : segmentTitle(next, this.segmentGame(index)), at });
       at += next.minutes * 60_000;
     }
     return items.slice(0, UP_NEXT_MAX);
   }
 
-  /** The top likers over the last 15 minutes. */
-  topLikers(n = LIKERS_MAX): Array<{ name: string; likes: number }> {
-    return this.likeBoard.top(n);
+  /** Chat's vote on the last segment's game, for the studio. */
+  voteStatus(now = this.now()): { segment: string; options: Array<{ label: string; votes: number }>; closesInSec: number } | null {
+    const vote = this.vote;
+    if (!vote) return null;
+    const tally = vote.ballot.tally();
+    const last = this.persona.segments[this.persona.segments.length - 1] as Segment;
+    return {
+      segment: last.title,
+      options: vote.ballot.labels.map((label, i) => ({ label, votes: tally[i] ?? 0 })),
+      closesInSec: Math.max(0, Math.ceil((vote.closesAt - now) / 1000)),
+    };
+  }
+
+  /** The top likers over the last 15 minutes and gifters over the last hour. */
+  leaders(n = LEADERS_MAX): Record<LeaderBoard, LeaderRow[]> {
+    return { likes: this.boards.likes.top(n), gifts: this.boards.gifts.top(n) };
   }
 
   /** Recent chat messages, for matching a game's language to the room. */
@@ -543,7 +597,7 @@ export class Director {
     this.peakViewers = this.viewers;
     this.nextMilestone = LIKE_MILESTONES[0] as number;
     this.pendingMilestone = undefined;
-    this.likeBoard.clear();
+    this.clearBoards();
   }
 
   state(): DirectorState {
@@ -569,6 +623,7 @@ export class Director {
     this.options.games?.tick(idle);
     this.options.ranking?.tick(idle);
     const now = this.now();
+    this.maybeOpenVote(now);
     this.publishHud(now);
     if (this.paused || this.engine.inFlight) return;
     this.maybeStartSegmentGame(now);
@@ -615,7 +670,7 @@ export class Director {
     const { triage, speech } = this.options;
     const games = this.options.games;
     const ranking = this.options.ranking;
-    const game = games?.hostContext() ?? ranking?.hostContext();
+    const game = [games?.hostContext() ?? ranking?.hostContext(), this.voteContext()].filter(Boolean).join("\n") || undefined;
     const segment = this.segment();
     const segmentEndsAt = this.segmentStartedAt + segment.minutes * 60_000;
     const base = {
@@ -640,6 +695,13 @@ export class Director {
     if (cue) {
       this.remember({ at: now, kind: "show", text: cue.history });
       return { ...base, kind: "game", items: [], note: cue.note, line: cue.line };
+    }
+
+    if (this.voteCue) {
+      const voteCue = this.voteCue;
+      this.voteCue = null;
+      this.remember({ at: now, kind: "show", text: voteCue.history });
+      return { ...base, kind: "game", items: [], note: voteCue.note, line: voteCue.line };
     }
 
     if (this.pendingRequest !== undefined) {
@@ -760,6 +822,11 @@ export class Director {
     this.forcedSegment = undefined;
     const previous = this.segment();
     const nextSegment = this.persona.segments[nextIndex] as Segment;
+    if (this.vote) this.closeVote(nextIndex === this.persona.segments.length - 1, now);
+    if (nextIndex === 0) {
+      this.loops += 1;
+      this.finalGame = null;
+    }
     this.segmentIndex = nextIndex;
     this.segmentStartedAt = now;
     this.options.stage.segment(nextSegment);
@@ -786,9 +853,74 @@ export class Director {
     return `Keep the show alive for "${segment.title}" (${segment.prompt}). This time, ${pick.beat}`;
   }
 
+  /** The game a segment plays: its own, or for the last segment, the one chat voted for. */
+  private segmentGame(index: number): GameConfig | undefined {
+    const segments = this.persona.segments;
+    if (index === segments.length - 1 && this.finalGame) return this.finalGame;
+    return segments[index]?.game;
+  }
+
+  /** Opens the vote on the last segment's game near the end of the second-to-last segment (ADR-0029). */
+  private maybeOpenVote(now: number): void {
+    const segments = this.persona.segments;
+    if (this.vote || !this.opened || this.persona.finalVote === false || segments.length < 2) return;
+    if (this.segmentIndex !== segments.length - 2 || this.finalGame) return;
+    const endsAt = this.segmentStartedAt + this.segment().minutes * 60_000;
+    if (now < Math.max(this.segmentStartedAt + VOTE_MIN_DELAY_MS, endsAt - VOTE_LEAD_MS)) return;
+    const ballot = new FinalVote(voteOptions(this.loops));
+    this.vote = { ballot, closesAt: endsAt };
+    const last = segments[segments.length - 1] as Segment;
+    const options = ballot.labels.map((label, i) => `${i + 1}) ${label}`).join(", ");
+    this.voteCue = {
+      note: `Chat gets to choose the minigame for the final segment, "${last.title}": ${options}. Announce it with energy, read the options, and tell chat to type the number (one vote each). The vote closes when this segment ends.`,
+      line: `Vocês escolhem o jogo do quadro final! ${ballot.labels.map((label, i) => `${i + 1} para ${label}`).join(", ")}. Digitem o número!`,
+      history: `A vote opened for the final segment's game: ${options}.`,
+    };
+    this.sound("start");
+    this.options.log?.info("vote on the last segment's game opened");
+  }
+
+  /** Ends the vote: on the way into the last segment, the winner becomes its game. */
+  private closeVote(apply: boolean, now: number): void {
+    const vote = this.vote;
+    this.vote = null;
+    this.voteCue = null;
+    if (!vote || !apply) return;
+    const winner = vote.ballot.winner();
+    const last = this.persona.segments[this.persona.segments.length - 1] as Segment;
+    if (!winner) {
+      this.remember({ at: now, kind: "show", text: `Nobody voted for the final segment's game; "${last.title}" goes ahead as planned.` });
+      return;
+    }
+    this.finalGame = { kind: winner, rounds: last.game?.rounds ?? 5, ...(last.game?.topic ? { topic: last.game.topic } : {}) };
+    const tally = vote.ballot.tally();
+    const votes = vote.ballot.labels.map((label, i) => `${label} ${tally[i] ?? 0}`).join(", ");
+    this.remember({ at: now, kind: "show", text: `Chat voted (${votes}): the final segment plays ${GAME_LABELS[winner]}. Say so when you introduce it.` });
+    this.options.stage.fx?.("confetti", 1.2);
+    this.sound("reveal");
+  }
+
+  /** The open vote as the host may see it. */
+  private voteContext(): string | undefined {
+    const vote = this.vote;
+    if (!vote) return undefined;
+    const tally = vote.ballot.tally();
+    return `Chat is voting the final segment's game (type the number): ${vote.ballot.labels.map((label, i) => `${i + 1}) ${label}: ${tally[i] ?? 0}`).join(", ")}.`;
+  }
+
   /** Keeps the stage's "up next" and like ranking current (sent only when they change). */
   private publishHud(now: number, force = false): void {
     const stage = this.options.stage;
+    if (stage.vote) {
+      const vote = this.vote;
+      const tally = vote?.ballot.tally() ?? [];
+      const key = vote ? `${vote.ballot.labels.join("|")}:${tally.join(",")}` : "";
+      if (force || (key !== this.voteKey && (key === "" || this.voteKey === "" || now - this.voteSentAt >= LEADERS_EVERY_MS))) {
+        this.voteKey = key;
+        this.voteSentAt = now;
+        stage.vote(vote ? { title: VOTE_TITLE, options: vote.ballot.labels, tally } : null);
+      }
+    }
     if (stage.schedule) {
       const items = this.standby ? [] : this.upNext(now);
       // Overdue items all read as "now", so their key doesn't change every tick.
@@ -798,14 +930,27 @@ export class Director {
         stage.schedule(items.map((item) => ({ kind: item.kind, title: item.title, inMs: Math.max(0, item.at - now) })));
       }
     }
-    if (stage.likers) {
-      const revision = this.likeBoard.revision();
-      if (force || (revision !== this.likersRevision && now - this.likersSentAt >= LIKERS_EVERY_MS)) {
-        this.likersRevision = revision;
-        this.likersSentAt = now;
-        stage.likers(this.likeBoard.top(LIKERS_MAX), LIKE_WINDOW_MS / 60_000);
+    if (stage.leaders) {
+      for (const board of LEADER_BOARDS) {
+        const sent = this.boardSent[board];
+        const revision = this.boards[board].revision();
+        if (force || (revision !== sent.revision && now - sent.at >= LEADERS_EVERY_MS)) {
+          sent.revision = revision;
+          sent.at = now;
+          stage.leaders(board, this.boards[board].top(LEADERS_MAX), WINDOWS[board] / 60_000);
+        }
       }
     }
+  }
+
+  private clearBoards(): void {
+    this.boards.likes.clear();
+    this.boards.gifts.clear();
+  }
+
+  /** How a viewer shows on a ranking: blocklisted or injection-looking names read "visitante". */
+  private boardName(viewer: Viewer): string {
+    return displayName(viewer, this.blocklist()).slice(0, 24);
   }
 
   private blocklist(): readonly string[] {
@@ -823,7 +968,7 @@ export class Director {
   /** Starts the current segment's game when the segment has one and the room is ready for it. */
   private maybeStartSegmentGame(now: number): void {
     const games = this.options.games;
-    const config = this.segment().game;
+    const config = this.segmentGame(this.segmentIndex);
     // Not gated on a quiet room: on a busy stream it never is, and the game's cue gets its own turn.
     if (!games || !config || !this.opened || games.isActive() || this.options.ranking?.isRevealing() || this.reactOnly()) return;
     if (now - this.segmentStartedAt < SEGMENT_GAME_DELAY_MS || now - games.lastEndedAt() < GAME_BREAK_MS) return;
@@ -855,10 +1000,10 @@ export class Director {
 }
 
 /** "Hora do quiz · Quiz", or just the title when it already names its game. */
-function segmentTitle(segment: Segment): string {
-  if (!segment.game) return segment.title;
-  const game = gameTitle(segment.game);
-  const named = segment.title.toLowerCase().includes(GAME_LABELS[segment.game.kind].toLowerCase());
+function segmentTitle(segment: Segment, config = segment.game): string {
+  if (!config) return segment.title;
+  const game = gameTitle(config);
+  const named = segment.title.toLowerCase().includes(GAME_LABELS[config.kind].toLowerCase());
   return named ? segment.title : `${segment.title} · ${game}`.slice(0, 60);
 }
 

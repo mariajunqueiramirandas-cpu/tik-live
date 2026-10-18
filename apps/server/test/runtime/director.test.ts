@@ -492,7 +492,8 @@ describe("Director: up next, top likers and the loop's podium (ADR-0028)", () =>
     const host = new FakeHost();
     const scenes: Array<GameScene | null> = [];
     const schedules: UpNextItem[][] = [];
-    const likers: Array<Array<{ name: string; likes: number }>> = [];
+    const likers: Array<Array<{ name: string; value: number }>> = [];
+    const gifters: Array<Array<{ name: string; value: number }>> = [];
     const gameStage = { game: (scene: GameScene | null) => scenes.push(scene), fx: () => {}, sfx: () => {} };
     const ranking = new LoopRanking({ stage: gameStage, sounds: () => false, now: clock.now });
     const games = new GameMaster({
@@ -511,7 +512,7 @@ describe("Director: up next, top likers and the loop's podium (ADR-0028)", () =>
       triage,
       memory,
       speech,
-      stage: { ...stage, schedule: (items) => schedules.push(items), likers: (rows) => likers.push(rows) },
+      stage: { ...stage, schedule: (items) => schedules.push(items), leaders: (board, rows) => (board === "likes" ? likers : gifters).push(rows) },
       games,
       ranking,
       deadAirMs: 600_000,
@@ -525,7 +526,7 @@ describe("Director: up next, top likers and the loop's podium (ADR-0028)", () =>
     const kinds = () => host.turns.map((t) => t.kind);
     // Someone's watching, so the show runs its segments (an empty room only reacts).
     director.handleEvent({ kind: "viewers", at: 0, count: 12 });
-    return { clock, director, host, ranking, scenes, schedules, likers, step, kinds };
+    return { clock, director, host, ranking, scenes, schedules, likers, gifters, step, kinds };
   }
 
   it("tells the stage what's up next, with the podium before the loop starts over", async () => {
@@ -608,18 +609,33 @@ describe("Director: up next, top likers and the loop's podium (ADR-0028)", () =>
     like("bia", 50);
     await step(1_000);
     expect(likers.at(-1)).toEqual([
-      { name: "bia", likes: 50 },
-      { name: "ana", likes: 30 },
+      { name: "bia", value: 50 },
+      { name: "ana", value: 30 },
     ]);
-    expect(director.topLikers()).toEqual(likers.at(-1)!);
+    expect(director.leaders().likes).toEqual(likers.at(-1)!);
     await step(10 * 60_000);
     like("ana", 30);
     await step(1_000);
-    expect(likers.at(-1)?.[0]).toEqual({ name: "ana", likes: 60 });
+    expect(likers.at(-1)?.[0]).toEqual({ name: "ana", value: 60 });
     await step(5 * 60_000);
-    expect(likers.at(-1)).toEqual([{ name: "ana", likes: 30 }]);
+    expect(likers.at(-1)).toEqual([{ name: "ana", value: 30 }]);
     director.handleEvent({ kind: "stream_end", at: 0, reason: "test" });
     expect(likers.at(-1)).toEqual([]);
+  });
+
+  it("ranks gifters by diamonds over the last hour", async () => {
+    const { director, gifters, step } = loop();
+    await step();
+    director.handleEvent(gift("ana", "Rose", 1));
+    director.handleEvent(gift("bia", "Galaxy", 1_000));
+    await step(1_000);
+    expect(gifters.at(-1)).toEqual([
+      { name: "bia", value: 1_000 },
+      { name: "ana", value: 1 },
+    ]);
+    await step(61 * 60_000);
+    expect(director.leaders().gifts).toEqual([]);
+    expect(gifters.at(-1)).toEqual([]);
   });
 });
 

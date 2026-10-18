@@ -1,7 +1,11 @@
 import {
+  BOOST_DIAMONDS,
+  BOOST_KINDS,
+  BOOST_LABELS,
   GAME_LABELS,
   OPTION_LETTERS,
   viewerName,
+  type BoostKind,
   type Effect,
   type GameConfig,
   type GameKind,
@@ -42,6 +46,8 @@ export interface GameStage {
   game(scene: GameScene | null): void;
   fx(fx: Effect, intensity?: number): void;
   sfx(sound: Sound): void;
+  /** A gift powered up the round (the stage's own moment for it). */
+  boost?(boost: BoostKind, by: string): void;
 }
 
 export interface GameMasterOptions {
@@ -71,6 +77,8 @@ interface PendingCue extends GameCue {
   round: number;
   phase: Phase;
   at: number;
+  /** A thank-you for a power-up, not the round's question. */
+  boost?: true;
 }
 
 interface Answer {
@@ -95,6 +103,13 @@ interface Round {
   lastGuessAt: Map<string, number>;
   /** Scramble: the letters as shown. */
   letters: string;
+  /** Diamonds gifted while this round was open, and the power-ups they unlocked (ADR-0029). */
+  gifted: number;
+  boosts: BoostKind[];
+  /** Trivia: wrong options a 50/50 took away. */
+  removed: number[];
+  /** A hint power-up showed the hint early. */
+  hintEarly: boolean;
 }
 
 interface ActiveGame {
@@ -149,6 +164,13 @@ const PUBLISH_EVERY_MS = 250;
 const GUESS_COOLDOWN_MS = 2_500;
 /** Hints show up after this share of the round. */
 const HINT_AT = 0.5;
+/** How much time the time power-up adds. */
+const BOOST_TIME_MS = 10_000;
+const BOOST_NOTES: Record<BoostKind, string> = {
+  time: "10 more seconds to answer",
+  hint: "a hint (in a quiz, two wrong options are gone)",
+  double: "double points this round",
+};
 /** A reveal or results cue the host hasn't got to in this long is old news. */
 const CUE_TTL_MS = 40_000;
 
@@ -317,6 +339,44 @@ export class GameMaster {
     }
   }
 
+  /**
+   * A gift during an open round counts toward its power-ups (ADR-0029):
+   * each threshold of diamonds unlocks a boost for everyone playing. The
+   * gifter gets thanked, never points or the answer.
+   */
+  handleGift(event: Extract<LiveEvent, { kind: "gift" }>): BoostKind[] {
+    const game = this.game;
+    const round = game?.round;
+    if (!game || !round || game.phase !== "open") return [];
+    round.gifted += event.diamonds;
+    const by = this.nameOf(event.viewer);
+    const unlocked: BoostKind[] = [];
+    for (const boost of BOOST_KINDS) {
+      if (round.boosts.includes(boost) || round.gifted < BOOST_DIAMONDS[boost]) continue;
+      if (!this.applyBoost(round, boost)) continue;
+      round.boosts.push(boost);
+      unlocked.push(boost);
+    }
+    if (!unlocked.length) return [];
+    const now = this.now();
+    this.options.stage.boost?.(unlocked[unlocked.length - 1] as BoostKind, by);
+    this.options.stage.fx("sparkles", 1.5);
+    this.sound("levelup");
+    this.publish();
+    const what = unlocked.map((boost) => BOOST_NOTES[boost]).join(", and ");
+    this.cues.push({
+      note: `${by}'s gift just powered up this round for everyone: ${what}. Thank ${by} by name and hype it in one short line. Don't hint at the answer beyond what's on screen.`,
+      line: `Valeu, ${by}! ${unlocked.map((boost) => BOOST_LABELS[boost]).join(" e ")}!`,
+      history: `${by}'s gift powered up round ${game.index + 1}: ${unlocked.join(", ")}.`,
+      round: game.index,
+      phase: "open",
+      at: now,
+      boost: true,
+    });
+    this.options.onChange?.();
+    return unlocked;
+  }
+
   /** Advances timers. Call several times a second; `speechIdle` says the host finished talking. */
   tick(speechIdle: boolean): void {
     const game = this.game;
@@ -366,6 +426,7 @@ export class GameMaster {
       answer: round ? answerOf(round.content) : null,
       remainingSec: round && game.phase === "open" ? Math.max(0, Math.ceil((round.openedAt + round.durationMs - now) / 1000)) : 0,
       answers: round ? round.answers.size + round.guesses : 0,
+      boosts: round ? [...round.boosts] : [],
       leaderboard: this.leaderboard(game).slice(0, 5),
       source: game.source,
     };
@@ -490,6 +551,10 @@ export class GameMaster {
       last: null,
       lastGuessAt: new Map(),
       letters: content.kind === "scramble" ? scrambleLetters(content.word, this.random) : "",
+      gifted: 0,
+      boosts: [],
+      removed: [],
+      hintEarly: false,
     };
     game.round = round;
     game.phase = "open";
@@ -518,7 +583,7 @@ export class GameMaster {
     if (!correct || round.winner) return;
     round.winner = { id: viewer.id, name, ms: now - round.openedAt };
     const kind = round.content.kind;
-    this.award(game, viewer.id, name, kind === "number" ? POINTS.number : kind === "fastest" ? POINTS.fastest : POINTS.solo);
+    this.award(game, viewer.id, name, multiplier(round) * (kind === "number" ? POINTS.number : kind === "fastest" ? POINTS.fastest : POINTS.solo));
     if (FIRST_WINS.has(kind)) this.reveal(game, now);
   }
 
@@ -539,7 +604,7 @@ export class GameMaster {
           .filter(([, answer]) => answer.value === (content.kind === "trivia" ? content.correct : content.answer))
           .sort((a, b) => a[1].at - b[1].at);
         const each = content.kind === "trivia" ? POINTS.correct : POINTS.truefalse;
-        right.forEach(([id, answer], i) => this.award(game, id, answer.name, each + (i === 0 ? POINTS.fastestBonus : 0)));
+        right.forEach(([id, answer], i) => this.award(game, id, answer.name, multiplier(round) * (each + (i === 0 ? POINTS.fastestBonus : 0))));
         const total = round.answers.size;
         won = right.length > 0;
         summary = `The answer: ${answerOf(content)}. ${won ? `${right[0]?.[1].name} was fastest; ${right.length} of ${total} got it right.` : total ? `Nobody of ${total} got it.` : "Nobody answered."}`;
@@ -578,8 +643,10 @@ export class GameMaster {
     } else {
       this.sound("reveal");
     }
+    // A power-up's thank-you is old news once the answer is out.
+    this.cues = this.cues.filter((cue) => !(cue.boost && cue.round === game.index));
     // A round won before the host read it out: skip the question, go straight to the answer.
-    const unread = this.cues.findIndex((cue) => cue.phase === "open" && cue.round === game.index);
+    const unread = this.cues.findIndex((cue) => cue.phase === "open" && cue.round === game.index && !cue.boost);
     if (unread !== -1) this.cues.splice(unread, 1);
     const early = unread !== -1 ? "The round ended before you could read it out, so don't read the question now. " : "";
     this.cues.push({
@@ -637,6 +704,42 @@ export class GameMaster {
     );
   }
 
+  /** Applies a power-up to the round; false when it does nothing for this kind of game. */
+  private applyBoost(round: Round, boost: BoostKind): boolean {
+    const content = round.content;
+    switch (boost) {
+      case "time":
+        round.durationMs += BOOST_TIME_MS;
+        return true;
+      case "double":
+        return content.kind !== "poll";
+      case "hint":
+        switch (content.kind) {
+          case "trivia": {
+            // A 50/50: take away wrong options until two are left.
+            const wrong = content.options.map((_, i) => i).filter((i) => i !== content.correct);
+            const keep = wrong[Math.floor(this.random() * wrong.length)];
+            round.removed = wrong.filter((i) => i !== keep).slice(0, Math.max(0, content.options.length - 2));
+            return round.removed.length > 0;
+          }
+          case "scramble":
+          case "riddle":
+            if (round.hintEarly || this.now() - round.openedAt >= round.durationMs * HINT_AT) return false;
+            round.hintEarly = true;
+            return true;
+          case "number": {
+            // Halve the window around the secret.
+            const span = Math.max(1, Math.floor((round.high - round.low) / 4));
+            round.low = Math.max(round.low, content.secret - span);
+            round.high = Math.min(round.high, content.secret + span);
+            return true;
+          }
+          default:
+            return false;
+        }
+    }
+  }
+
   // ---- scoring and scenes -------------------------------------------------
 
   private award(game: ActiveGame, id: string, name: string, points: number): void {
@@ -687,8 +790,9 @@ export class GameMaster {
       phase: revealed ? ("reveal" as const) : ("open" as const),
       remainingMs: revealed ? 0 : Math.max(0, round.openedAt + round.durationMs - now),
       durationMs: round.durationMs,
+      ...(round.boosts.length ? { boosts: [...round.boosts] } : {}),
     };
-    const hintShown = revealed || now - round.openedAt >= round.durationMs * HINT_AT;
+    const hintShown = revealed || round.hintEarly || now - round.openedAt >= round.durationMs * HINT_AT;
     const content = round.content;
     const winners = () =>
       [...round.answers.values()]
@@ -707,6 +811,7 @@ export class GameMaster {
           tally: revealed ? this.tally(round, content.options.length) : null,
           correct: revealed ? content.correct : null,
           winners: revealed ? winners() : [],
+          ...(round.removed.length ? { removed: [...round.removed] } : {}),
         };
       case "poll":
         return { kind: "poll", ...base, question: content.question, options: content.options, tally: this.tally(round, content.options.length) };
@@ -769,6 +874,11 @@ export class GameMaster {
   private nameOf(viewer: Viewer): string {
     return displayName(viewer, this.options.blocklist()).slice(0, 24) || viewerName(viewer).slice(0, 24);
   }
+}
+
+/** Double points power-up. */
+function multiplier(round: Round): number {
+  return round.boosts.includes("double") ? 2 : 1;
 }
 
 /** The round as text: what's on screen. */
