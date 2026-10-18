@@ -98,6 +98,16 @@ describe("prompts", () => {
     expect(spanish).toContain("Always speak Spanish, whatever language a viewer writes in: your voice can't pronounce any other.");
     expect(spanish).not.toContain("Brazilian Portuguese");
   });
+
+  it("asks for gifts only as actively as the channel allows", () => {
+    const light = buildSystemPrompt(persona);
+    expect(light).toContain("Never beg or pressure anyone for gifts or money");
+    expect(light).not.toContain("asks for gifts actively");
+    const active = buildSystemPrompt(persona, { strictness: "standard", avoidTopics: [], giftAsks: "active" });
+    expect(active).toContain("This channel asks for gifts actively");
+    expect(active).toContain("never claim you'll be shut down");
+    expect(active).not.toContain("Never beg or pressure anyone");
+  });
 });
 
 describe("local time", () => {

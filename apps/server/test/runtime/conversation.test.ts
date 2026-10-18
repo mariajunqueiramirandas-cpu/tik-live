@@ -216,6 +216,11 @@ describe("the director's brief", () => {
     expect(brief).toContain("Length: 1 or 2 short sentences.");
   });
 
+  it("makes a big gift the highlight of the turn", () => {
+    const brief = buildBrief({ ...plan, kind: "react" }, { support: ["e3 (big gift)", "e4 (gift)"], chat: [] }, { maxSentences: 3, stillSpeaking: false });
+    expect(brief).toContain("Now: Thank e3 (big gift) and e4 (gift) together, biggest gift first. Make e3 the highlight, with an effect tag.");
+  });
+
   it("frames the segment change around the next segment", () => {
     const brief = buildBrief({ ...plan, kind: "segment_change", nextSegment: persona.segments[1]! }, { support: [], chat: [] }, { maxSentences: 3, stillSpeaking: false });
     expect(brief).toContain('Segment: "Segment B".');

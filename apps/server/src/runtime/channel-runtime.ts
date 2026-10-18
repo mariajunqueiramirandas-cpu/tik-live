@@ -242,6 +242,7 @@ export class ChannelRuntime {
       actions: { playMusic: (track) => void this.playMusic(track, true) },
       blocklist: () => this.channel.safety.blocklist,
       ...(lastStream ? { lastStream } : {}),
+      giftAsks: () => this.channel.safety.giftAsks ?? "light",
       log: this.log,
       now: this.now,
       hooks: {

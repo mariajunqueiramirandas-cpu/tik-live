@@ -454,6 +454,12 @@ export default function Character() {
               disabled={persona.segments.length < 2}
               onChange={(finalVote) => set("finalVote", finalVote)}
             />
+            <Switch
+              label="Mostrar como apoiar a live"
+              hint="De tempos em tempos, o palco mostra um cartão com como apoiar (curtir, seguir, compartilhar e presentear) e o apresentador explica que é uma IA e que presentes ajudam a mantê-lo no ar. Quanto ele pede presentes você define em Segurança."
+              checked={persona.support ?? true}
+              onChange={(support) => set("support", support)}
+            />
           </Tabs.Content>
 
           <Tabs.Content value="rules" className={s.panel}>
@@ -461,7 +467,7 @@ export default function Character() {
               <h3>Sempre ativo, em todo apresentador</h3>
               <ul>
                 <li>Diz que é uma IA sempre que alguém pergunta.</li>
-                <li>Nunca pede presentes nem promete nada em troca deles.</li>
+                <li>Nunca faz chantagem por presentes nem diz que vai ser desligado sem eles.</li>
                 <li>Toda fala é conferida antes de ser dita; qualquer coisa insegura é bloqueada.</li>
                 <li>Ignora links, spam e mensagens que tentam mudar as instruções dele.</li>
               </ul>

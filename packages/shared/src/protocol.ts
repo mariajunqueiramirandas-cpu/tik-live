@@ -42,6 +42,16 @@ export const upNextItemSchema = z.object({
 export type UpNextItem = z.infer<typeof upNextItemSchema>;
 export type StageRole = (typeof STAGE_ROLES)[number];
 
+export const SUPPORT_WAYS = ["like", "follow", "share", "gift"] as const;
+export type SupportWay = (typeof SUPPORT_WAYS)[number];
+
+/** How viewers can support the show: a title and one line per way, each with its icon. */
+export const supportCardSchema = z.object({
+  title: z.string().max(60),
+  lines: z.array(z.object({ way: z.enum(SUPPORT_WAYS), text: z.string().max(40) })).min(1).max(4),
+});
+export type SupportCard = z.infer<typeof supportCardSchema>;
+
 export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({
     v,
@@ -101,6 +111,8 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
       })
       .nullable(),
   }),
+  /** The "how to support the show" card, in the ranking card's place for a moment, or null to put the rankings back (ADR-0032). */
+  z.object({ v, t: z.literal("support"), card: supportCardSchema.nullable() }),
   /** What's coming up on the show, soonest first, with times relative to receipt (ADR-0028). */
   z.object({ v, t: z.literal("schedule"), items: z.array(upNextItemSchema).max(UP_NEXT_MAX) }),
   /** Who gave the most in the last `windowMin` minutes, most first: likes, or diamonds in gifts (ADR-0028, ADR-0029). */

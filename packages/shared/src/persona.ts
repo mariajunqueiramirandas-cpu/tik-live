@@ -120,6 +120,12 @@ export const personaSchema = z.object({
   segments: z.array(segmentSchema).min(1).max(12),
   /** Chat votes which minigame the run of show's last segment plays (ADR-0029). On when unset. */
   finalVote: z.boolean().optional(),
+  /**
+   * Now and then the stage shows how viewers can support the show (like,
+   * follow, share, gifts) and the host explains it in a quiet moment
+   * (ADR-0032). On when unset.
+   */
+  support: z.boolean().optional(),
   look: lookSchema.default({ ...DEFAULT_LOOK }),
   /** What the stage may play besides the voice. Both are on when unset. */
   sound: z

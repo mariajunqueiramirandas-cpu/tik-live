@@ -37,6 +37,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0029](0029-gifts-power-ups-and-final-vote.md) | A gift ranking, gift combos and power-ups, and chat's vote on the last segment | Proposed |
 | [0030](0030-fish-audio-default-voice.md) | Fish Audio Drama 3, through OpenRouter, is the default voice | Proposed |
 | [0031](0031-not-every-message-needs-an-answer.md) | Not every message needs an answer, and chat can't hold the show | Proposed |
+| [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed |
 
 ## Evidence used
 

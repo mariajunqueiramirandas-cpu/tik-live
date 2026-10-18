@@ -68,6 +68,12 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   stage; gifts during a game round unlock power-ups for everyone (more time,
   a hint, double points); and chat votes which minigame the last segment
   plays ([ADR-0029](docs/adr/0029-gifts-power-ups-and-final-vote.md)).
+- **Supporting the show**: every gift gets a personal moment and big gifts
+  are the highlight of their turn. Now and then the stage shows how to
+  support the live (like, follow, share, gift) and the host explains that
+  it's an AI whose voice and brain cost money; each channel picks whether
+  the host asks for gifts lightly or actively
+  ([ADR-0032](docs/adr/0032-gifts-and-supporting-the-show.md)).
 - **Reactions and music**: confetti, fireworks, hearts and character moves
   the host can cue, gift effects that scale with the gift, sound effects, and
   short original music the host writes as a score and the stage synthesizes

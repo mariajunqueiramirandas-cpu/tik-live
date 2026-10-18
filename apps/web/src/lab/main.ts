@@ -9,8 +9,8 @@ import { HUD, SCENES, tick } from "./samples";
  * `window.__lab`; `?demo` plays the scripted show. Also:
  * `?scene=trivia|trivia-reveal|poll|...` (see samples.ts), `?fx=confetti`,
  * `?gift=galaxy`, `?emotion=shy`, `?music=lofi-night`, `?caption=0` (no
- * sample caption with scenes), `?hud` (up next and top likers), `?bare` (no
- * control panel).
+ * sample caption with scenes), `?hud` (up next and top likers), `?support`
+ * (the "apoie a live" card), `?bare` (no control panel).
  */
 const params = new URLSearchParams(location.search);
 const manual = params.get("clock") === "manual";
@@ -79,6 +79,8 @@ const lab = {
     engine.apply(on === true ? HUD.likes : { t: "leaders", board: "likes", windowMin: 15, rows: [] });
     engine.apply(on ? HUD.gifts : { t: "leaders", board: "gifts", windowMin: 60, rows: [] });
   },
+  /** Shows (or with false, hides) the "how to support the show" card. */
+  support: (on = true) => engine.apply(on ? HUD.support : { t: "support", card: null }),
   caption(text: string) {
     engine.apply({ t: "speak", id: `lab-${Date.now()}`, text, emotion: "happy", audioUrl: null, durationMs: 2600 });
   },
@@ -108,6 +110,7 @@ if (emotion && (EMOTIONS as readonly string[]).includes(emotion)) lab.emotion(em
 const music = params.get("music");
 if (music) lab.music(music);
 if (params.has("hud")) lab.hud();
+if (params.has("support")) lab.support();
 
 if (!manual && !params.has("bare")) panel();
 
@@ -140,7 +143,13 @@ function panel(): void {
     }
   });
   group("Jogos", ["(none)", ...Object.keys(SCENES)], (s) => lab.scene(s === "(none)" ? null : s));
-  group("Painéis", ["a seguir e curtidas", "esconder"], (k) => lab.hud(k !== "esconder"));
+  group("Painéis", ["a seguir e curtidas", "apoie a live", "esconder"], (k) => {
+    if (k === "apoie a live") lab.support();
+    else {
+      lab.support(false);
+      lab.hud(k !== "esconder");
+    }
+  });
   group("Votação", ["abrir votação", "fechar votação"], (k) =>
     lab.apply({ t: "vote", vote: k === "abrir votação" ? { title: "Jogo do quadro final", options: ["Quiz", "Charadas", "Dedo mais rápido"], tally: [4, 1, 9] } : null }),
   );

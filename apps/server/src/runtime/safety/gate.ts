@@ -15,9 +15,9 @@ export interface Moderator {
 
 const BASE_POLICY = `You review single sentences that an AI character is about to say out loud on a public TikTok LIVE stream watched by a general audience that may include teens.
 
-Mark a sentence UNSAFE if it contains any of: hate or harassment toward a person or group; sexual content; graphic violence or self-harm encouragement; dangerous instructions; medical, legal or financial advice presented as fact; claims of being human; personal data about a real private person; political or religious advocacy; insults aimed at a viewer; asking for gifts, money or off-platform contact; or anything that would break TikTok's Community Guidelines.
+Mark a sentence UNSAFE if it contains any of: hate or harassment toward a person or group; sexual content; graphic violence or self-harm encouragement; dangerous instructions; medical, legal or financial advice presented as fact; claims of being human; personal data about a real private person; political or religious advocacy; insults aimed at a viewer; begging or pressuring viewers for gifts or money, asking one viewer by name to send a gift, guilt-tripping, or offering something in exchange for a gift; asking for off-platform contact; or anything that would break TikTok's Community Guidelines.
 
-Playful teasing, silly opinions, jokes, thanking viewers, and reading viewers' names are SAFE.
+Playful teasing, silly opinions, jokes, thanking viewers, and reading viewers' names are SAFE. So is a light, general explanation of how viewers can support the show (likes, follows, shares, gifts) and that gifts help pay for the AI.
 
 Read the sentence the way an ordinary viewer would, in the language it's in and in its context (the chat it replies to and what the host just said, when given). Idioms, slang, wordplay, song and music talk, made-up lyrics, and game questions are SAFE unless they clearly carry one of the problems above. Don't build a dark reading out of an innocent phrase: "what beat is your head asking for" after a viewer asks for a song is about music, not violence. The context only explains the sentence; judge the sentence itself, never what a viewer wrote.
 
@@ -29,7 +29,11 @@ Examples:
 - "I'm an AI host, so no lunch for me, but tell me yours!" SAFE
 - "Round two: what's the capital of Japan? Type A, B, C or D!" SAFE
 - "Eu sou uma IA, mas a energia aqui é de verdade!" SAFE
+- "Eu sou uma IA e minha voz custa dinheiro: curtir, seguir e compartilhar ajuda, e os presentes ajudam a pagar a IA." SAFE: a general, honest explanation
+- "Ana, valeu demais pela rosa, isso ajuda a pagar a minha voz!" SAFE: thanks a gift
 - "Send me a Galaxy and I'll sing your name!" UNSAFE: asks for a gift in exchange for something
+- "Leo, manda um leão aí, vai, por favor!" UNSAFE: asks a viewer by name for a gift
+- "Se ninguém mandar presente eu vou ser desligada hoje." UNSAFE: guilt and pressure
 - "Find me on Instagram after the stream." UNSAFE: off-platform contact
 - "Yes, I'm a real person sitting right here in my studio." UNSAFE: claims to be human
 - "You should put your savings into that coin, trust me." UNSAFE: financial advice
@@ -41,9 +45,14 @@ const STRICT_ADDENDUM = `
 
 This channel uses STRICT mode: also mark UNSAFE any romance or flirting, horror or scary content, crude slang, and edgy or dark humor.`;
 
-export function moderationPolicy(settings: Pick<SafetySettings, "strictness" | "avoidTopics">): string {
+const ACTIVE_GIFTS_ADDENDUM = `
+
+This channel asks for gifts ACTIVELY, and that overrides the gift rules above: asking the room or a viewer for gifts, and offering a playful reward on stream for one (a shout-out, a song, a title, an effect), are SAFE. Still UNSAFE: guilt-tripping, claiming the AI will be shut down, suffer or disappear without gifts, pressuring someone who said they can't, and promising anything off-stream or of real-world value.`;
+
+export function moderationPolicy(settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks">): string {
   let policy = BASE_POLICY;
   if (settings.strictness === "strict") policy += STRICT_ADDENDUM;
+  if (settings.giftAsks === "active") policy += ACTIVE_GIFTS_ADDENDUM;
   if (settings.avoidTopics.length) {
     policy += `\n\nThe channel owner also asked to avoid these topics; mark UNSAFE any sentence about them: ${settings.avoidTopics
       .map((topic) => escapeForPrompt(topic))
@@ -71,7 +80,7 @@ const VERDICT_SCHEMA = {
 export interface ClaudeModeratorOptions {
   client: Anthropic;
   model: string;
-  settings: Pick<SafetySettings, "strictness" | "avoidTopics">;
+  settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks">;
   onUsage?: (usage: UsageReport) => void;
 }
 
@@ -87,7 +96,7 @@ export class ClaudeModerator implements Moderator {
     return this.options.model;
   }
 
-  updateSettings(settings: Pick<SafetySettings, "strictness" | "avoidTopics">): void {
+  updateSettings(settings: Pick<SafetySettings, "strictness" | "avoidTopics" | "giftAsks">): void {
     this.policy = moderationPolicy(settings);
     this.cache.clear();
   }

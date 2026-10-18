@@ -28,6 +28,8 @@ const CHRONICLE_RETRY_MS = 30_000;
 /** A line the host already said this recently is dropped as a repeat. */
 const REPEAT_WINDOW_MS = 10 * 60_000;
 const REPEAT_MEMORY = 120;
+/** A gift worth this many diamonds or more is the highlight of its turn. */
+const BIG_GIFT_DIAMONDS = 100;
 
 export interface TurnEngineOptions {
   host: HostBrain;
@@ -268,6 +270,7 @@ export class TurnEngine {
       if (!ref) continue;
       const kind = item.event.kind;
       if (kind === "chat" || kind === "question") refs.chat.push(`${ref} (${kind})`);
+      else if (item.event.kind === "gift" && item.event.diamonds >= BIG_GIFT_DIAMONDS) refs.support.push(`${ref} (big gift)`);
       else refs.support.push(`${ref} (${kind === "join" ? "returning viewer" : kind})`);
     }
     return refs;

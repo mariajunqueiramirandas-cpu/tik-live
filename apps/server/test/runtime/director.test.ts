@@ -763,3 +763,66 @@ describe("Director: up next titles", () => {
     expect(director.upNext().map((item) => item.title)).toEqual(["Charadas", "Perguntas · Quiz", "Chat"]);
   });
 });
+
+describe("Director support card", () => {
+  function supportSetup(giftAsks: "light" | "active" = "light", support?: boolean) {
+    const clock = fakeClock();
+    const memory = new ViewerMemory({ now: clock.now });
+    const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
+    const speech = new SpeechPipeline(new NoTts(), new SafetyGate({ blocklist: [] }), instantOutput, {}, clock.now);
+    const host = new FakeHost();
+    const cards: Array<string | null> = [];
+    const director = new Director({
+      persona: { ...persona, segments: [{ id: "a", title: "Segment A", minutes: 60, prompt: "Do A." }], ...(support === undefined ? {} : { support }) },
+      host,
+      triage,
+      memory,
+      speech,
+      stage: { ...stage, support: (card) => cards.push(card ? card.title : null) },
+      deadAirMs: 7_000,
+      giftAsks: () => giftAsks,
+      now: clock.now,
+    });
+    const step = async (ms = 0) => {
+      clock.advance(ms);
+      await director.tick();
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    };
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    return { director, host, step, cards };
+  }
+
+  it("shows how to support the show now and then, and the host explains it in a quiet moment", async () => {
+    const { host, step, cards } = supportSetup();
+    await step();
+    await step(2 * 60_000);
+    expect(cards).toEqual([]);
+    await step(60_000); // 3 minutes in
+    expect(cards).toEqual(["Blip é uma IA ao vivo"]);
+    await step(20_000);
+    expect(cards).toEqual(["Blip é uma IA ao vivo", null]);
+    expect(host.turns.some((turn) => turn.note?.includes("how people can support it"))).toBe(false);
+    await step(3 * 60_000); // 6 minutes in: the next quiet moment explains it
+    const talk = host.turns.find((turn) => turn.note?.includes("how people can support it"));
+    expect(talk?.kind).toBe("filler");
+    expect(talk?.note).toContain("don't guilt anyone");
+    expect(cards.at(-1)).toBe("Blip é uma IA ao vivo"); // the card goes up with it
+  });
+
+  it("asks for gifts more often when the channel asks actively", async () => {
+    const { host, step } = supportSetup("active");
+    await step();
+    for (let i = 0; i < 6; i++) await step(30_000); // 3 minutes in
+    const ask = host.turns.find((turn) => turn.note?.includes("ask the room for gifts"));
+    expect(ask?.kind).toBe("filler");
+    expect(ask?.note).toContain("No guilt");
+  });
+
+  it("stays off when the creator turns it off", async () => {
+    const { host, step, cards } = supportSetup("light", false);
+    await step();
+    for (let i = 0; i < 20; i++) await step(30_000);
+    expect(cards).toEqual([]);
+    expect(host.turns.some((turn) => turn.note?.includes("support it"))).toBe(false);
+  });
+});

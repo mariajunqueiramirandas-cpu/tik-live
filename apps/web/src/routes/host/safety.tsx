@@ -79,6 +79,27 @@ export default function Safety() {
           )}
         </Field>
 
+        <Field
+          label="Pedidos de presente"
+          hint={
+            safety.giftAsks === "active"
+              ? "O apresentador pede presentes com frequência e oferece recompensas na hora (um salve, uma música, um título, efeitos). Nunca faz chantagem, não diz que vai ser desligado e não insiste com quem disse que não pode. Pedir presentes demais pode ir contra as regras do TikTok LIVE: o risco é seu."
+              : "De vez em quando o palco mostra como apoiar a live e o apresentador explica que é uma IA e que presentes ajudam a pagar os custos dela, sem pedir para ninguém."
+          }
+        >
+          {() => (
+            <Segmented
+              label="Pedidos de presente"
+              value={safety.giftAsks ?? "light"}
+              onChange={(giftAsks) => setSafety((v) => ({ ...v, giftAsks }))}
+              options={[
+                { value: "light", label: "Leve" },
+                { value: "active", label: "Ativo" },
+              ]}
+            />
+          )}
+        </Field>
+
         <Field label="Palavras bloqueadas" optional hint="O apresentador nunca fala essas palavras, e mensagens do chat com elas são ignoradas. Aperte Enter depois de cada uma.">
           {(props) => <Chips {...props} values={safety.blocklist} onChange={(blocklist) => setSafety((v) => ({ ...v, blocklist }))} max={500} maxLength={60} placeholder="Adicione uma palavra ou frase" />}
         </Field>
