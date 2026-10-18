@@ -68,6 +68,14 @@ fixa os termos para que tudo soe como um produto só. Documentação técnica
 | the room (studio feed) | a sala |
 | now saying | falando agora |
 | up next | a seguir |
+| like ranking (last 15 min) | top curtidas |
+| loop (one pass through the run of show) | volta do roteiro |
+| loop ranking (every game's points added up) | placar geral |
+| podium | pódio (do placar geral: "pódio geral") |
+| gift ranking (last hour) | top presentes |
+| power-up (gift boost in a game) | poder ("+10 segundos", "dica liberada", "pontos em dobro") |
+| gift combo | combo |
+| vote on the last segment's game | votação do último quadro |
 | catchphrases | bordões |
 | failed (status) | precisa de atenção |
 | strictness: standard / strict | padrão / rigoroso |

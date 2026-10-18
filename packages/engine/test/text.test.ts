@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { syllableCount, syllableEnvelope } from "../src/audio/envelope";
+import { formatCount, formatCountdown, nextBoard, windowLabel } from "../src/text/hud";
 import { layoutCaption, wordAtProgress } from "../src/text/layout";
 
 // Monospace stand-in: every character is 0.5em wide.
@@ -71,5 +72,35 @@ describe("syllable envelope", () => {
     expect(env.shape(unit * 0.5, shape)).toEqual({ round: 1, wide: 0 });
     expect(env.shape(unit * 2.1, shape)).toEqual({ round: 0, wide: 1 });
     expect(env.shape(unit * 3.7, shape)).toEqual({ round: 0, wide: 0 });
+  });
+});
+
+describe("heads-up panels", () => {
+  it("counts down to what's up next in minutes and seconds", () => {
+    expect(formatCountdown(154)).toBe("2:34");
+    expect(formatCountdown(9.2)).toBe("0:10");
+    expect(formatCountdown(59)).toBe("0:59");
+    expect(formatCountdown(3_900)).toBe("1h05");
+    expect(formatCountdown(0)).toBe("já já");
+    expect(formatCountdown(-3)).toBe("já já");
+  });
+
+  it("writes counts the Brazilian way, and windows in minutes or hours", () => {
+    expect(formatCount(1834)).toBe("1.834");
+    expect(formatCount(12)).toBe("12");
+    expect(formatCount(25_300)).toBe("25,3 mil");
+    expect(windowLabel(15)).toBe("15 MIN");
+    expect(windowLabel(60)).toBe("1 H");
+  });
+
+  it("takes turns between the rankings that have someone on them", () => {
+    const both = () => true;
+    const likesOnly = (board: string) => board === "likes";
+    expect(nextBoard(null, both)).toBe("likes");
+    expect(nextBoard("likes", both)).toBe("gifts");
+    expect(nextBoard("gifts", both)).toBe("likes");
+    expect(nextBoard("likes", likesOnly)).toBe("likes");
+    expect(nextBoard("gifts", likesOnly)).toBe("likes");
+    expect(nextBoard(null, () => false)).toBeNull();
   });
 });

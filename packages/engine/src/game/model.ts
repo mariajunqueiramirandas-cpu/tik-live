@@ -25,12 +25,13 @@ export const PALETTES: Record<GameSceneKind, Palette> = {
   riddle: { primary: "#A46CFF", secondary: "#4FC3FF", background: "#0D0626", accent: "#C7A6FF" },
   fastest: { primary: "#FFE14D", secondary: "#FF4D6A", background: "#190A00", accent: "#FFE14D" },
   scoreboard: { primary: "#FFD15C", secondary: "#B16CFF", background: "#130722", accent: "#FFD15C" },
+  podium: { primary: "#FFD15C", secondary: "#FF5FA2", background: "#140518", accent: "#FFD15C" },
 };
 
-export type RoundScene = Exclude<GameScene, { kind: "scoreboard" }>;
+export type RoundScene = Exclude<GameScene, { kind: "scoreboard" | "podium" }>;
 
 export function isRound(scene: GameScene): scene is RoundScene {
-  return scene.kind !== "scoreboard";
+  return scene.kind !== "scoreboard" && scene.kind !== "podium";
 }
 
 /** What a scene is "about": a new identity is a new round, not an update. */
@@ -53,6 +54,9 @@ export function sceneIdentity(scene: GameScene): string {
       return `fastest|${scene.round}|${scene.word}`;
     case "scoreboard":
       return `scoreboard|${scene.title}`;
+    case "podium":
+      // One podium updates in place as each place is revealed.
+      return `podium|${scene.title}`;
   }
 }
 
@@ -75,6 +79,12 @@ export function sceneChange(previous: GameScene | null, next: GameScene | null):
  * and springs only.
  */
 export function staticKey(scene: GameScene): string {
+  // Power-ups change the header (×2) and a quiz's options (50/50).
+  const boosts = isRound(scene) && scene.boosts?.length ? `|${scene.boosts.join(",")}|${scene.kind === "trivia" ? (scene.removed ?? []).join(",") : ""}` : "";
+  return contentKey(scene) + boosts;
+}
+
+function contentKey(scene: GameScene): string {
   switch (scene.kind) {
     case "trivia":
       return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.question, scene.options, scene.correct, scene.tally]);
@@ -94,6 +104,8 @@ export function staticKey(scene: GameScene): string {
       return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.word, scene.winner, scene.winnerMs]);
     case "scoreboard":
       return JSON.stringify([scene.kind, scene.title, scene.rows]);
+    case "podium":
+      return JSON.stringify([scene.kind, scene.title, scene.places, scene.suspense]);
   }
 }
 

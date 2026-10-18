@@ -438,6 +438,13 @@ export default function Character() {
               Os quadros guiam a live quando o chat está parado. O apresentador passa para o próximo quando o tempo acaba, e você pode trocar quando quiser pelo estúdio. Um quadro com minijogo roda o jogo enquanto está no ar: os espectadores respondem no chat.
             </p>
             <SegmentEditor segments={persona.segments} onChange={(segments) => set("segments", segments)} errors={errors} />
+            <Switch
+              label="O chat escolhe o jogo do último quadro"
+              hint="Perto do fim do penúltimo quadro, o palco abre uma votação com três minijogos. O mais votado é o jogo do último quadro. Precisa de pelo menos dois quadros."
+              checked={persona.finalVote ?? true}
+              disabled={persona.segments.length < 2}
+              onChange={(finalVote) => set("finalVote", finalVote)}
+            />
           </Tabs.Content>
 
           <Tabs.Content value="rules" className={s.panel}>

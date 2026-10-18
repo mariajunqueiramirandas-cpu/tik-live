@@ -118,6 +118,8 @@ export const personaSchema = z.object({
   /** Upper bound on sentences per turn (keeps the host snappy). */
   maxSentences: z.number().int().min(1).max(6).default(3),
   segments: z.array(segmentSchema).min(1).max(12),
+  /** Chat votes which minigame the run of show's last segment plays (ADR-0029). On when unset. */
+  finalVote: z.boolean().optional(),
   look: lookSchema.default({ ...DEFAULT_LOOK }),
   /** What the stage may play besides the voice. Both are on when unset. */
   sound: z

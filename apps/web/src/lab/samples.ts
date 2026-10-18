@@ -1,4 +1,4 @@
-import type { GameScene } from "@tik-live/shared";
+import type { GameScene, StageServerPayload } from "@tik-live/shared";
 
 /**
  * Sample game scenes for the engine lab (`/lab.html?scene=trivia`), with
@@ -141,6 +141,49 @@ export const SCENES: Record<string, GameScene> = {
       { name: "thiago_k", points: 255 },
       { name: "duda", points: 140 },
       { name: "joão.pedro.silva", points: 90 },
+    ],
+  },
+  /** The loop's podium, before anyone is revealed: the drumroll for third place. */
+  podium: { kind: "podium", title: "Pódio geral", places: [null, null, null], suspense: 3 },
+  "podium-reveal": {
+    kind: "podium",
+    title: "Pódio geral",
+    places: [
+      { name: "mari.souza", points: 1240 },
+      { name: "lu.desenha", points: 985 },
+      { name: "joão.pedro.silva", points: 610 },
+    ],
+    suspense: null,
+  },
+};
+
+/** The heads-up panels: what's up next, and the top likers of the last 15 minutes. */
+export const HUD: { schedule: StageServerPayload; likes: StageServerPayload; gifts: StageServerPayload } = {
+  schedule: {
+    t: "schedule",
+    items: [
+      { kind: "game", title: "Quiz: futebol", inMs: 154_000 },
+      { kind: "segment", title: "Papo da madrugada", inMs: 600_000 },
+    ],
+  },
+  likes: {
+    t: "leaders",
+    board: "likes",
+    windowMin: 15,
+    rows: [
+      { name: "mari.souza", value: 1834 },
+      { name: "thiago_k", value: 960 },
+      { name: "joão.pedro.silva.oficial", value: 412 },
+    ],
+  },
+  gifts: {
+    t: "leaders",
+    board: "gifts",
+    windowMin: 60,
+    rows: [
+      { name: "duda", value: 25_300 },
+      { name: "lu.desenha", value: 1_200 },
+      { name: "caio", value: 99 },
     ],
   },
 };

@@ -1,5 +1,5 @@
-import { GAME_KINDS, GAME_LABELS, MUSIC_LIBRARY, type GameKind, type GameStatus, type RuntimeSnapshot, type StudioCommand } from "@tik-live/shared";
-import { Gamepad2, Music, Pause, Play, Send, SkipForward, Sparkles, Square } from "lucide-react";
+import { GAME_KINDS, GAME_LABELS, MUSIC_LIBRARY, type GameKind, type GameStatus, type LoopRankingStatus, type RuntimeSnapshot, type StudioCommand } from "@tik-live/shared";
+import { Gamepad2, Gift, Heart, Music, Pause, Play, Send, SkipForward, Sparkles, Square, Trophy, Vote } from "lucide-react";
 import { Link } from "react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { clock, plural } from "../../lib/format";
@@ -174,19 +174,7 @@ function GameRunning({ game, store, disabled }: { game: GameStatus; store: Studi
           </div>
         </dl>
       )}
-      {top.length > 0 && (
-        <ol className={s.leaderboard} aria-label="Placar">
-          {top.map((row, i) => (
-            <li key={`${row.name}-${i}`}>
-              <span className={s.leaderRank} aria-hidden>
-                {i + 1}
-              </span>
-              <span className={s.leaderName}>{row.name}</span>
-              <span className={s.leaderPoints}>{plural(row.points, "pt", "pts")}</span>
-            </li>
-          ))}
-        </ol>
-      )}
+      {top.length > 0 && <Leaders rows={top.map((row) => ({ name: row.name, value: row.points }))} label="Placar" unit={["pt", "pts"]} />}
       <div className={s.gameActions}>
         <Button size="sm" variant="quietDanger" icon={<Square aria-hidden />} busy={stopping} disabled={disabled} onClick={() => void stop()}>
           Parar jogo
@@ -208,7 +196,7 @@ function GameSetup({ store, disabled }: { store: StudioStore; disabled: boolean 
     if (!validRounds || busy) return;
     const trimmed = topic.trim();
     setBusy(true);
-    const preparing: GameStatus = { kind, topic: trimmed || null, phase: "preparing", round: 0, rounds, prompt: "", answer: null, remainingSec: 0, answers: 0, leaderboard: [], source: "studio" };
+    const preparing: GameStatus = { kind, topic: trimmed || null, phase: "preparing", round: 0, rounds, prompt: "", answer: null, remainingSec: 0, answers: 0, boosts: [], leaderboard: [], source: "studio" };
     await send(store, { kind: "game_start", game: { kind, rounds, ...(trimmed ? { topic: trimmed } : {}) } }, { game: preparing }, "Não deu para começar o jogo");
     setBusy(false);
   };
@@ -240,7 +228,54 @@ function GameSetup({ store, disabled }: { store: StudioStore; disabled: boolean 
   );
 }
 
-function Games({ store, game, disabled }: { store: StudioStore; game: GameStatus | null; disabled: boolean }) {
+function Leaders({ rows, label, unit }: { rows: ReadonlyArray<{ name: string; value: number }>; label: string; unit: [string, string] }) {
+  return (
+    <ol className={s.leaderboard} aria-label={label}>
+      {rows.map((row, i) => (
+        <li key={`${row.name}-${i}`}>
+          <span className={s.leaderRank} aria-hidden>
+            {i + 1}
+          </span>
+          <span className={s.leaderName}>{row.name}</span>
+          <span className={s.leaderPoints}>{plural(row.value, ...unit)}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** Minigame points summed over this loop of the run of show, and its podium (ADR-0028). */
+function LoopRanking({ ranking, store, disabled }: { ranking: LoopRankingStatus; store: StudioStore; disabled: boolean }) {
+  const [stopping, setStopping] = useState(false);
+  const stop = async () => {
+    setStopping(true);
+    await send(store, { kind: "game_stop" }, { ranking: { ...ranking, revealing: false } }, "Não deu para encerrar o pódio");
+    setStopping(false);
+  };
+  return (
+    <div className={s.ranking}>
+      <div className={s.paneHead}>
+        <h3 id="ranking-heading">
+          <Trophy aria-hidden /> Placar geral
+        </h3>
+        <span className={s.paneHint}>{ranking.revealing ? "Revelando o pódio no palco" : plural(ranking.games, "jogo nesta volta", "jogos nesta volta")}</span>
+      </div>
+      {ranking.rows.length > 0 ? (
+        <Leaders rows={ranking.rows.slice(0, 5).map((row) => ({ name: row.name, value: row.points }))} label="Placar geral" unit={["pt", "pts"]} />
+      ) : (
+        <p className={s.paneHint}>Ninguém pontuou nesta volta ainda.</p>
+      )}
+      <p className={s.paneHint}>Soma os pontos de todos os jogos. Quando o último quadro do roteiro acaba, o top 3 é revelado no palco e o placar começa do zero.</p>
+      {ranking.revealing && (
+        <Button size="sm" variant="quietDanger" icon={<Square aria-hidden />} busy={stopping} disabled={disabled} onClick={() => void stop()}>
+          Encerrar pódio
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function Games({ store, game, ranking, disabled }: { store: StudioStore; game: GameStatus | null; ranking: LoopRankingStatus; disabled: boolean }) {
   return (
     <section className={s.games} aria-labelledby="games-heading">
       <div className={s.paneHead}>
@@ -252,8 +287,99 @@ function Games({ store, game, disabled }: { store: StudioStore; game: GameStatus
           </span>
         )}
       </div>
-      {game ? <GameRunning game={game} store={store} disabled={disabled} /> : <GameSetup store={store} disabled={disabled} />}
+      {game ? <GameRunning game={game} store={store} disabled={disabled} /> : <GameSetup store={store} disabled={disabled || ranking.revealing} />}
+      <LoopRanking ranking={ranking} store={store} disabled={disabled} />
     </section>
+  );
+}
+
+const UP_NEXT_KIND: Record<RuntimeSnapshot["upNext"][number]["kind"], string> = { segment: "Quadro", game: "Jogo", podium: "Pódio" };
+
+function UpNextRow({ item }: { item: RuntimeSnapshot["upNext"][number] }) {
+  const left = useCountdown(item.inSec, `${item.kind}:${item.title}`, true);
+  return (
+    <li className={item.kind === "podium" ? s.upNextPodium : undefined}>
+      <span className={s.upNextKind}>{UP_NEXT_KIND[item.kind]}</span>
+      <span className={s.upNextTitle}>{item.title}</span>
+      <span className={s.upNextTime} role="timer">
+        {left <= 0 ? "já já" : `em ${clock(Math.ceil(left))}`}
+      </span>
+    </li>
+  );
+}
+
+/** Chat's vote on the last segment's game (ADR-0029). */
+function FinalVote({ vote }: { vote: NonNullable<RuntimeSnapshot["vote"]> }) {
+  const left = useCountdown(vote.closesInSec, vote.segment, true);
+  const total = vote.options.reduce((sum, option) => sum + option.votes, 0);
+  return (
+    <div className={s.upNext}>
+      <div className={s.paneHead}>
+        <h2 id="vote-heading">
+          <Vote aria-hidden /> Votação do último quadro
+        </h2>
+        <span className={s.paneHint} role="timer">
+          {left <= 0 ? "fecha já já" : `fecha em ${clock(Math.ceil(left))}`}
+        </span>
+      </div>
+      <ol aria-labelledby="vote-heading" className={s.upNextList}>
+        {vote.options.map((option, i) => (
+          <li key={option.label}>
+            <span className={s.upNextKind}>{i + 1}</span>
+            <span className={s.upNextTitle}>{option.label}</span>
+            <span className={s.upNextTime}>
+              {plural(option.votes, "voto")}
+              {total ? ` · ${Math.round((option.votes / total) * 100)}%` : ""}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className={s.paneHint}>O chat digita o número. O mais votado vira o jogo de “{vote.segment}”.</p>
+    </div>
+  );
+}
+
+/** What viewers see coming up, with the same countdowns the stage shows (ADR-0028). */
+function UpNext({ items }: { items: RuntimeSnapshot["upNext"] }) {
+  return (
+    <div className={s.upNext}>
+      <div className={s.paneHead}>
+        <h2 id="up-next-heading">Próximos no roteiro</h2>
+        <span className={s.paneHint}>Também aparece no palco</span>
+      </div>
+      <ol aria-labelledby="up-next-heading" className={s.upNextList}>
+        {items.map((item) => (
+          <UpNextRow key={`${item.kind}:${item.title}`} item={item} />
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** The stage's two rankings: likes over the last 15 minutes, gifts (diamonds) over the last hour. */
+function Rankings({ leaders }: { leaders: RuntimeSnapshot["leaders"] }) {
+  const boards = [
+    { key: "likes", title: "Top curtidas", window: "últimos 15 min", icon: <Heart aria-hidden />, unit: ["curtida", "curtidas"] as [string, string], empty: "Ninguém curtiu nos últimos 15 minutos." },
+    { key: "gifts", title: "Top presentes", window: "última hora", icon: <Gift aria-hidden />, unit: ["diamante", "diamantes"] as [string, string], empty: "Nenhum presente na última hora." },
+  ] as const;
+  return (
+    <div className={s.likers}>
+      {boards.map((board) => (
+        <div key={board.key} className={s.rankingBoard}>
+          <div className={s.paneHead}>
+            <h2 id={`${board.key}-heading`}>
+              {board.icon} {board.title}
+            </h2>
+            <span className={s.paneHint}>{board.window}</span>
+          </div>
+          {leaders[board.key].length > 0 ? (
+            <Leaders rows={leaders[board.key]} label={board.title} unit={board.unit} />
+          ) : (
+            <p className={s.paneHint}>{board.empty}</p>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -405,7 +531,13 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
 
       <SayBox store={store} disabled={!usable} inputRef={sayRef} />
 
-      {snapshot && <Games store={store} game={snapshot.game ?? null} disabled={!usable} />}
+      {snapshot && onAir && (snapshot.upNext ?? []).length > 0 && <UpNext items={snapshot.upNext} />}
+
+      {snapshot && onAir && snapshot.vote && <FinalVote vote={snapshot.vote} />}
+
+      {snapshot && <Games store={store} game={snapshot.game ?? null} ranking={snapshot.ranking ?? { rows: [], games: 0, revealing: false }} disabled={!usable} />}
+
+      {snapshot && onAir && <Rankings leaders={snapshot.leaders ?? { likes: [], gifts: [] }} />}
 
       {snapshot && (
         <MusicPane

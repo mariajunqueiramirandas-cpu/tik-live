@@ -21,7 +21,7 @@ import {
   trackPosition,
 } from "../src/game/model";
 import { alertDetail } from "../src/engine";
-import { giftFlavor, giftTier, KIND } from "../src/stage/fx";
+import { giftFlavor, giftTier, KIND, nextCombo } from "../src/stage/fx";
 
 // Monospace stand-in: every character is 0.5em wide.
 const measure = (size: number) => (text: string) => text.length * size * 0.5;
@@ -63,12 +63,24 @@ describe("scene transitions", () => {
   });
 
   it("has a palette for every scene kind", () => {
-    for (const kind of [...GAME_KINDS, "scoreboard" as const]) {
+    for (const kind of [...GAME_KINDS, "scoreboard" as const, "podium" as const]) {
       const palette = PALETTES[kind];
       for (const color of Object.values(palette)) expect(color).toMatch(/^#[0-9A-F]{6}$/i);
     }
     const accents = new Set(Object.values(PALETTES).map((p) => p.background));
-    expect(accents.size).toBe(GAME_KINDS.length + 1);
+    expect(accents.size).toBe(GAME_KINDS.length + 2);
+  });
+
+  it("reveals podium places in place, repainting for each one", () => {
+    const podium = (places: Array<{ name: string; points: number } | null>, suspense: number | null): GameScene => ({ kind: "podium", title: "Pódio geral", places, suspense });
+    const hidden = podium([null, null, null], 3);
+    const third = podium([null, null, { name: "duda", points: 20 }], null);
+    expect(sceneChange(null, hidden)).toBe("enter");
+    expect(sceneChange(hidden, third)).toBe("update");
+    expect(sceneChange(third, podium([null, null, { name: "duda", points: 20 }], 2))).toBe("update");
+    expect(staticKey(hidden)).not.toBe(staticKey(third));
+    expect(staticKey(third)).not.toBe(staticKey(podium([null, null, { name: "duda", points: 20 }], 2)));
+    expect(sceneChange(third, null)).toBe("exit");
   });
 });
 
@@ -218,5 +230,19 @@ describe("gift effects", () => {
   it("knows a particle kind for every particle effect", () => {
     expect(EFFECTS.length).toBe(12);
     expect(Object.keys(KIND)).toEqual(["dot", "confetti", "heart", "star", "sparkle", "note", "bubble", "streak", "petal"]);
+  });
+});
+
+describe("gift combos", () => {
+  it("grows while gifts keep coming and starts over after a pause", () => {
+    let count = 0;
+    let at = -Infinity;
+    for (const t of [0, 2, 4, 8.5, 9]) {
+      count = nextCombo(count, at, t);
+      at = t;
+    }
+    // 0, 2, 4 are a run of three; 8.5 is 4.5 s later (still on), 9 makes five.
+    expect(count).toBe(5);
+    expect(nextCombo(5, 9, 14.5)).toBe(1);
   });
 });

@@ -38,6 +38,17 @@ export const gameConfigSchema = z.object({
 });
 export type GameConfig = z.infer<typeof gameConfigSchema>;
 
+/**
+ * Gift power-ups (ADR-0029): gifts during an open round add up, and each
+ * threshold unlocks a boost for everyone playing, never for the gifter
+ * alone: more time, a hint (a 50/50 in a quiz), double points.
+ */
+export const BOOST_KINDS = ["time", "hint", "double"] as const;
+export type BoostKind = (typeof BOOST_KINDS)[number];
+/** Diamonds sent during one round that unlock each boost. */
+export const BOOST_DIAMONDS: Record<BoostKind, number> = { time: 10, hint: 50, double: 100 };
+export const BOOST_LABELS: Record<BoostKind, string> = { time: "+10 segundos", hint: "Dica liberada", double: "Pontos em dobro" };
+
 /** Letters viewers type to pick an option. */
 export const OPTION_LETTERS = ["A", "B", "C", "D"] as const;
 
@@ -51,6 +62,8 @@ const round = {
   remainingMs: z.number().min(0),
   /** How long the round was open for in total (draws the timer bar). */
   durationMs: z.number().min(0),
+  /** Power-ups gifts unlocked for this round. */
+  boosts: z.array(z.enum(BOOST_KINDS)).max(3).optional(),
 };
 
 /** What the stage draws for a game. Each kind has its own scene. */
@@ -67,6 +80,8 @@ export const gameSceneSchema = z.discriminatedUnion("kind", [
     correct: z.number().int().min(0).max(3).nullable(),
     /** Who got it right, fastest first. */
     winners: z.array(name).max(5),
+    /** Wrong options a 50/50 power-up took away. */
+    removed: z.array(z.number().int().min(0).max(3)).max(2).optional(),
   }),
   z.object({
     kind: z.literal("poll"),
@@ -143,6 +158,18 @@ export const gameSceneSchema = z.discriminatedUnion("kind", [
     title: z.string().max(60),
     rows: z.array(z.object({ name, points: z.number().int().min(0) })).max(5),
   }),
+  /**
+   * The loop's top three, revealed one place at a time (third, second, then
+   * first) once every segment in the run of show has played.
+   */
+  z.object({
+    kind: z.literal("podium"),
+    title: z.string().max(60),
+    /** First, second and third place; null while that place is still hidden. Shorter when fewer people scored. */
+    places: z.array(z.object({ name, points: z.number().int().min(0) }).nullable()).min(1).max(3),
+    /** The place (1 to 3) the drumroll is building up to, or null between reveals and at the end. */
+    suspense: z.number().int().min(1).max(3).nullable(),
+  }),
 ]);
 export type GameScene = z.infer<typeof gameSceneSchema>;
 export type GameSceneKind = GameScene["kind"];
@@ -161,7 +188,19 @@ export interface GameStatus {
   answer: string | null;
   remainingSec: number;
   answers: number;
+  /** Power-ups gifts unlocked for the round on screen. */
+  boosts: BoostKind[];
   leaderboard: Array<{ name: string; points: number }>;
   /** Started by a segment (ends with it) or by the creator from the studio. */
   source: "segment" | "studio";
+}
+
+/** Points across every game in one loop of the run of show (all segments), reset once its podium is revealed. */
+export interface LoopRankingStatus {
+  /** Everyone who scored this loop, best first (top 10). */
+  rows: Array<{ name: string; points: number }>;
+  /** Games that finished this loop. */
+  games: number;
+  /** The top three are being revealed on stage right now. */
+  revealing: boolean;
 }
