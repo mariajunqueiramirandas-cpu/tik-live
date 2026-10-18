@@ -159,12 +159,42 @@ from [`alert`](#alert) and [`stats`](#stats) on its own.
 A chat minigame's scene ([ADR-0023](adr/0023-chat-minigames.md)), or
 `"scene": null` to return to the show's normal stage. Each game kind has its
 own scene (`gameSceneSchema` in `packages/shared/src/game.ts`): `trivia`,
-`poll`, `scramble`, `number`, `truefalse`, `math`, `riddle`, `fastest`, and
-`scoreboard` at the end of a game. The full scene is re-sent on every change
+`poll`, `scramble`, `number`, `truefalse`, `math`, `riddle`, `fastest`,
+`scoreboard` at the end of a game, and `podium` at the end of a loop of the
+run of show ([ADR-0028](adr/0028-up-next-likes-and-loop-ranking.md)): the
+top three of the loop's ranking, with `places` (first place first) null
+until each is revealed and `suspense` naming the place the drumroll is
+building up to. The full scene is re-sent on every change
 (live counts at most four times a second), so the stage updates in place.
 `remainingMs` and `durationMs` are relative to when the message arrives;
 answers are never in the scene before `phase` is `reveal`. A stage that
 connects mid-game gets the current scene right after `hello`.
+
+#### `schedule`
+
+```json
+{ "v": 1, "t": "schedule", "items": [{ "kind": "game", "title": "Quiz: futebol", "inMs": 154000 }, { "kind": "segment", "title": "Papo da madrugada", "inMs": 600000 }] }
+```
+
+What's coming up on the show, soonest first, for the stage's "A seguir"
+panel ([ADR-0028](adr/0028-up-next-likes-and-loop-ranking.md)): up to four
+items, each a `segment`, a segment's `game`, or the loop's `podium`, with
+`inMs` relative to when the message arrives (the stage counts down on its
+own clock). Times are estimates: a segment waits for a game in progress and
+a quiet moment, so an overdue item has `inMs` 0 ("já já"). Sent when the
+list or a time changes, and right after `hello` to a stage that connects;
+an empty `items` hides the panel.
+
+#### `likers`
+
+```json
+{ "v": 1, "t": "likers", "windowMin": 15, "rows": [{ "name": "mari.souza", "likes": 1834 }, { "name": "thiago_k", "likes": 960 }] }
+```
+
+The viewers who sent the most likes in the last `windowMin` minutes, most
+first (up to five; the stage shows three). Likes older than the window no
+longer count, so the board changes as they expire. Sent at most once a
+second, and right after `hello`; empty `rows` hides the panel.
 
 #### `music`
 
@@ -272,7 +302,10 @@ buffer over 1 MB); the next patch carries the current values anyway.
 The whole `RuntimeSnapshot`: status and its detail, pause, standby (waiting
 for the TikTok account to go live), react-only mode (budget reached or
 nobody watching), the current segment and the list to jump to, audience
-stats, what the host is saying, the queue of things it may react to, counts
+stats, what's up next (`upNext`, with seconds to go), the top likers of the
+last 15 minutes (`likers`), the loop's minigame ranking (`ranking`: rows,
+games played this loop, and whether its podium is being revealed), what the
+host is saying, the queue of things it may react to, counts
 of filtered events by reason, and health (event source, connected stages by
 role, engine telemetry, models in use, how much of the host's recent input
 came from the prompt cache (`health.brain.context`, null until the first
@@ -397,7 +430,9 @@ Its state shows up in the snapshot's `game` field.
 
 ##### `game_stop`
 
-End the running game now; the stage returns to the normal show.
+End the running game now; the stage returns to the normal show. While the
+loop's podium is being revealed, this ends the podium instead (and the
+ranking starts over).
 
 ##### `music_play`
 

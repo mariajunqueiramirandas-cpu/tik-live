@@ -280,9 +280,62 @@
   .segments,
   .queue,
   .games,
-  .music {
+  .music,
+  .upNext,
+  .likers,
+  .ranking {
     display: grid;
     gap: var(--s-2);
+  }
+  .ranking {
+    padding-top: var(--s-2);
+    border-top: 1px solid var(--hairline);
+  }
+  .ranking h3 {
+    font-size: var(--t-12);
+    font-family: var(--font-ui);
+    font-weight: 700;
+  }
+  .ranking h3,
+  .likers h2 {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ranking h3 svg,
+  .likers h2 svg {
+    width: 1em;
+    height: 1em;
+    color: var(--haze);
+  }
+  .upNextList {
+    list-style: none;
+    display: grid;
+    gap: 4px;
+    font-size: var(--t-12);
+  }
+  .upNextList li {
+    display: grid;
+    grid-template-columns: 4.6em minmax(0, 1fr) auto;
+    gap: var(--s-2);
+    align-items: baseline;
+  }
+  .upNextKind {
+    color: var(--mist);
+    font-weight: 700;
+  }
+  .upNextTitle {
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .upNextTime {
+    color: var(--haze);
+    font-variant-numeric: tabular-nums;
+  }
+  .upNextPodium .upNextTitle {
+    color: var(--glow);
   }
   .segmentList {
     display: grid;

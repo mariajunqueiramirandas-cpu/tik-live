@@ -57,7 +57,12 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   true or false, quick math, riddles and fastest finger. Viewers answer in
   chat, the game keeps score, and each game has its own scene on stage
   ([ADR-0023](docs/adr/0023-chat-minigames.md)). Run them from a segment or
-  start one from the studio.
+  start one from the studio. Every game's points add up over a loop of the
+  run of show, and when the last segment ends the top three are revealed on
+  a podium, one place at a time, before the ranking starts over.
+- **Up next and top likers**: the stage shows what's coming (the next game,
+  segment or podium) with a countdown, and who sent the most likes in the
+  last 15 minutes ([ADR-0028](docs/adr/0028-up-next-likes-and-loop-ranking.md)).
 - **Reactions and music**: confetti, fireworks, hearts and character moves
   the host can cue, gift effects that scale with the gift, sound effects, and
   short original music the host writes as a score and the stage synthesizes

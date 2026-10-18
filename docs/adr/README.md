@@ -33,6 +33,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0025](0025-host-context-and-memory.md) | What the host knows each turn | Proposed (amended by 0026) |
 | [0026](0026-turn-engine-and-context-cache.md) | A turn engine over one cached conversation, on Claude Haiku 5.5 | Proposed |
 | [0027](0027-brazilian-portuguese-product.md) | The product is in Brazilian Portuguese | Accepted |
+| [0028](0028-up-next-likes-and-loop-ranking.md) | Up next, a 15-minute like ranking, and a loop ranking with a podium | Proposed |
 
 ## Evidence used
 
