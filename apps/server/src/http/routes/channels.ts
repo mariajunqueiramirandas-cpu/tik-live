@@ -111,7 +111,13 @@ export function channelRoutes(deps: AppDeps) {
       if (input.tiktokUsername !== undefined) patch.tiktokUsername = input.tiktokUsername;
       if (input.source !== undefined) patch.source = input.source;
       if (input.persona !== undefined) patch.persona = input.persona;
-      if (input.voice !== undefined) patch.voice = input.voice;
+      if (input.voice !== undefined) {
+        // Fish voices are a list the operator vouches for (ADR-0028); any other id is refused.
+        if (input.voice.provider === "fish" && input.voice.voiceId && !deps.voices.hasFishVoice(input.voice.voiceId)) {
+          return problem(c, 400, "voice_not_found", "Essa voz não está disponível. Escolha uma da lista.");
+        }
+        patch.voice = input.voice;
+      }
       if (input.safety !== undefined) patch.safety = input.safety;
       const source = patch.source ?? current.source;
       const handle = patch.tiktokUsername !== undefined ? patch.tiktokUsername : current.tiktokUsername;

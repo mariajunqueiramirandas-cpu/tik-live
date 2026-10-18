@@ -1,6 +1,8 @@
 import type { VoiceSettings } from "@tik-live/shared";
 import type { Logger } from "../log";
+import { fishInput, fishLimiter, speakFish } from "../runtime/voice/fish";
 import { speakPocket, type AudioClip } from "../runtime/voice/tts";
+import type { FishVoice } from "./fish-voices";
 
 export type VoiceProvider = Exclude<VoiceSettings["provider"], "none">;
 
@@ -18,13 +20,22 @@ export interface PocketCatalogOptions {
   secret: string;
 }
 
+export interface FishCatalogOptions {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  voices: FishVoice[];
+}
+
 const CACHE_MS = 60 * 60 * 1000;
 const SAMPLE_TEXT = "Oi, pessoal! Bem-vindos à live. Hoje eu comando o show, então manda um oi no chat!";
 
 /**
- * The voices creators can pick from: the ElevenLabs voices available to the
- * platform's account and the voices the Pocket TTS sidecar ships, fetched live
- * (so voice ids never go stale) and cached.
+ * The voices creators can pick from: the server's Fish Audio voices (a list
+ * in configuration, ADR-0028), the ElevenLabs voices available to the
+ * platform's account and the voices the Pocket TTS sidecar ships, the last
+ * two fetched live (so voice ids never go stale) and cached. Fish comes first:
+ * it is the default for new hosts.
  */
 export class VoiceCatalog {
   private cache: { at: number; voices: VoiceOption[] } | null = null;
@@ -38,6 +49,7 @@ export class VoiceCatalog {
     private readonly log: Logger,
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly pocket: PocketCatalogOptions | null = null,
+    private readonly fish: FishCatalogOptions | null = null,
   ) {}
 
   get enabled(): boolean {
@@ -45,25 +57,59 @@ export class VoiceCatalog {
   }
 
   get providers(): VoiceProvider[] {
-    return [...(this.apiKey ? (["elevenlabs"] as const) : []), ...(this.pocket ? (["pocket"] as const) : [])];
+    return [
+      ...(this.fish ? (["fish"] as const) : []),
+      ...(this.apiKey ? (["elevenlabs"] as const) : []),
+      ...(this.pocket ? (["pocket"] as const) : []),
+    ];
   }
 
   async list(): Promise<VoiceOption[]> {
     const [eleven, pocket] = await Promise.all([this.listElevenLabs(), this.listPocket()]);
-    return [...eleven, ...pocket];
+    return [...this.listFish(), ...eleven, ...pocket];
+  }
+
+  /** Whether hosts on this server may use a Fish voice: only the configured ones. */
+  hasFishVoice(id: string): boolean {
+    return this.fish?.voices.some((voice) => voice.id === id) ?? false;
+  }
+
+  /** A short spoken sample of a Fish voice, synthesized once per voice; null for a voice not on the list. */
+  async fishSample(voice: string): Promise<AudioClip | null> {
+    const fish = this.fish;
+    if (!fish || !this.hasFishVoice(voice)) return null;
+    return this.sample(`fish:${voice}`, () =>
+      fishLimiter.run(() => speakFish({ ...fish, voice, fetch: this.fetchImpl }, fishInput(SAMPLE_TEXT, "happy") as string)),
+    );
   }
 
   /** A short spoken sample of a Pocket voice, synthesized once per voice; null for an unknown voice. */
   async pocketSample(voice: string): Promise<AudioClip | null> {
     const pocket = this.pocket;
     if (!pocket || !(await this.listPocket()).some((v) => v.id === voice)) return null;
-    let sample = this.samples.get(voice);
+    return this.sample(`pocket:${voice}`, () => speakPocket({ ...pocket, voice, fetch: this.fetchImpl }, SAMPLE_TEXT));
+  }
+
+  /** Synthesizes a sample once; a failed one is tried again next time. */
+  private sample(key: string, speak: () => Promise<AudioClip>): Promise<AudioClip> {
+    let sample = this.samples.get(key);
     if (!sample) {
-      sample = speakPocket({ ...pocket, voice, fetch: this.fetchImpl }, SAMPLE_TEXT);
-      this.samples.set(voice, sample);
-      sample.catch(() => this.samples.delete(voice));
+      sample = speak();
+      this.samples.set(key, sample);
+      sample.catch(() => this.samples.delete(key));
     }
     return sample;
+  }
+
+  private listFish(): VoiceOption[] {
+    return (this.fish?.voices ?? []).map((voice) => ({
+      id: voice.id,
+      provider: "fish" as const,
+      name: voice.name,
+      previewUrl: `/api/voices/fish/${voice.id}/sample`,
+      description: voice.description,
+      tags: voice.tags,
+    }));
   }
 
   private listElevenLabs(): Promise<VoiceOption[]> {

@@ -46,6 +46,7 @@ export function voiceRoutes(deps: AppDeps) {
         canChoose: plan.limits.voices === "curated",
         defaultVoiceId: deps.config.DEFAULT_VOICE_ID ?? null,
         defaultPocketVoiceId: deps.config.pocketEnabled ? deps.config.POCKET_TTS_VOICE : null,
+        defaultFishVoiceId: deps.config.fishEnabled ? deps.config.FISH_TTS_VOICE : null,
         voices: await deps.voices.list(),
       });
     })
@@ -58,6 +59,16 @@ export function voiceRoutes(deps: AppDeps) {
       });
       if (sample === null) return problem(c, 404, "voice_not_found", "Essa voz não existe.");
       if (!sample) return problem(c, 503, "voice_unavailable", "O servidor de voz está ocupado. Tente de novo em instantes.");
+      return c.body(new Uint8Array(sample.data), 200, { "content-type": sample.mime, "cache-control": "private, max-age=3600" });
+    })
+    .get("/fish/:voice/sample", async (c) => {
+      const voice = c.req.param("voice");
+      if (!deps.voices.hasFishVoice(voice)) return problem(c, 404, "voice_not_found", "Essa voz não existe.");
+      const sample = await deps.voices.fishSample(voice).catch((err: unknown) => {
+        deps.log.warn("voice sample failed", err);
+        return null;
+      });
+      if (!sample) return problem(c, 503, "voice_unavailable", "A voz não respondeu agora. Tente de novo em instantes.");
       return c.body(new Uint8Array(sample.data), 200, { "content-type": sample.mime, "cache-control": "private, max-age=3600" });
     });
 }

@@ -11,7 +11,7 @@ import type { IdentityProvider } from "../src/identity/types";
 import { configureLogging } from "../src/log";
 import { ScriptedHost } from "../src/runtime/brain/host";
 import type { EventListener, EventSource } from "../src/runtime/sources/types";
-import { NoTts } from "../src/runtime/voice/tts";
+import { NoTts, type TtsProvider } from "../src/runtime/voice/tts";
 
 const MIGRATIONS = path.resolve(import.meta.dir, "../drizzle");
 configureLogging({ level: (process.env.TEST_LOG_LEVEL as "debug" | undefined) ?? "error" });
@@ -51,6 +51,8 @@ export async function startTestServer(
     identity?: IdentityProvider;
     database?: Awaited<ReturnType<typeof openDatabase>>;
     broadcaster?: BroadcasterClient;
+    /** Every host's voice; captions only by default. */
+    tts?: () => TtsProvider;
   } = {},
 ): Promise<TestServer> {
   const config = testConfig({ PUBLIC_URL: "http://localhost:9999", ...options.env });
@@ -69,7 +71,7 @@ export async function startTestServer(
         return source;
       },
       makeHost: (channel) => new ScriptedHost(channel.persona),
-      makeTts: () => new NoTts(),
+      makeTts: options.tts ?? (() => new NoTts()),
     },
   });
   const app = createApp(deps);

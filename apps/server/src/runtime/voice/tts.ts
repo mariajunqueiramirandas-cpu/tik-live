@@ -5,6 +5,29 @@ export interface AudioClip {
   data: Buffer;
   /** Best-effort duration estimate, used as a fallback when no stage reports playback. */
   durationMs: number;
+  /** Estimated spend for this clip (USD), from providers billed per request; counts toward the daily cap. */
+  costUsd?: number;
+}
+
+/** Why a voice failed: "account" needs the operator (key, credits, spend limit); the rest pass. */
+export type TtsFailure = "account" | "busy" | "unavailable" | "rejected";
+
+/** A synthesis failure with a reason. The line still airs, as captions. */
+export class TtsError extends Error {
+  readonly retryable: boolean;
+  /** From a Retry-After header, when the provider sent one. */
+  readonly retryAfterMs: number | undefined;
+
+  constructor(
+    message: string,
+    readonly reason: TtsFailure,
+    options: { retryable?: boolean; retryAfterMs?: number } = {},
+  ) {
+    super(message);
+    this.name = "TtsError";
+    this.retryable = options.retryable ?? false;
+    this.retryAfterMs = options.retryAfterMs;
+  }
 }
 
 export interface TtsProvider {
