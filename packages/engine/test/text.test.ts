@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { syllableCount, syllableEnvelope } from "../src/audio/envelope";
-import { formatCount, formatCountdown, goalFraction, goalProgress, nextBoard, windowLabel } from "../src/text/hud";
+import { formatCount, formatCountdown, giftCameIn, goalFraction, goalProgress, nextBoard, twinkle, windowLabel } from "../src/text/hud";
 import { layoutCaption, wordAtProgress } from "../src/text/layout";
 
 // Monospace stand-in: every character is 0.5em wide.
@@ -102,6 +102,23 @@ describe("heads-up panels", () => {
     expect(nextBoard("likes", likesOnly)).toBe("likes");
     expect(nextBoard("gifts", likesOnly)).toBe("likes");
     expect(nextBoard(null, () => false)).toBeNull();
+  });
+
+  it("lets the top gifters cut in when a gift comes in, not when old gifts age out", () => {
+    const rows = [
+      { name: "duda", value: 25_300 },
+      { name: "lu", value: 1_200 },
+    ];
+    expect(giftCameIn([], rows)).toBe(true);
+    expect(giftCameIn(rows, rows.map((row) => ({ ...row })))).toBe(false);
+    expect(giftCameIn(rows, [rows[0]!, { name: "lu", value: 1_201 }])).toBe(true);
+    expect(giftCameIn(rows, [rows[0]!])).toBe(false); // lu's gifts aged out of the hour
+  });
+
+  it("twinkles the gifters' card as the light sweep passes, and dims it at rest", () => {
+    expect(twinkle(null, 0.5)).toBe(0.35);
+    expect(twinkle(0.5, 0.5)).toBe(1);
+    expect(twinkle(0.9, 0.2)).toBe(0.35);
   });
 
   it("fills a goal's bar and writes its progress in Portuguese", () => {

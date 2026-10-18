@@ -84,6 +84,13 @@ test("up next and the top likers show under the badge, and leave when emptied", 
     (window as any).__lab.frame(4);
   });
   expect(await lit(), "text in the panels").toBeGreaterThan(before + 8);
+  // The gifts came in last, so the gold top gifters' card is the one up.
+  let gold = 0;
+  for (let y = 420; y <= 500; y += 6) for (let x = 84; x <= 400; x += 10) {
+    const [r, g, b] = await probe(page, x, y);
+    if (r > 180 && g > 140 && b < 140) gold++;
+  }
+  expect(gold, "the gold top gifters' card").toBeGreaterThan(4);
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
   // A vote takes the ranking card's place, then gives it back.
   await page.evaluate(() => {

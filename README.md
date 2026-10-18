@@ -66,6 +66,8 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   segment or podium) with a countdown, and a card that takes turns between
   who sent the most likes in the last 15 minutes and the most diamonds in
   the last hour ([ADR-0028](docs/adr/0028-up-next-likes-and-loop-ranking.md)).
+  The top gifters get the loud version: gold, a crowned first place, a glow
+  around the card, and they cut in whenever a gift comes in.
 - **Gift combos, power-ups and a vote**: gifts in a row build a combo on
   stage; gifts during a game round unlock power-ups for everyone (more time,
   a hint, double points); and chat votes which minigame the last segment

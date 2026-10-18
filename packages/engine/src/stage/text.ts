@@ -45,6 +45,7 @@ export class TextLayer implements Layer {
     ctx.drawSprite(this.chrome.title);
     ctx.drawSprite(this.upNext.pill);
     ctx.drawSprite(this.upNext.timer);
+    ctx.drawSprite(this.card.aura);
     ctx.drawSprite(this.card.sprite);
     ctx.drawSprite(this.goals.sprite);
     // The disclosure badge is a legal requirement: it's drawn last but one and never hidden.
