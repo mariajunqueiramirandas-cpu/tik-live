@@ -5,6 +5,7 @@ import {
   stageClientMessageSchema,
   type Effect,
   type GameScene,
+  type GoalView,
   type LiveEvent,
   type MusicTrack,
   type Look,
@@ -88,6 +89,12 @@ export class StageHub implements SpeechOutput, StageNotifier {
   private readonly lastLeaders = new Map<LeaderBoard, { rows: LeaderRow[]; windowMin: number }>();
   private lastVote: VoteView | null = null;
   private lastSupport: SupportCard | null = null;
+  private lastHook: string | null = null;
+  /** The goals as last sent, and as last given (sent with the next tick of the coalescer). */
+  private sentGoals: GoalView[] = [];
+  private lastGoals: GoalView[] = [];
+  private goalsSentAt = 0;
+  private goalsTimer: ReturnType<typeof setTimeout> | undefined;
   private statsSentAt = 0;
   private statsTimer: ReturnType<typeof setTimeout> | undefined;
   private telemetry: EngineTelemetry | null = null;
@@ -117,6 +124,8 @@ export class StageHub implements SpeechOutput, StageNotifier {
     for (const [board, last] of this.lastLeaders) if (last.rows.length) this.sendTo(peer, { t: "leaders", board, ...last });
     if (this.lastVote) this.sendTo(peer, { t: "vote", vote: this.lastVote });
     if (this.lastSupport) this.sendTo(peer, { t: "support", card: this.lastSupport });
+    if (this.lastHook) this.sendTo(peer, { t: "hook", text: this.lastHook });
+    if (this.lastGoals.length) this.sendTo(peer, { t: "goals", goals: this.lastGoals });
     // A piece that's nearly over isn't worth restarting from the top.
     if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
     this.options.log?.debug(`${role} stage connected`);
@@ -209,6 +218,8 @@ export class StageHub implements SpeechOutput, StageNotifier {
   closeAll(code = 1001, reason = "channel removed"): void {
     clearTimeout(this.statsTimer);
     this.statsTimer = undefined;
+    clearTimeout(this.goalsTimer);
+    this.goalsTimer = undefined;
     for (const { peer } of this.peers.values()) peer.close(code, reason);
     this.peers.clear();
   }
@@ -317,6 +328,15 @@ export class StageHub implements SpeechOutput, StageNotifier {
     this.broadcast({ t: "vote", vote });
   }
 
+  hook(text: string | null): void {
+    this.lastHook = text;
+    this.broadcast({ t: "hook", text });
+  }
+
+  fanLevel(name: string, level: number): void {
+    this.broadcast({ t: "alert", kind: "level", name, level });
+  }
+
   support(card: SupportCard | null): void {
     this.lastSupport = card;
     this.broadcast({ t: "support", card });
@@ -353,6 +373,31 @@ export class StageHub implements SpeechOutput, StageNotifier {
     const wait = this.statsSentAt + STATS_INTERVAL_MS - this.now();
     if (wait <= 0) send();
     else this.statsTimer = setTimeout(send, wait);
+  }
+
+  /**
+   * Coalesced like stats, so a like storm moves the bars a few times a
+   * second. A goal reached, shown or hidden goes out at once: the stage
+   * celebrates it in step with the confetti.
+   */
+  goals(goals: GoalView[]): void {
+    this.lastGoals = goals;
+    const sent = this.sentGoals;
+    const same = goals.length === sent.length && goals.every((goal, i) => goal.value === sent[i]?.value && goal.target === sent[i]?.target && goal.level === sent[i]?.level);
+    if (same) return;
+    const urgent = goals.length !== sent.length || goals.some((goal, i) => goal.level !== sent[i]?.level || goal.target !== sent[i]?.target);
+    const send = () => {
+      clearTimeout(this.goalsTimer);
+      this.goalsTimer = undefined;
+      this.goalsSentAt = this.now();
+      this.sentGoals = this.lastGoals;
+      this.broadcast({ t: "goals", goals: this.lastGoals });
+    };
+    if (urgent) return send();
+    if (this.goalsTimer) return;
+    const wait = this.goalsSentAt + STATS_INTERVAL_MS - this.now();
+    if (wait <= 0) send();
+    else this.goalsTimer = setTimeout(send, wait);
   }
 
   // ---- internals ----------------------------------------------------------

@@ -81,3 +81,28 @@ It plugs in at every way a name reaches the voice:
   never saying the prank on air.
 - The host says a little more crude slang never ("puto", "porra"), even
   when a viewer used it harmlessly.
+
+## Update: fewer false alarms
+
+In use, the chat check dropped ordinary messages. Anything after a
+greeting, a thank-you or a family word up to the end of the clause counted
+as a name, so "oi gente essa live é foda demais" and "obrigado pela live
+foda" were dropped as `rude name` and the host never saw them. A
+Capitalized Sentence With Slang was dropped the same way.
+
+- Only "say" and greeting cues (salve, oi, manda, fala, valeu, obrigado...)
+  start a name. Family words (amigo, mãe, primo...) are words between the
+  cue and the name.
+- **A plain rude word counts only as the name itself.** That means the
+  first three words after the cue, skipping "um salve pro meu amigo", and
+  none at all when a sentence follows instead ("gente", "essa", "pela",
+  "sério", "é"...). "manda um salve pro Kuzaun" is still dropped; "oi gente,
+  essa live é foda" isn't. Puns are still checked across the whole clause
+  and across Capitalized Runs, since a pun is never an accident.
+- Common diminutives and augmentatives are rude words too (bucetinha,
+  viadão, corninho...), one by one: "bichinho", "cacetinho" (a bread roll)
+  and "porrinha" (a bar game) are innocent. Digits tacked on the end of a
+  handle are a number, not leetspeak ("bucetinha123").
+- **The moderator** no longer marks a name unsafe just because it's unsure.
+  It needs a pun it can point to. Unusual, foreign and made-up names, gamer
+  tags and names that only share a syllable with a rude word are safe.

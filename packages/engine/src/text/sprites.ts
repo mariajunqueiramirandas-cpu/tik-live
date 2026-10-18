@@ -236,7 +236,7 @@ export class Caption {
 
 // ---------------------------------------------------------------------------
 
-export type AlertKind = "gift" | "follow" | "share";
+export type AlertKind = "gift" | "follow" | "share" | "level";
 
 export class Alerts {
   private readonly items: Array<{ sprite: TextSprite; bornAt: number; slot: Spring; kind: AlertKind; parts: [string, string, string] }> = [];
@@ -306,7 +306,7 @@ export class Alerts {
     const w2 = measureStrong(parts[2]);
     const pad = 16;
     const width = w0 + w1 + w2 + pad * 2;
-    const accent = kind === "gift" ? GOLD : this.glow;
+    const accent = kind === "gift" ? GOLD : kind === "level" ? "#FFB84D" : this.glow;
     sprite.draw(width, 32 * 1.2 + pad * 2, scale, (ctx) => {
       ctx.textBaseline = "alphabetic";
       ctx.shadowColor = "rgba(5,2,18,0.6)";

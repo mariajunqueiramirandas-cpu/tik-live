@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { GameScene, LiveEvent, Sound } from "@tik-live/shared";
 import { matchesAnswer, normalize, readNumber, readOption, readTrueFalse } from "../../src/runtime/games/answers";
-import { BANK, guessLanguage, makeMath, scrambleLetters, type RoundContent } from "../../src/runtime/games/content";
+import { BANK, guessLanguage, makeMath, sameIdea, scrambleLetters, type RoundContent } from "../../src/runtime/games/content";
 import { GameMaster } from "../../src/runtime/games/master";
 import type { GameWriter } from "../../src/runtime/games/writer";
 import { fakeClock, viewer } from "./helpers";
@@ -74,6 +74,17 @@ describe("reading answers", () => {
     }
     expect(scrambleLetters("PLANET", seeded(1))).not.toBe("PLANET");
     expect([...scrambleLetters("PLANET", seeded(1))].sort().join("")).toBe("AELNPT");
+  });
+
+  it("tells a reworded repeat from a new question", () => {
+    const trivia = (question: string, answer: string): RoundContent => ({ kind: "trivia", question, options: [answer, "x", "y", "z"], correct: 0 });
+    expect(sameIdea(trivia("Qual é o maior planeta do sistema solar?", "Júpiter"), trivia("Qual o maior planeta do Sistema Solar?", "Jupiter"))).toBe(true);
+    expect(sameIdea(trivia("Qual planeta é o maior do nosso sistema?", "Júpiter"), trivia("Qual é o maior planeta?", "Júpiter"))).toBe(true);
+    expect(sameIdea(trivia("Qual é o maior planeta?", "Júpiter"), trivia("Qual é o maior oceano?", "Pacífico"))).toBe(false);
+    expect(sameIdea(trivia("Qual planeta tem a Grande Mancha Vermelha?", "Júpiter"), trivia("Qual é o maior oceano?", "Pacífico"))).toBe(false);
+    expect(sameIdea({ kind: "poll", question: "Pizza ou hambúrguer?", options: ["Pizza", "Hambúrguer"] }, { kind: "poll", question: "Time hambúrguer ou time pizza?", options: ["Hambúrguer", "Pizza"] })).toBe(true);
+    expect(sameIdea({ kind: "riddle", riddle: "O que tem dentes mas não morde?", answers: ["pente"], hint: "" }, { kind: "riddle", riddle: "Tenho dentes e nunca mordo.", answers: ["Pente"], hint: "" })).toBe(true);
+    expect(sameIdea({ kind: "scramble", word: "BANANA", hint: "a" }, { kind: "fastest", word: "BANANA" })).toBe(false);
   });
 
   it("ships bank rounds that fit the stage", () => {
@@ -245,6 +256,40 @@ describe("GameMaster", () => {
     expect(seen[0]).toContain("Safe question?");
     expect(seen.join(" ")).not.toContain("Unsafe");
     expect(new Set(seen).size).toBe(3); // two from the bank, no repeats
+  });
+
+  it("asks for themes, tells the writer this kind's past rounds, and drops reworded repeats", async () => {
+    const trivia = (question: string, answer: string): RoundContent => ({ kind: "trivia", question, options: [answer, "Saturn", "Mars", "Venus"], correct: 0 });
+    const batches: RoundContent[][] = [
+      [trivia("Which is the largest planet in the solar system?", "Jupiter")],
+      // The same question in new words, a twin within the batch, and one new question.
+      [trivia("Which planet is the largest in the solar system?", "Jupiter"), trivia("What is the hottest planet?", "Venus"), trivia("Which planet is the hottest?", "Venus")],
+    ];
+    const requests: Array<{ avoid: string[]; themes?: string[] }> = [];
+    const writer: GameWriter = {
+      name: "fake",
+      write: async (request) => {
+        requests.push(request);
+        return request.kind === "trivia" ? (batches.shift() ?? []) : [];
+      },
+    };
+    const { clock, games, flush } = setup({ writer });
+    const play = async (kind: "trivia" | "truefalse") => {
+      games.start({ kind, rounds: 1 }, "studio");
+      await flush();
+      games.tick(true);
+      const prompt = games.status()!.prompt;
+      games.stop();
+      clock.advance(1_000);
+      return prompt;
+    };
+    await play("trivia");
+    await play("truefalse");
+    const second = await play("trivia");
+    expect(requests[0]?.themes).toHaveLength(3);
+    expect(requests[0]?.avoid).toEqual([]);
+    expect(requests[2]?.avoid).toEqual(["Which is the largest planet in the solar system? → Jupiter"]); // no true/false rounds in a trivia list
+    expect(second).toContain("What is the hottest planet?");
   });
 
   it("falls back to the bank when writing fails, and replaces risky names", async () => {

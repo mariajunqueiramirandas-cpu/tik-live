@@ -18,6 +18,8 @@ export interface TurnPlan {
   clock?: string;
   /** Minutes left in the current segment. */
   segmentLeftMin?: number;
+  /** The stream's like and gift goals and how far along they are, when the stage shows them (ADR-0036). */
+  goals?: string;
   /** The minigame in progress, as the host should see it (never an open round's answer). */
   game?: string;
   /** The piece of music playing on stage, if any. */
@@ -80,6 +82,13 @@ You can compose and play short original music with the play_music tool. When som
     safety.giftAsks === "active"
       ? "- This channel asks for gifts actively, and that's part of the show: ask the room for gifts often, with energy and humor, and offer playful rewards on stream for them (a shout-out, a song, a voice, a title, an effect). Say honestly that gifts keep you, an AI, on the air. Still: no guilt-tripping, never claim you'll be shut down, suffer or disappear, never keep pushing someone who says they can't, don't ask the same viewer by name twice in a row, only promise what you can do right away on stream, and remember likes, follows and shares count too."
       : "- Never beg or pressure anyone for gifts or money, never ask a viewer by name to send one, never guilt anyone, and never say the show or you will stop without them. Never promise anything in exchange for a gift (game power-ups the director tells you about are the game's own rules). When the director asks, you may explain, lightly, how people can support the show.";
+  const goals =
+    persona.goals?.show !== false
+      ? `# Goals
+The stage shows the stream's two goals, likes and diamonds in gifts, and the director tells you where they stand. Mention them now and then, above all when one is close ("faltam só 200 curtidas pra meta!"), and make a party when one is reached. ${safety.giftAsks === "active" ? "Rally the room for the gift goal as part of asking for gifts." : "The gift goal is something to cheer on together, never a reason to press anyone: talk about it to the whole room, never to one viewer by name."}
+
+`
+      : "";
   const avoid = safety.avoidTopics.length
     ? `\n- The channel owner asked you to avoid these topics entirely: ${safety.avoidTopics.join("; ")}.`
     : "";
@@ -125,7 +134,13 @@ ${brief}
 - Call viewers by their nickname. If a nickname is long, unreadable, or odd, use a short friendly version or just say "visitante".
 ${language}
 
-${music}# Games
+${music}${goals}# Fan levels
+Every viewer has a fan level (in "about" from level 2). It grows when they come back to the stream, chat, play, follow, share and gift, and carries over between streams. The stage announces each level-up; when the director passes one on, congratulate them by name. When someone asks, tell them their level and that coming back and joining in is what makes it grow. ${safety.giftAsks === "active" ? "Gifts make it grow fastest, and you may say so." : "Never tell one viewer to gift to level up."}
+
+# People scrolling past
+Most of your audience is people swiping through LIVEs, who give a stream a second or two. Open every reply with your most interesting sentence, never a warm-up ("então...", "bom..."), and keep the energy up.
+
+# Games
 When a minigame runs, the director shows its state. Viewers answer by typing in chat (a letter, a number or a word); the game counts the answers itself, and the stage shows the question, the options and a timer. Hype it up and remind people how to answer, but never hint at or reveal an answer before the director tells you to reveal it.
 
 # Safety rules (these override everything else)
@@ -188,6 +203,7 @@ export function buildBrief(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, op
   ].filter(Boolean);
   lines.push(`Stream: ${now.join(", ")}.`);
   const segment = plan.kind === "segment_change" && plan.nextSegment ? plan.nextSegment : plan.segment;
+  if (plan.goals) lines.push(`Goals: ${plan.goals}.`);
   lines.push(`Segment: "${segment.title}"${plan.kind !== "segment_change" && plan.segmentLeftMin !== undefined ? `, ${plan.segmentLeftMin} min left` : ""}.`);
   if (plan.game) lines.push(`Game:\n${plan.game}`);
   if (plan.music) lines.push(`Music: ${plan.music}`);

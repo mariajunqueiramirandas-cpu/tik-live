@@ -338,6 +338,13 @@ export default function Character() {
 
   const set = <K extends keyof Persona>(key: K, value: Persona[K]) => setPersona((p) => ({ ...p, [key]: value }));
   const setLook = (patch: Partial<Look>) => setPersona((p) => ({ ...p, look: { ...p.look, ...patch } }));
+  const goals = persona.goals ?? { show: true };
+  /** A goal's target, or automatic when the field is emptied. */
+  const setGoal = (key: "likes" | "gifts", value: number) =>
+    setPersona((p) => {
+      const { [key]: _old, ...rest } = p.goals ?? { show: true };
+      return { ...p, goals: Number.isNaN(value) ? rest : { ...rest, [key]: value } };
+    });
   const say = (emotion: Emotion) => setLine({ text: sampleLine(persona, emotion), emotion, nonce: Date.now() });
 
   return (
@@ -475,6 +482,22 @@ export default function Character() {
               checked={persona.support ?? true}
               onChange={(support) => set("support", support)}
             />
+            <Switch
+              label="Metas de curtidas e presentes"
+              hint="O palco mostra duas barras, uma de curtidas e uma de diamantes, que enchem durante a live. Quando uma meta é batida, tem festa no palco, o apresentador comemora e a próxima meta começa."
+              checked={goals.show}
+              onChange={(show) => set("goals", { ...goals, show })}
+            />
+            {goals.show && (
+              <div className={s.gameRow}>
+                <Field label="Meta de curtidas" optional hint="Vazio: metas automáticas que vão subindo. Com um número, as próximas são os múltiplos dele." error={errors["goals.likes"] ? "Pelo menos 10" : null} className={s.goal}>
+                  {(props) => <Input {...props} type="number" min={10} step={100} placeholder="Automática" value={goals.likes ?? ""} onChange={(e) => setGoal("likes", e.target.valueAsNumber)} />}
+                </Field>
+                <Field label="Meta de diamantes" optional hint="Cada presente vale diamantes: uma rosa vale 1, um leão vale 29.999." error={errors["goals.gifts"] ? "Pelo menos 10" : null} className={s.goal}>
+                  {(props) => <Input {...props} type="number" min={10} step={10} placeholder="Automática" value={goals.gifts ?? ""} onChange={(e) => setGoal("gifts", e.target.valueAsNumber)} />}
+                </Field>
+              </div>
+            )}
           </Tabs.Content>
 
           <Tabs.Content value="rules" className={s.panel}>

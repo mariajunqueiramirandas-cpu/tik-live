@@ -66,6 +66,8 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   segment or podium) with a countdown, and a card that takes turns between
   who sent the most likes in the last 15 minutes and the most diamonds in
   the last hour ([ADR-0028](docs/adr/0028-up-next-likes-and-loop-ranking.md)).
+  The top gifters get the loud version: gold, a crowned first place, a glow
+  around the card, and they cut in whenever a gift comes in.
 - **Gift combos, power-ups and a vote**: gifts in a row build a combo on
   stage; gifts during a game round unlock power-ups for everyone (more time,
   a hint, double points); and chat votes which minigame the last segment
@@ -76,6 +78,16 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   it's an AI whose voice and brain cost money; each channel picks whether
   the host asks for gifts lightly or actively
   ([ADR-0032](docs/adr/0032-gifts-and-supporting-the-show.md)).
+- **Fan levels and calls to passers-by**: every viewer climbs fan levels by
+  coming back, chatting, following, sharing and gifting, across streams;
+  level-ups get an alert and a shout-out. Every few minutes, and after a
+  wave of arrivals, the host calls out to people scrolling past with a
+  concrete reason to stay, shown big on stage
+  ([ADR-0037](docs/adr/0037-fan-levels-and-passers-by.md)).
+- **Like and gift goals**: two bars on stage fill with the stream's likes
+  and diamonds; when one is reached there's a party on stage, the host
+  celebrates and the next goal starts. The creator sets the targets or lets
+  them climb on their own ([ADR-0036](docs/adr/0036-like-and-gift-goals.md)).
 - **Reactions and music**: confetti, fireworks, hearts and character moves
   the host can cue, gift effects that scale with the gift, sound effects, and
   short original music the host writes as a score and the stage synthesizes

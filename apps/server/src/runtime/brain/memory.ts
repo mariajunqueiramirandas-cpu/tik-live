@@ -1,6 +1,7 @@
 import { clip, type LiveEvent, type Viewer } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import { checkChatInput } from "../safety/rules";
+import { levelOf } from "./fans";
 
 export interface ViewerRecord {
   id: string;
@@ -110,6 +111,8 @@ export class ViewerMemory {
     if (!r) return "new viewer";
     const parts: string[] = [];
     parts.push(r.visits > 1 ? `returning viewer (${r.visits} streams)` : "first stream with us");
+    const level = levelOf(r);
+    if (level > 1) parts.push(`fan level ${level}`);
     if (r.diamonds > 0) {
       const top = Object.entries(r.gifts)
         .sort((a, b) => b[1] - a[1])

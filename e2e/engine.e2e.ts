@@ -84,6 +84,13 @@ test("up next and the top likers show under the badge, and leave when emptied", 
     (window as any).__lab.frame(4);
   });
   expect(await lit(), "text in the panels").toBeGreaterThan(before + 8);
+  // The gifts came in last, so the gold top gifters' card is the one up.
+  let gold = 0;
+  for (let y = 420; y <= 500; y += 6) for (let x = 84; x <= 400; x += 10) {
+    const [r, g, b] = await probe(page, x, y);
+    if (r > 180 && g > 140 && b < 140) gold++;
+  }
+  expect(gold, "the gold top gifters' card").toBeGreaterThan(4);
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
   // A vote takes the ranking card's place, then gives it back.
   await page.evaluate(() => {
@@ -103,6 +110,64 @@ test("up next and the top likers show under the badge, and leave when emptied", 
     (window as any).__lab.frame(8);
   });
   expect(await lit(), "panels faded out").toBeLessThanOrEqual(before + 2);
+});
+
+test("the goals show top right, turn gold when one is reached, and leave when hidden", async ({ page }) => {
+  // The goal panel's area: right of the title, above the alerts, clear of the orb.
+  const area = async (match: (rgba: Rgba) => boolean) => {
+    let n = 0;
+    for (let y = 214; y <= 340; y += 8) for (let x = 728; x <= 1004; x += 12) if (match(await probe(page, x, y))) n++;
+    return n;
+  };
+  const bright = (rgba: Rgba) => brightness(rgba) > 450;
+  const gold = ([r, g, b]: Rgba) => r > 180 && g > 140 && b < 120;
+  await page.evaluate(() => (window as any).__lab.frame(2));
+  const before = await area(bright);
+  await page.evaluate(() => {
+    (window as any).__lab.goals(true);
+    (window as any).__lab.frame(3);
+  });
+  expect(await area(bright), "goal text and bars").toBeGreaterThan(before + 8);
+  const goldBefore = await area(gold);
+  await page.evaluate(() => {
+    (window as any).__lab.reachGoal();
+    (window as any).__lab.frame(3.5);
+  });
+  expect(await area(gold), "the goal reached turns gold").toBeGreaterThan(goldBefore + 4);
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+  await page.evaluate(() => {
+    (window as any).__lab.goals(false);
+    (window as any).__lab.frame(6);
+  });
+  expect(await area(bright), "panel faded out").toBeLessThanOrEqual(before + 2);
+});
+
+test("the call to passers-by drops in under the character and comes down again", async ({ page }) => {
+  // Warm pink-to-orange pixels across the banner, above and below its white letters.
+  const pink = async () => {
+    let n = 0;
+    for (const y of [954, 998]) {
+      for (let x = 200; x <= 880; x += 20) {
+        const [r, , b] = await probe(page, x, y);
+        if (r > 200 && r - b > 50) n++;
+      }
+    }
+    return n;
+  };
+  await page.evaluate(() => (window as any).__lab.frame(2));
+  expect(await pink()).toBeLessThan(3);
+  await page.evaluate(() => {
+    (window as any).__lab.hook(true);
+    (window as any).__lab.levelUp("duda", 7);
+    (window as any).__lab.frame(3.5);
+  });
+  expect(await pink(), "the banner").toBeGreaterThan(15);
+  await page.evaluate(() => {
+    (window as any).__lab.hook(false);
+    (window as any).__lab.frame(5);
+  });
+  expect(await pink(), "taken down").toBeLessThan(3);
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
 });
 
 test("the stage recovers from a lost GPU context", async ({ page }) => {

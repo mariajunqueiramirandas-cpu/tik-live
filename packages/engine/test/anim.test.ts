@@ -96,6 +96,14 @@ describe("QualityGovernor", () => {
     expect(governor.level).toBe(0);
   });
 
+  it("climbs from high to ultra, which supersamples, once there's room", () => {
+    const governor = new QualityGovernor(1);
+    expect(governor.settings.renderScale).toBe(1);
+    feed(governor, 16.7, 3, 14, 0);
+    expect(governor.level).toBe(0);
+    expect(governor.settings.renderScale).toBe(1.5);
+  });
+
   it("treats a steady 30 fps (OBS) as normal, not as dropping", () => {
     const governor = new QualityGovernor();
     feed(governor, 33.3, 5, 10, 0);
@@ -104,9 +112,9 @@ describe("QualityGovernor", () => {
   });
 
   it("never changes when locked", () => {
-    const governor = new QualityGovernor(2, true);
+    const governor = new QualityGovernor(3, true);
     feed(governor, 50, 45, 10, 0);
-    expect(governor.level).toBe(2);
+    expect(governor.level).toBe(3);
     expect(governor.settings.renderScale).toBe(0.7);
   });
 

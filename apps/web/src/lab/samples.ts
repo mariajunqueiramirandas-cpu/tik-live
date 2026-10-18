@@ -158,7 +158,14 @@ export const SCENES: Record<string, GameScene> = {
 };
 
 /** The heads-up panels: what's up next, and the top likers of the last 15 minutes. */
-export const HUD: { schedule: StageServerPayload; likes: StageServerPayload; gifts: StageServerPayload; support: StageServerPayload } = {
+export const HUD: { schedule: StageServerPayload; likes: StageServerPayload; gifts: StageServerPayload; support: StageServerPayload; goals: StageServerPayload } = {
+  goals: {
+    t: "goals",
+    goals: [
+      { kind: "likes", value: 3_240, target: 5_000, level: 2 },
+      { kind: "gifts", value: 120, target: 500, level: 1 },
+    ],
+  },
   support: {
     t: "support",
     card: {

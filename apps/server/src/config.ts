@@ -99,6 +99,12 @@ const envSchema = z.object({
   BROADCASTER_TOKEN: z.string().min(24).optional(),
   /** Origin the broadcaster uses to load stage pages, e.g. http://lantern-app:8080 inside compose. Defaults to PUBLIC_URL. */
   BROADCAST_STAGE_ORIGIN: z.string().url().optional(),
+  /**
+   * The cloud broadcast's video. 720p costs about one AVX2 core of software
+   * rendering (ADR-0020); 1080p looks sharper and costs a little over twice
+   * that, so size the broadcaster for it first.
+   */
+  BROADCAST_QUALITY: z.enum(["720p", "1080p"]).default("720p"),
 
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });

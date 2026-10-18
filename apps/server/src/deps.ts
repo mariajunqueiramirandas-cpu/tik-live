@@ -3,7 +3,7 @@ import { Entitlements } from "./billing/entitlements";
 import type { MercadoPagoClient } from "./billing/mercadopago";
 import { BillingService } from "./billing/service";
 import { HttpBroadcasterClient, type BroadcasterClient } from "./broadcast/client";
-import { BroadcastSupervisor } from "./broadcast/supervisor";
+import { BROADCAST_VIDEO, BroadcastSupervisor } from "./broadcast/supervisor";
 import type { AppConfig } from "./config";
 import { Secrets } from "./crypto/secrets";
 import type { Database, Db } from "./db/client";
@@ -76,7 +76,14 @@ export async function createDeps(config: AppConfig, database: Database, override
   const broadcasterClient =
     overrides.broadcaster ?? (config.BROADCAST_ENABLED ? new HttpBroadcasterClient(config.BROADCASTER_URL!, config.BROADCASTER_TOKEN!, overrides.fetch) : null);
   const broadcasts = broadcasterClient
-    ? new BroadcastSupervisor({ client: broadcasterClient, secrets, stageOrigin: config.BROADCAST_STAGE_ORIGIN ?? config.PUBLIC_URL, log: createLogger("broadcast"), now })
+    ? new BroadcastSupervisor({
+        client: broadcasterClient,
+        secrets,
+        stageOrigin: config.BROADCAST_STAGE_ORIGIN ?? config.PUBLIC_URL,
+        video: BROADCAST_VIDEO[config.BROADCAST_QUALITY],
+        log: createLogger("broadcast"),
+        now,
+      })
     : undefined;
   const manager = new RuntimeManager({
     ctx: { db, config, anthropic, log: createLogger("runtime"), now },

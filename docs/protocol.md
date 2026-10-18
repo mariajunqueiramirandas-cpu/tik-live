@@ -105,9 +105,11 @@ waiting to be spoken are discarded, and the caption clears at once.
 { "v": 1, "t": "alert", "kind": "gift", "name": "Theo", "giftName": "Rose", "count": 5, "diamonds": 5 }
 ```
 
-An on-screen alert. `kind` is `gift`, `follow` or `share`; gift alerts also
-carry `giftName`, `count` and `diamonds`. Up to four alerts stack on screen;
-each stays about six seconds.
+An on-screen alert. `kind` is `gift`, `follow`, `share` or `level`; gift
+alerts also carry `giftName`, `count` and `diamonds`, and `level` alerts
+(a viewer reached a new fan level, [ADR-0037](adr/0037-fan-levels-and-passers-by.md))
+carry `level`. Up to four alerts stack on screen; each stays about six
+seconds.
 
 #### `segment`
 
@@ -211,6 +213,33 @@ or `gift`) that picks its icon. The stage's ranking card shows it for about
 20 seconds every few minutes, and while the host explains it; an open
 `vote` stays on top. `"card": null` puts the rankings back. Sent right
 after `hello` to a stage that connects while it's up.
+
+#### `hook`
+
+```json
+{ "v": 1, "t": "hook", "text": "COMENTA SEU NOME E GANHA UM APELIDO" }
+```
+
+A big call to people scrolling past ([ADR-0037](adr/0037-fan-levels-and-passers-by.md)),
+in a bright banner under the character, while the host says it out loud.
+It drops in, bobs while it's up and gives way to a game board. `"text":
+null` takes it down (after about nine seconds). Sent right after `hello` to
+a stage that connects while it's up.
+
+#### `goals`
+
+```json
+{ "v": 1, "t": "goals", "goals": [{ "kind": "likes", "value": 3240, "target": 5000, "level": 2 }, { "kind": "gifts", "value": 120, "target": 500, "level": 1 }] }
+```
+
+The stream's like and gift goals ([ADR-0036](adr/0036-like-and-gift-goals.md)):
+for each, the count so far (`gifts` counts diamonds), the target and which
+goal it is (`level` 1, 2...). The stage shows them top right as two bars.
+Progress is coalesced to a few messages a second; a goal reached goes out
+at once, with `level` one higher and the next `target`, and the stage
+shows "META BATIDA!" on that bar for a few seconds. An empty list hides the
+panel (the creator turned the goals off). Sent right after `hello` to a
+stage that connects while they're shown.
 
 #### `schedule`
 
@@ -349,7 +378,9 @@ The whole `RuntimeSnapshot`: status and its detail, pause, standby (waiting
 for the TikTok account to go live), react-only mode (budget reached or
 nobody watching), the current segment and the list to jump to, audience
 stats, what's up next (`upNext`, with seconds to go), the top likers of the
-last 15 minutes and top gifters of the last hour (`leaders`), the loop's minigame ranking (`ranking`: rows,
+last 15 minutes and top gifters of the last hour (`leaders`), the stream's
+like and gift goals as the stage shows them (`goals`, empty when they're
+off), the loop's minigame ranking (`ranking`: rows,
 games played this loop, and whether its podium is being revealed), the open
 vote on the last segment's game (`vote`, with votes per option), what the
 host is saying, the queue of things it may react to, counts

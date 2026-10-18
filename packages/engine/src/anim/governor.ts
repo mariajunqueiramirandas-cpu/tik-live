@@ -6,12 +6,20 @@
 export interface QualityLevel {
   renderScale: number;
   moteFraction: number;
+  /** The soft background renders at 1/n of the output size, then is scaled up. */
+  atmosphereDownscale: number;
 }
 
+/**
+ * Best first. "Ultra" supersamples: it draws half again past the display
+ * and lets the browser or OBS scale it down, so edges and text come out
+ * smoother than drawing at the display's own size.
+ */
 export const QUALITY_LEVELS: readonly QualityLevel[] = [
-  { renderScale: 1, moteFraction: 1 },
-  { renderScale: 0.85, moteFraction: 0.6 },
-  { renderScale: 0.7, moteFraction: 0.3 },
+  { renderScale: 1.5, moteFraction: 1, atmosphereDownscale: 2 },
+  { renderScale: 1, moteFraction: 1, atmosphereDownscale: 3 },
+  { renderScale: 0.85, moteFraction: 0.6, atmosphereDownscale: 4 },
+  { renderScale: 0.7, moteFraction: 0.3, atmosphereDownscale: 4 },
 ];
 
 const DOWN_AFTER_MS = 2_000;

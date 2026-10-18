@@ -201,8 +201,12 @@ export class FxLayer {
   }
 
   /** Gifts by tier, follows and shares (the alert text itself is the text layer's). */
-  alert(kind: "gift" | "follow" | "share", name: string, giftName: string, diamonds: number, now: number): void {
+  alert(kind: "gift" | "follow" | "share" | "level", name: string, giftName: string, diamonds: number, now: number): void {
     this.now = now;
+    if (kind === "level") {
+      this.play("sparkles", 1, now);
+      return this.play("stars", 1.1, now);
+    }
     if (kind === "follow") return this.play("stars", 0.8, now);
     if (kind === "share") return this.play("bubbles", 0.8, now);
     const tier = giftTier(diamonds);

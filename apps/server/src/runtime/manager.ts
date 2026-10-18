@@ -379,6 +379,7 @@ export function stoppedSnapshot(
     upNext: [],
     leaders: { likes: [], gifts: [] },
     ranking: { rows: [], games: 0, revealing: false },
+    goals: [],
     vote: null,
     music: null,
     stats: { viewers: 0, likes: 0, diamonds: 0, messages: 0, follows: 0, uptimeSec: 0 },

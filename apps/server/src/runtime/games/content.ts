@@ -1,4 +1,5 @@
 import type { GameKind } from "@tik-live/shared";
+import { normalize } from "./answers";
 
 /** One round's material. "number" and "math" are made up on the spot; the rest are written. */
 export type RoundContent =
@@ -247,18 +248,18 @@ export function guessLanguage(speechLanguage: string | undefined, sample: readon
   return score > 0 ? "pt" : "en";
 }
 
-/** Picks `count` items, avoiding ones already used this stream when possible. */
+/** Picks `count` items, the ones not played yet first. */
 export function pickFromBank<K extends WrittenKind>(
   language: BankLanguage,
   kind: K,
   count: number,
-  used: ReadonlySet<string>,
+  played: (item: RoundContent) => boolean,
   random: () => number,
 ): Array<Extract<RoundContent, { kind: K }>> {
   const all = BANK[language][kind] as Array<Extract<RoundContent, { kind: K }>>;
-  const fresh = all.filter((item) => !used.has(contentKey(item)));
-  const pool = shuffle(fresh.length >= count ? fresh : all, random);
-  return pool.slice(0, count);
+  const fresh = all.filter((item) => !played(item));
+  const stale = all.filter((item) => played(item));
+  return [...shuffle(fresh, random), ...shuffle(stale, random)].slice(0, count);
 }
 
 /** A stable identity for a round, to avoid repeats within a stream. */
@@ -279,6 +280,110 @@ export function contentKey(content: RoundContent): string {
     case "math":
       return `math:${content.expression}`;
   }
+}
+
+/** The round in one line for the writer's avoid list, answer included, so the same fact reworded is easy to spot. */
+export function avoidLine(content: RoundContent): string {
+  switch (content.kind) {
+    case "trivia":
+      return `${content.question} → ${content.options[content.correct] ?? ""}`;
+    case "poll":
+      return `${content.question} (${content.options.join(" / ")})`;
+    case "truefalse":
+      return content.statement;
+    case "riddle":
+      return `${content.riddle} → ${content.answers[0] ?? ""}`;
+    case "scramble":
+    case "fastest":
+      return content.word;
+    case "number":
+      return String(content.secret);
+    case "math":
+      return content.expression;
+  }
+}
+
+/** Words too common to tell two questions apart. Words of one or two letters are dropped anyway. */
+const FILLER_WORDS = new Set(
+  "que qual quais quem quanto quanta quantos quantas onde como uma uns umas dos das nos nas num numa por para pra com sem mais seu sua seus suas esse essa este esta isso isto ele ela eles elas tem sao ser foi verdade the what which who how many much does did are was were and for with this that its true".split(" "),
+);
+
+function contentWords(text: string): Set<string> {
+  return new Set(
+    normalize(text)
+      .split(" ")
+      .filter((w) => w.length > 2 && !FILLER_WORDS.has(w)),
+  );
+}
+
+/** How much two texts share, from 0 (nothing) to 1 (the same words). */
+function overlap(a: string, b: string): number {
+  const x = contentWords(a);
+  const y = contentWords(b);
+  if (x.size === 0 || y.size === 0) return normalize(a) === normalize(b) ? 1 : 0;
+  let shared = 0;
+  for (const w of x) if (y.has(w)) shared++;
+  return shared / (x.size + y.size - shared);
+}
+
+/**
+ * Whether two rounds are the same idea, even worded differently: "Qual é o
+ * maior planeta?" and "Qual o maior planeta do sistema solar?" are one
+ * question to chat, and so are two riddles with the same answer.
+ */
+export function sameIdea(a: RoundContent, b: RoundContent): boolean {
+  if (a.kind !== b.kind) return false;
+  if (contentKey(a) === contentKey(b)) return true;
+  switch (a.kind) {
+    case "trivia": {
+      const other = b as typeof a;
+      const sameAnswer = normalize(a.options[a.correct] ?? "") === normalize(other.options[other.correct] ?? "");
+      const similar = overlap(a.question, other.question);
+      return similar >= 0.7 || (sameAnswer && similar >= 0.4);
+    }
+    case "poll": {
+      const other = b as typeof a;
+      const options = (round: typeof a) => round.options.map(normalize).sort().join("|");
+      return options(a) === options(other) || overlap(a.question, other.question) >= 0.7;
+    }
+    case "truefalse":
+      return overlap(a.statement, (b as typeof a).statement) >= 0.6;
+    case "riddle": {
+      const other = b as typeof a;
+      return normalize(a.answers[0] ?? "") === normalize(other.answers[0] ?? "") || overlap(a.riddle, other.riddle) >= 0.6;
+    }
+    case "scramble":
+    case "fastest":
+      return normalize(a.word) === normalize((b as typeof a).word);
+    default:
+      return false;
+  }
+}
+
+/** What a batch of rounds can be about when there's no topic, so batches don't all draw the same famous questions. */
+const THEMES: Record<WrittenKind, readonly string[]> = {
+  trivia: [
+    "animals", "the human body", "space", "geography of Brazil", "world geography", "food and cooking", "music", "football",
+    "other sports", "inventions", "everyday science", "the ocean", "plants", "dinosaurs", "cartoons and animated films",
+    "video games", "world records", "language and words", "Brazilian culture and holidays", "famous landmarks",
+    "weather", "numbers and shapes", "history of everyday objects", "insects", "birds", "fruits and vegetables",
+  ],
+  truefalse: [
+    "animals", "the human body", "space", "food", "the ocean", "plants", "history of everyday objects", "sleep",
+    "insects", "weather", "geography", "inventions", "sports", "language and words", "common myths", "dinosaurs",
+  ],
+  riddle: ["objects at home", "nature", "the body", "time and calendars", "food", "school things", "weather", "animals", "word play", "music"],
+  poll: [
+    "food", "superpowers", "travel", "daily routine", "school and work", "music", "games", "animals", "weird hypotheticals",
+    "holidays", "technology", "fashion", "movies and series", "weekends", "the future", "Brazilian snacks",
+  ],
+  scramble: ["the kitchen", "animals", "fruits", "school", "sports", "nature", "the house", "clothes", "transport", "jobs", "instruments", "weather", "the beach", "toys"],
+  fastest: ["animals", "food", "colors", "nature", "the house", "sports", "music", "the beach", "space", "toys", "clothes", "the city"],
+};
+
+/** A few themes for the next batch, drawn at random. */
+export function pickThemes(kind: WrittenKind, random: () => number, count = 3): string[] {
+  return shuffle(THEMES[kind], random).slice(0, count);
 }
 
 export function shuffle<T>(items: readonly T[], random: () => number): T[] {

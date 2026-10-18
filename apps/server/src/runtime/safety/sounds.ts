@@ -19,6 +19,9 @@ const WORDS = [
   "porra", "puta", "putinha", "puto", "foda", "foder", "fuder", "fodido", "fudido", "merda", "bosta", "cacete", "caralho", "caraio",
   "buceta", "boceta", "piroca", "piru", "punheta", "xota", "xoxota", "xereca", "corno", "viado", "bicha",
   "sapatão", "traveco", "tesão", "broxa", "boquete", "cuzão", "arrombado", "putaria", "retardado", "nazista",
+  // Diminutives and augmentatives, one by one: "bichinho", "cacetinho" (a bread roll) and "porrinha" (a bar game) are innocent.
+  "bucetinha", "bucetão", "putão", "fodinha", "fodão", "merdinha", "bostinha", "viadinho", "viadão", "corninho", "cornão",
+  "caralhinho", "pirocão", "pirocudo", "xotinha", "punheteiro", "cuzinho", "boquetinho", "tesuda", "tesudo",
   "fuck", "fucking", "shit", "bitch", "pussy", "cunt", "nigga", "nigger", "faggot",
 ];
 
@@ -48,7 +51,8 @@ const LEET: Record<string, string> = { "0": "o", "1": "i", "3": "e", "4": "a", "
 
 /** How a word sounds, as a key: "Kuzaun" and "cuzão" are both "kusau". */
 export function soundOf(word: string): string {
-  let w = word.toLowerCase();
+  // Digits tacked on the end of a handle are a number, not leetspeak: "bucetinha123", "kuzaun2007".
+  let w = word.toLowerCase().replace(/(?<=\p{L})\d{2,}$/u, "");
   if (/\p{L}/u.test(w)) w = w.replace(/[013457@$]/g, (c) => LEET[c] ?? c);
   w = w
     .replace(/ç/g, "s")
@@ -141,17 +145,50 @@ const CLAUSE = /[.,!?;:\n]/;
 
 /** Words that come right before a name someone wants said: a shout-out, a greeting, "say ...". */
 const NAME_CUE = new RegExp(
-  "(?:^|[^\\p{L}])(?:salve|salves|oi|ola|olá|alo|alô|beijo|beijos|beijao|beijão|abraço|abraco|abraços|parabens|parabéns|manda|mande|fala|fale|diga|diz|chama|chame|le|lê|leia|repete|repita|pronuncia|pronuncie|cumprimenta|valeu|obrigado|obrigada|bem-vindo|bem-vinda|amigo|amiga|primo|prima|irmão|irmao|irmã|irma|mãe|mae|pai|tio|tia|namorado|namorada)(?=[^\\p{L}]|$)",
+  "(?:^|[^\\p{L}])(?:salve|salves|oi|ola|olá|alo|alô|beijo|beijos|beijao|beijão|abraço|abraco|abraços|parabens|parabéns|manda|mande|fala|fale|diga|diz|chama|chame|le|lê|leia|repete|repita|pronuncia|pronuncie|cumprimenta|valeu|obrigado|obrigada|bem-vindo|bem-vinda)(?=[^\\p{L}]|$)",
   "giu",
 );
 
+/** Words between a cue and the name: "manda um salve pro meu amigo ...". */
+const FILLER = new Set(
+  "um uma uns umas pro pra pros pras para ao aos à às a o os as meu minha meus minhas nosso nossa seu sua do da de e ai aí la lá amigo amiga amigos amigas primo prima irmão irmao irmã irma mãe mae pai tio tia vó vo vô avó avô namorado namorada mano mana salve oi beijo beijos beijão abraço abraco grande querido querida também tambem".split(" "),
+);
+/** Words that show what follows a cue is a sentence, not a name: "oi gente, essa live é ...", "obrigado pela live ...", "fala sério ...". */
+const NOT_A_NAME = new Set(
+  "é que isso essa esse este esta aqui tá ta to tô foi vai tem eu vc você voce sou são sao muito demais pela pelo por sério serio gente live galera todos todo mundo pessoal chat".split(" "),
+);
+/** A name is a few words long. */
+const NAME_WORDS = 3;
+
+/** The words right after a cue that would be the name, skipping "um salve pro meu amigo"; none when a sentence follows instead. */
+function nameAfterCue(rest: readonly string[]): string[] {
+  const name: string[] = [];
+  for (const word of rest) {
+    const lower = word.toLowerCase();
+    if (NOT_A_NAME.has(lower)) break;
+    if (FILLER.has(lower)) continue;
+    name.push(word);
+    if (name.length === NAME_WORDS) break;
+  }
+  return name;
+}
+
+interface NameSpan {
+  words: string[];
+  /** Whether these words are the name itself, so a plain rude word counts; otherwise only a pun across them does. */
+  isName: boolean;
+}
+
 /**
- * The parts of `text` that read as names: runs of two or more capitalized
- * words, and whatever follows a shout-out or a "say ..." up to the end of
- * its clause.
+ * The parts of `text` that could carry a name. Runs of two or more
+ * capitalized words, and the rest of a clause after a shout-out or a
+ * "say ...", are checked for puns ("Cuca Beludo mandou um oi"). The few
+ * words right after the cue are the name itself, where a plain rude word
+ * counts too ("manda um salve pro Kuzaun"): further on, a swear word is just
+ * how someone talks ("oi gente, essa live é foda demais").
  */
-function nameSpans(text: string): string[][] {
-  const spans: string[][] = [];
+function nameSpans(text: string): NameSpan[] {
+  const spans: NameSpan[] = [];
   for (const clause of text.split(CLAUSE)) {
     let run: string[] = [];
     for (const word of clause.split(/[^\p{L}\p{N}@$]+/u)) {
@@ -159,15 +196,16 @@ function nameSpans(text: string): string[][] {
         run.push(word);
         continue;
       }
-      if (run.length > 1) spans.push(run);
+      if (run.length > 1) spans.push({ words: run, isName: false });
       run = [];
     }
-    if (run.length > 1) spans.push(run);
+    if (run.length > 1) spans.push({ words: run, isName: false });
   }
   for (const match of text.matchAll(NAME_CUE)) {
-    const rest = text.slice((match.index ?? 0) + match[0].length).split(CLAUSE)[0] ?? "";
-    const span = words(rest);
-    if (span.length) spans.push(span);
+    const rest = words(text.slice((match.index ?? 0) + match[0].length).split(CLAUSE)[0] ?? "");
+    if (rest.length) spans.push({ words: rest, isName: false });
+    const name = nameAfterCue(rest);
+    if (name.length) spans.push({ words: name, isName: true });
   }
   return spans;
 }
@@ -178,7 +216,7 @@ function nameSpans(text: string): string[][] {
  * message doesn't count here: the host was never going to say that.
  */
 export function asksForRudeName(text: string): boolean {
-  return nameSpans(text).some((span) => span.some(rudeWord) || rudeSound(span));
+  return nameSpans(text).some((span) => (span.isName && span.words.some(rudeWord)) || rudeSound(span.words));
 }
 
 /** True when a line the host is about to say sounds rude: any rude word in any spelling, or a rude-sounding name. */

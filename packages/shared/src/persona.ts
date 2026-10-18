@@ -132,6 +132,20 @@ export const personaSchema = z.object({
    * (ADR-0032). On when unset.
    */
   support: z.boolean().optional(),
+  /**
+   * The stream's like and gift goals, shown on stage and celebrated when
+   * reached (ADR-0036). Shown when unset. A target the creator sets is the
+   * first goal and the step to the next ones; unset, the targets climb on
+   * their own.
+   */
+  goals: z
+    .object({
+      show: z.boolean(),
+      likes: z.number().int().min(10).max(100_000_000).optional(),
+      /** In diamonds. */
+      gifts: z.number().int().min(10).max(10_000_000).optional(),
+    })
+    .optional(),
   look: lookSchema.default({ ...DEFAULT_LOOK }),
   /** What the stage may play besides the voice. Both are on when unset. */
   sound: z
