@@ -53,6 +53,29 @@ describe("Conversation", () => {
     expect(room).toContain('<chat id="e2" from="visitante"');
   });
 
+  it("knows when the host already named the viewer after seeing their message", () => {
+    const { conversation, see } = setup();
+    const ana = chat("Ana Clara", "gato ou cachorro?") as Extract<LiveEvent, { kind: "chat" }>;
+    const bia = chat("bia", "tudo bem?") as Extract<LiveEvent, { kind: "chat" }>;
+    const anon = chat("badword fan", "e aí?") as Extract<LiveEvent, { kind: "chat" }>;
+    see(ana);
+    see(bia);
+    see(anon);
+    expect(conversation.addressed(ana)).toBe(false);
+    conversation.commit(conversation.draft(), "brief", "[happy] Gato, sempre, Ana!\nOi, visitante!", 0);
+    // A short form of the nickname counts; a name inside another word doesn't.
+    expect(conversation.addressed(ana)).toBe(true);
+    expect(conversation.addressed(bia)).toBe(false);
+    // Everyone called "visitante" sounds the same, so that never counts.
+    expect(conversation.addressed(anon)).toBe(false);
+    conversation.commit(conversation.draft(), "brief", "Tudo ótimo, Bia.", 0);
+    expect(conversation.addressed(bia)).toBe(true);
+    // Before the host saw a message, nothing it said answers it.
+    const later = chat("ana clara", "e o seu nome?") as Extract<LiveEvent, { kind: "chat" }>;
+    see(later);
+    expect(conversation.addressed(later)).toBe(false);
+  });
+
   it("tells the host about a viewer once, and again only when there's something new", () => {
     const { conversation, see } = setup();
     see(chat("ana", "one"));
@@ -150,12 +173,27 @@ describe("Conversation", () => {
     const before = conversation.tokens();
     expect(conversation.roll("<earlier>\nAna chatted a lot.\n</earlier>", 8, 3)).toBe(7);
     const context = conversation.context(conversation.draft(), "now");
-    expect(context.head).toBe("<earlier>\nAna chatted a lot.\n</earlier>");
+    // The summary, then what the turns that left had, word for word (a summary can drop who was there).
+    expect(context.head).toStartWith("<earlier>\nAna chatted a lot.\n</earlier>\n\n");
+    expect(context.head).toContain('<earlier turns="7">\nTalked with: ana.');
     expect(context.history.map((exchange) => exchange.reply)).toEqual(["reply 7", "reply 8", "reply 9"]);
     expect(conversation.tokens()).toBeLessThan(before);
     // Only turns the summary covers can go.
     expect(conversation.roll("<earlier>\nlater\n</earlier>", 8, 1)).toBe(1);
     expect(conversation.exchangesAfter(0).map((exchange) => exchange.reply)).toEqual(["reply 8", "reply 9"]);
+  });
+
+  it("remembers the questions the host asked the room after their turns leave", () => {
+    const { conversation, see } = setup();
+    const replies = ["[happy] Oi Ana!\nPizza ou hambúrguer?", "[excited] Boa! [confetti]", "[thinking] E qual é o seu time?\nPizza ou hambúrguer?", "Valeu!"];
+    for (const reply of replies) {
+      see(chat("ana", "oi"));
+      conversation.commit(conversation.draft(), "brief", reply, 0);
+    }
+    conversation.roll("<earlier>\nThe host chatted with Ana.\n</earlier>", 3, 1);
+    const { head } = conversation.context(conversation.draft(), "now");
+    // Without tags, once each, most recent last.
+    expect(head).toContain('You already asked the room: "E qual é o seu time?"; "Pizza ou hambúrguer?".');
   });
 
   it("starts a new stream from a clean slate, and refuses turns written for the last one", () => {

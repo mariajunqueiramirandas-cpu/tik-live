@@ -46,6 +46,7 @@ tests should get a real database without Docker.
 | `app_user` | `id` (UUIDv7) | A person using the dashboard | `external_id` (unique: `dev\|local` in development, the Clerk or WorkOS user id later), `email`, `name`, `created_at` |
 | `channel` | `id` (UUIDv7) | A host configuration owned by a user | `owner_id`, `name`, `tiktok_username`, `persona` jsonb, `voice` jsonb, `safety` jsonb, `broadcast` jsonb (stream key encrypted), `desired_state` (`stopped` / `running`), `source` (`tiktok` / `simulator`), `stage_key_lookup` (HMAC, unique), `stage_key_ciphertext` |
 | `viewer` | (`channel_id`, `platform_user_id`) | Viewer memory | `handle`, `nickname`, `first_seen_at`, `last_seen_at`, `visits`, `messages`, `diamonds`, `gifts` jsonb, `follows`, `shares`, `recent_lines` jsonb, `notes` jsonb; index on (`channel_id`, `diamonds` desc) |
+| `host_memory` | `channel_id` | What the host said about itself ([ADR-0033](0033-host-memory.md)) | `facts` jsonb (topic, fact, last mentioned), `updated_at` |
 | `stream_session` | `id` | One continuous live session | Totals: peak viewers, likes, diamonds, gifts, messages, follows, shares, turns, spoken lines, blocked lines, tokens, TTS characters; `ended_at`, `end_reason` |
 | `session_sample` | (`session_id`, `minute`) | Per-minute time series | `viewers`, `likes`, `messages`, `diamonds` |
 | `utterance` | `id` (bigserial) | Spoken and blocked host lines | `session_id`, `at`, `text`, `emotion`, `status`, `reason`, `turn_kind`; purged after the plan's retention window |

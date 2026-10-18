@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { ChannelDto, RuntimeSnapshot } from "@tik-live/shared";
 import path from "node:path";
 import { openDatabase } from "../../src/db/client";
+import { loadHostFacts, saveHostFacts } from "../../src/repos/host-memory";
 import { createSession, listSessions, listUtterances } from "../../src/repos/streams";
 import { usageSince } from "../../src/repos/usage";
 import { eventually, startTestServer, stageKeyFrom, type TestServer, type TestSocket } from "../harness";
@@ -167,6 +168,29 @@ describe("running a channel end to end", () => {
     expect(look.name).toBe("Glow");
     expect(look.look.primary).toBe("#00FF88");
     stage.close();
+  });
+});
+
+describe("what the host said about itself (ADR-0033)", () => {
+  it("is kept per channel across restarts, and goes with the channel", async () => {
+    const database = await openDatabase("pglite://memory", MIGRATIONS);
+    const app = await startTestServer({ database });
+    const created = await app.json<{ channel: ChannelDto }>("/api/channels", { method: "POST", user: "memo", json: { name: "Memória" } });
+    const id = created.body.channel.id;
+    expect(await loadHostFacts(database.db, id)).toEqual([]);
+    await saveHostFacts(database.db, id, [{ topic: "favorite food", fact: "pizza", at: 1 }], new Date());
+    await saveHostFacts(database.db, id, [{ topic: "favorite food", fact: "pizza", at: 2 }, { topic: "team", fact: "Flamengo", at: 3 }], new Date());
+    expect(await loadHostFacts(database.db, id)).toEqual([
+      { topic: "favorite food", fact: "pizza", at: 2 },
+      { topic: "team", fact: "Flamengo", at: 3 },
+    ]);
+    // The host starts fine with what it said on earlier streams.
+    expect((await app.json(`/api/channels/${id}/start`, { method: "POST", user: "memo" })).status).toBe(200);
+    await eventually(async () => (await app.json(`/api/channels/${id}`, { user: "memo" })).body.channel.runtime.status === "live");
+    expect((await app.json(`/api/channels/${id}`, { method: "DELETE", user: "memo" })).status).toBeLessThan(300);
+    expect(await loadHostFacts(database.db, id)).toEqual([]);
+    await app.close();
+    await database.close();
   });
 });
 

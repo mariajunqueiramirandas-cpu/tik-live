@@ -2,11 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import { clip, viewerName, type LiveEvent, type Persona } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import { escapeForPrompt } from "../safety/gate";
-import { containsBlockedTerm } from "../safety/rules";
+import { containsBlockedTerm, containsContactInfo, looksLikeInjection } from "../safety/rules";
+import { asksForShoutout } from "../safety/sounds";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
-import { Conversation, type Draft, type UnsaidReason } from "./conversation";
+import { Conversation, PASS, type Draft, type UnsaidReason } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
+import type { HostFacts } from "./host-facts";
 import type { ViewerMemory } from "./memory";
 import { buildBrief, type BriefRefs, type TurnKind, type TurnPlan, type TurnRequest } from "./prompt";
 import type { Emotion, Utterance } from "./sentences";
@@ -43,6 +45,8 @@ const REPEAT_WINDOW_MS = 10 * 60_000;
 const REPEAT_MEMORY = 120;
 /** A gift worth this many diamonds or more is the highlight of its turn. */
 const BIG_GIFT_DIAMONDS = 100;
+/** The longest a turn waits for viewers' stored memory to load before it describes them. */
+const MEMORY_WAIT_MS = 150;
 
 export interface TurnEngineOptions {
   host: HostBrain;
@@ -52,6 +56,8 @@ export interface TurnEngineOptions {
   blocklist: () => readonly string[];
   /** Keeps the show summary and notes about viewers; without it old turns are just dropped. */
   chronicler?: Chronicler;
+  /** What the host has said about itself on this channel; the conversation's head carries it. */
+  hostFacts?: HostFacts;
   actions?: HostActions;
   /** How the last stream went, for the first turn of this one. */
   lastStream?: string;
@@ -100,7 +106,7 @@ export class TurnEngine {
     this.chronicledAt = this.now();
     this.lastStream = options.lastStream ?? "";
     this.conversation = new Conversation({ memory: options.memory, blocklist: options.blocklist });
-    this.conversation.reset(this.lastStreamHead());
+    this.conversation.reset(this.head(this.lastStreamBlock()));
   }
 
   /** The kind of turn being written right now, if any. */
@@ -128,6 +134,9 @@ export class TurnEngine {
     const turnId = `t${++this.counter}`;
     this.options.onTurn?.({ id: turnId, kind: plan.kind, items: plan.items.length });
 
+    // A viewer's stored memory loads in the background when they first show up; a regular whose first event is
+    // the message this turn answers would be described as new. Wait for it, briefly: a slow store only costs memory.
+    await within(this.options.memory.settled(), MEMORY_WAIT_MS);
     const focus = new Set<LiveEvent>(plan.items.flatMap((item) => item.events));
     const compose = () => {
       const draft = this.conversation.draft(focus);
@@ -186,8 +195,11 @@ export class TurnEngine {
     }
     const at = this.now();
     if (repeats.length) this.conversation.add({ at, kind: "unsaid", why: "repeat", lines: repeats });
-    // Even a failed or interrupted turn commits what it got out: those lines are on their way to air.
-    const committed = this.conversation.commit(draft, brief, reply.join("\n"), at);
+    // Even a failed or interrupted turn commits what it got out: those lines are on their way to air. A turn that
+    // finished in silence ([pass], or only lines it had said already) read its room too: left uncommitted, the next
+    // turn would show those messages again as new, and the host would answer them late.
+    const finished = error === undefined && !abort.signal.aborted;
+    const committed = this.conversation.commit(draft, brief, reply.length ? reply.join("\n") : finished ? PASS : "", at);
     const scrolledBy = committed ? draft.scrolledBy : [];
     return error === undefined ? { ok: true, lines: said.length, scrolledBy } : { ok: false, error, scrolledBy };
   }
@@ -233,12 +245,17 @@ export class TurnEngine {
           this.summary = chronicle.summary.trim();
           this.options.onSummary?.(this.summary);
         }
+        // Memory outlives the stream and goes back into prompts: nothing blocked, no contact details, nothing that reads like an instruction.
+        const keep = (text: string) => !containsBlockedTerm(text, blocklist) && !containsContactInfo(text) && !looksLikeInjection(text);
         for (const note of chronicle.notes) {
-          if (!containsBlockedTerm(note.note, blocklist)) this.options.memory.addNote(note.viewerId, note.note);
+          if (keep(`${note.topic ?? ""} ${note.note}`)) this.options.memory.addNote(note.viewerId, note.note, note.topic);
+        }
+        for (const fact of chronicle.hostFacts ?? []) {
+          if (keep(`${fact.topic} ${fact.fact}`)) this.options.hostFacts?.learn(fact.topic, fact.fact);
         }
         this.chronicledThrough = through;
         if (this.conversation.tokens() > this.budget.softTokens) {
-          const dropped = this.summary ? this.conversation.roll(`<earlier>\n${escapeForPrompt(this.summary)}\n</earlier>`, through, this.budget.keepTurns) : 0;
+          const dropped = this.summary ? this.conversation.roll(this.head(this.summaryBlock()), through, this.budget.keepTurns) : 0;
           if (dropped) {
             this.options.log?.debug(`folded ${dropped} old turns into the show summary`);
           } else {
@@ -268,7 +285,7 @@ export class TurnEngine {
     this.chronicledThrough = 0;
     this.chronicledAt = this.now();
     this.chronicleRetryAt = 0;
-    this.conversation.reset(this.lastStreamHead());
+    this.conversation.reset(this.head(this.lastStreamBlock()));
   }
 
   /** The stream ended: what happened becomes "last stream" for the next one. */
@@ -283,8 +300,17 @@ export class TurnEngine {
     this.chronicling = null;
   }
 
-  private lastStreamHead(): string {
+  /** The conversation's head: what the host said about itself, then `block` (last stream, or the show so far). */
+  private head(block: string): string {
+    return [this.options.hostFacts?.render() ?? "", block].filter(Boolean).join("\n\n");
+  }
+
+  private lastStreamBlock(): string {
     return this.lastStream ? `<last_stream>\n${escapeForPrompt(this.lastStream)}\n</last_stream>` : "";
+  }
+
+  private summaryBlock(): string {
+    return `<earlier>\n${escapeForPrompt(this.summary)}\n</earlier>`;
   }
 
   /** Past the hard limit, old turns leave even if the chronicler hasn't caught up. */
@@ -300,7 +326,7 @@ export class TurnEngine {
    */
   private compact(keep: number): number {
     let dropped = 0;
-    if (this.summary) dropped += this.conversation.roll(`<earlier>\n${escapeForPrompt(this.summary)}\n</earlier>`, this.chronicledThrough, keep);
+    if (this.summary) dropped += this.conversation.roll(this.head(this.summaryBlock()), this.chronicledThrough, keep);
     dropped += this.conversation.roll(null, this.conversation.lastExchangeId(), keep);
     return dropped;
   }
@@ -330,7 +356,7 @@ export class TurnEngine {
       const ref = [...item.events].reverse().map((event) => this.conversation.ref(event, draft)).find(Boolean);
       if (!ref) continue;
       const kind = item.event.kind;
-      if (kind === "chat" || kind === "question") refs.chat.push(`${ref} (${kind})`);
+      if (item.event.kind === "chat" || item.event.kind === "question") refs.chat.push(`${ref} (${asksForShoutout(item.event.text) ? "shout-out request" : kind})`);
       else if (item.event.kind === "gift" && item.event.diamonds >= BIG_GIFT_DIAMONDS) refs.support.push(`${ref} (big gift)`);
       else refs.support.push(`${ref} (${kind === "join" ? "returning viewer" : kind})`);
     }
@@ -350,6 +376,19 @@ export class TurnEngine {
     const cutoff = this.now() - REPEAT_WINDOW_MS;
     const words = new Set(key.split(" "));
     return this.said.some((entry) => entry.at >= cutoff && (entry.key === key || (words.size >= 6 && jaccard(words, entry.words) >= 0.9)));
+  }
+}
+
+/** Waits for `promise`, but no longer than `ms`; never rejects. */
+async function within(promise: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  try {
+    await Promise.race([promise.catch(() => undefined), late]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

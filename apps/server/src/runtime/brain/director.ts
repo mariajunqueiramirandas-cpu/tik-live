@@ -29,6 +29,7 @@ import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
 import type { RoomEntry } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
+import type { HostFacts } from "./host-facts";
 import type { ViewerMemory } from "./memory";
 import { describeClock, displayName, type TurnKind, type TurnPlan } from "./prompt";
 import { isQuestion, type QueueItem, type Triage, type TriageResult } from "./triage";
@@ -99,6 +100,8 @@ export interface DirectorOptions {
   ranking?: LoopRanking;
   /** Keeps a running summary of the show and notes about viewers. */
   chronicler?: Chronicler;
+  /** What the host has said about itself on this channel (ADR-0033). */
+  hostFacts?: HostFacts;
   /** What the host may do besides talking (play music). */
   actions?: HostActions;
   /** Terms never spoken, for viewer names and the chronicler's notes. */
@@ -130,8 +133,12 @@ const REACT_SUPPORT = 6;
 const CHAT_STREAK_TURNS = 4;
 /** A segment this late moves on even while chat keeps the host busy. */
 const SEGMENT_OVERDUE_MS = 30_000;
-/** Questions the host moved past (or that expired while it was busy) come back at the next free moment, if they're this fresh. */
-const OWED_TTL_MS = 3 * 60_000;
+/**
+ * Questions the host moved past (or that expired while it was busy) come back
+ * at the next free moment, if they were sent this recently. Older than that,
+ * an answer lands on a conversation chat has already left behind.
+ */
+const OWED_TTL_MS = 90_000;
 const OWED_MAX = 3;
 const CHAT_SAMPLE = 12;
 /** A ranking goes to the stage at most this often. */
@@ -292,7 +299,7 @@ export class Director {
   /** Something the creator asked the host to do, from the studio. */
   private pendingRequest: string | undefined;
   /** Questions passed over on a busy stretch. */
-  private owed: Array<{ event: LiveEvent; at: number }> = [];
+  private owed: Array<{ event: LiveEvent; queuedAt: number }> = [];
   private fillerBeat = 0;
   /** Reactions to chat since the host last moved the show along. */
   private chatStreak = 0;
@@ -339,6 +346,7 @@ export class Director {
       persona: () => this.persona,
       blocklist,
       ...(options.chronicler ? { chronicler: options.chronicler } : {}),
+      ...(options.hostFacts ? { hostFacts: options.hostFacts } : {}),
       ...(options.actions ? { actions: options.actions } : {}),
       ...(options.lastStream ? { lastStream: options.lastStream } : {}),
       onTurn: (turn) => options.hooks?.onTurn?.(turn),
@@ -873,15 +881,20 @@ export class Director {
 
   private owe(item: QueueItem): void {
     if (!isQuestion(item.event)) return;
-    this.owed = [...this.owed, { event: item.event, at: this.now() }].slice(-OWED_MAX);
+    this.owed = [...this.owed, { event: item.event, queuedAt: item.queuedAt }].slice(-OWED_MAX);
   }
 
-  /** The oldest question still owed that the host can see in its room (not one that scrolled by). */
+  /**
+   * The oldest question still owed that the host can see in its room (not one
+   * that scrolled by) and hasn't already answered: it sees the questions it
+   * moved past and often answers them anyway, and asking again repeats it.
+   */
   private takeOwed(now: number): QueueItem | undefined {
-    this.owed = this.owed.filter((owed) => now - owed.at < OWED_TTL_MS);
+    this.owed = this.owed.filter((owed) => now - owed.queuedAt < OWED_TTL_MS);
+    const conversation = this.engine.conversation;
     while (this.owed.length) {
-      const { event } = this.owed.shift() as (typeof this.owed)[number];
-      if (this.engine.conversation.canShow(event)) return { event, events: [event], priority: 0, expiresAt: Infinity, seq: 0 };
+      const { event, queuedAt } = this.owed.shift() as (typeof this.owed)[number];
+      if (conversation.canShow(event) && !conversation.addressed(event)) return { event, events: [event], priority: 0, expiresAt: Infinity, queuedAt, seq: 0 };
     }
     return undefined;
   }

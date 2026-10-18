@@ -17,10 +17,14 @@ class FakeHost implements HostBrain {
   readonly name = "fake";
   turns: TurnRequest[] = [];
   fail = false;
+  /** What the host says on its next turn, instead of the default line. */
+  say: string | undefined;
   async *generate(turn: TurnRequest): AsyncGenerator<Utterance> {
     this.turns.push(turn);
     if (this.fail) throw new Error("api down");
-    yield { text: `line for ${turn.kind}`, emotion: "neutral" };
+    const text = this.say ?? `line for ${turn.kind}`;
+    this.say = undefined;
+    yield { text, emotion: "neutral" };
   }
   reconfigure(): void {}
 }
@@ -430,6 +434,25 @@ describe("Director ordering", () => {
     expect(owed.context.brief).toContain("Now: Answer e3 (chat). It came in a bit earlier and you didn't get to it: say who asked.");
   });
 
+  it("doesn't come back to a question the host moved past but answered anyway", async () => {
+    const { director, step, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.handleEvent(at(chat("ana", "Blip you are so fun to watch"), 1_000));
+    director.handleEvent(at(chat("bia", "Blip what game is this?"), 2_000));
+    director.handleEvent(at(chat("caio", "is it raining?"), 3_000));
+    director.handleEvent(at(chat("dani", "Blip do you like pizza?"), 4_000));
+    // The brief skips caio's question, but it's in the room too, and the host answers it along the way.
+    host.say = "Thanks, Ana! Trivia, Bia. No rain here, Caio. Pizza always, Dani.";
+    await step(2_000);
+    const react = host.turns.at(-1)!;
+    expect(react.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["ana", "bia", "dani"]);
+    for (let i = 0; i < 5; i++) await step(2_000);
+    const later = host.turns.slice(host.turns.indexOf(react) + 1);
+    expect(later.length).toBeGreaterThan(0);
+    expect(later.some((turn) => turn.items.some((item) => "viewer" in item.event && item.event.viewer.handle === "caio"))).toBe(false);
+  });
+
   it("comes back to a question that expired while the host couldn't get to it", async () => {
     const { director, step, host } = setup();
     director.handleEvent({ kind: "viewers", at: 0, count: 12 });
@@ -443,6 +466,18 @@ describe("Director ordering", () => {
     expect(turn.kind).toBe("react");
     expect(turn.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["lumy"]);
     expect(turn.context.brief).toContain("you didn't get to it: say who asked");
+  });
+
+  it("lets a question go once it's too old to answer", async () => {
+    const { director, step, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.pause();
+    director.handleEvent(chat("lumy", "gato ou cachorro?"));
+    await step(95_000); // the show was busy for over a minute and a half
+    director.resume();
+    await step(2_000);
+    expect(host.turns.some((turn) => turn.items.some((item) => "viewer" in item.event && item.event.viewer.handle === "lumy"))).toBe(false);
   });
 
   it("gives chat time to answer through the stream delay after the host asks something", async () => {

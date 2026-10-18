@@ -19,12 +19,14 @@ import type { AppConfig } from "../config";
 import type { Db } from "../db/client";
 import type { Logger } from "../log";
 import type { ChannelRow } from "../repos/channels";
+import { loadHostFacts, saveHostFacts } from "../repos/host-memory";
 import { latestSummary } from "../repos/streams";
 import { addUsage, channelCostOn, dayKey } from "../repos/usage";
 import { loadViewers, saveViewers, type ViewerRow } from "../repos/viewers";
 import { ClaudeChronicler } from "./brain/chronicle";
 import { Director } from "./brain/director";
 import { ClaudeHost, ScriptedHost, type HostBrain } from "./brain/host";
+import { HostFacts } from "./brain/host-facts";
 import { ViewerMemory, type ViewerPersistence, type ViewerRecord } from "./brain/memory";
 import { toUtterance } from "./brain/sentences";
 import { Triage, type TriageResult } from "./brain/triage";
@@ -92,6 +94,7 @@ export class ChannelRuntime {
   private readonly log: Logger;
 
   private memory!: ViewerMemory;
+  private hostFacts!: HostFacts;
   private triage!: Triage;
   private gate!: SafetyGate;
   private moderator: ClaudeModerator | null = null;
@@ -149,6 +152,12 @@ export class ChannelRuntime {
     // How the last stream went, so the host can open with a callback to it.
     const lastStream = await latestSummary(ctx.db, channel.id).catch(() => null);
     this.memory = new ViewerMemory({ persistence: this.persistence(), now: this.now, log: this.log });
+    // What the host said about itself on earlier streams, so it stays the same character (ADR-0033).
+    const facts = await loadHostFacts(ctx.db, channel.id).catch((err: unknown) => {
+      this.log.warn("could not load what the host said about itself", err);
+      return [];
+    });
+    this.hostFacts = new HostFacts(facts, { persistence: { save: (all) => saveHostFacts(ctx.db, channel.id, all, new Date(this.now())) }, now: this.now });
     this.triage = new Triage({ blocklist: channel.safety.blocklist, hostName: channel.persona.name, memory: this.memory, now: this.now });
 
     const ai = ctx.anthropic;
@@ -228,6 +237,7 @@ export class ChannelRuntime {
       startInStandby: !simulated,
       games: this.games,
       ranking: this.ranking,
+      hostFacts: this.hostFacts,
       ...(ai && this.host instanceof ClaudeHost
         ? {
             chronicler: new ClaudeChronicler({
@@ -294,6 +304,7 @@ export class ChannelRuntime {
       await this.recorder.end(reason, this.director.stats()).catch((err) => this.log.warn("could not close the stream session", err));
     }
     await this.memory?.flush().catch((err) => this.log.warn("could not save viewer memory", err));
+    await this.hostFacts?.flush().catch((err) => this.log.warn("could not save what the host said about itself", err));
     await this.flushUsage().catch((err) => this.log.warn("could not save usage", err));
     this.setStatus("stopped", "");
     this.log.info(`host stopped (${reason})`);
@@ -632,6 +643,7 @@ export class ChannelRuntime {
     this.flushCount += 1;
     const tasks: Array<Promise<unknown>> = [
       this.memory.flush().catch((err) => this.log.warn("could not save viewer memory", err)),
+      this.hostFacts.flush().catch((err) => this.log.warn("could not save what the host said about itself", err)),
       this.recorder.flush(this.director.stats()).catch(() => undefined),
     ];
     if (this.flushCount % USAGE_FLUSH_EVERY === 0) {
