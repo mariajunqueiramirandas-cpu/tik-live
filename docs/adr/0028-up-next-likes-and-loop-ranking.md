@@ -24,7 +24,7 @@ its own clock and shows "já já" once an item is due. They're estimates: a
 segment change waits for a game in progress and a quiet moment. The studio
 gets the same list in the snapshot (`upNext`).
 
-**Top likers.** `LikeBoard` keeps every like event of the last 15 minutes
+**Top likers.** A `RollingBoard` keeps every like event of the last 15 minutes
 in arrival order with a running total per viewer; anything older than the
 window is dropped as time passes, so the board is about who is tapping now.
 Names go through the same filter as spoken names (blocklisted or
@@ -67,7 +67,7 @@ ends a podium early.
 
 ## Action Items
 
-1. [x] `LikeBoard`, `LoopRanking`, director schedule and loop end, stage hub replay on connect.
-2. [x] Protocol: `schedule`, `likers`, the `podium` scene, snapshot `upNext`, `likers`, `ranking`.
+1. [x] `RollingBoard`, `LoopRanking`, director schedule and loop end, stage hub replay on connect.
+2. [x] Protocol: `schedule`, `leaders`, the `podium` scene, snapshot `upNext`, `leaders`, `ranking`.
 3. [x] Stage panels and the podium scene; studio panes.
 4. [ ] Watch a real stream: is 15 minutes the right like window, and are the podium pauses too long?

@@ -1,5 +1,5 @@
 import { GAME_KINDS, GAME_LABELS, MUSIC_LIBRARY, type GameKind, type GameStatus, type LoopRankingStatus, type RuntimeSnapshot, type StudioCommand } from "@tik-live/shared";
-import { Gamepad2, Heart, Music, Pause, Play, Send, SkipForward, Sparkles, Square, Trophy } from "lucide-react";
+import { Gamepad2, Gift, Heart, Music, Pause, Play, Send, SkipForward, Sparkles, Square, Trophy, Vote } from "lucide-react";
 import { Link } from "react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { clock, plural } from "../../lib/format";
@@ -196,7 +196,7 @@ function GameSetup({ store, disabled }: { store: StudioStore; disabled: boolean 
     if (!validRounds || busy) return;
     const trimmed = topic.trim();
     setBusy(true);
-    const preparing: GameStatus = { kind, topic: trimmed || null, phase: "preparing", round: 0, rounds, prompt: "", answer: null, remainingSec: 0, answers: 0, leaderboard: [], source: "studio" };
+    const preparing: GameStatus = { kind, topic: trimmed || null, phase: "preparing", round: 0, rounds, prompt: "", answer: null, remainingSec: 0, answers: 0, boosts: [], leaderboard: [], source: "studio" };
     await send(store, { kind: "game_start", game: { kind, rounds, ...(trimmed ? { topic: trimmed } : {}) } }, { game: preparing }, "Não deu para começar o jogo");
     setBusy(false);
   };
@@ -308,6 +308,37 @@ function UpNextRow({ item }: { item: RuntimeSnapshot["upNext"][number] }) {
   );
 }
 
+/** Chat's vote on the last segment's game (ADR-0029). */
+function FinalVote({ vote }: { vote: NonNullable<RuntimeSnapshot["vote"]> }) {
+  const left = useCountdown(vote.closesInSec, vote.segment, true);
+  const total = vote.options.reduce((sum, option) => sum + option.votes, 0);
+  return (
+    <div className={s.upNext}>
+      <div className={s.paneHead}>
+        <h2 id="vote-heading">
+          <Vote aria-hidden /> Votação do último quadro
+        </h2>
+        <span className={s.paneHint} role="timer">
+          {left <= 0 ? "fecha já já" : `fecha em ${clock(Math.ceil(left))}`}
+        </span>
+      </div>
+      <ol aria-labelledby="vote-heading" className={s.upNextList}>
+        {vote.options.map((option, i) => (
+          <li key={option.label}>
+            <span className={s.upNextKind}>{i + 1}</span>
+            <span className={s.upNextTitle}>{option.label}</span>
+            <span className={s.upNextTime}>
+              {plural(option.votes, "voto")}
+              {total ? ` · ${Math.round((option.votes / total) * 100)}%` : ""}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className={s.paneHint}>O chat digita o número. O mais votado vira o jogo de “{vote.segment}”.</p>
+    </div>
+  );
+}
+
 /** What viewers see coming up, with the same countdowns the stage shows (ADR-0028). */
 function UpNext({ items }: { items: RuntimeSnapshot["upNext"] }) {
   return (
@@ -325,20 +356,29 @@ function UpNext({ items }: { items: RuntimeSnapshot["upNext"] }) {
   );
 }
 
-function TopLikers({ likers }: { likers: RuntimeSnapshot["likers"] }) {
+/** The stage's two rankings: likes over the last 15 minutes, gifts (diamonds) over the last hour. */
+function Rankings({ leaders }: { leaders: RuntimeSnapshot["leaders"] }) {
+  const boards = [
+    { key: "likes", title: "Top curtidas", window: "últimos 15 min", icon: <Heart aria-hidden />, unit: ["curtida", "curtidas"] as [string, string], empty: "Ninguém curtiu nos últimos 15 minutos." },
+    { key: "gifts", title: "Top presentes", window: "última hora", icon: <Gift aria-hidden />, unit: ["diamante", "diamantes"] as [string, string], empty: "Nenhum presente na última hora." },
+  ] as const;
   return (
     <div className={s.likers}>
-      <div className={s.paneHead}>
-        <h2 id="likers-heading">
-          <Heart aria-hidden /> Top curtidas
-        </h2>
-        <span className={s.paneHint}>últimos 15 min</span>
-      </div>
-      {likers.length > 0 ? (
-        <Leaders rows={likers.map((row) => ({ name: row.name, value: row.likes }))} label="Top curtidas" unit={["curtida", "curtidas"]} />
-      ) : (
-        <p className={s.paneHint}>Ninguém curtiu nos últimos 15 minutos.</p>
-      )}
+      {boards.map((board) => (
+        <div key={board.key} className={s.rankingBoard}>
+          <div className={s.paneHead}>
+            <h2 id={`${board.key}-heading`}>
+              {board.icon} {board.title}
+            </h2>
+            <span className={s.paneHint}>{board.window}</span>
+          </div>
+          {leaders[board.key].length > 0 ? (
+            <Leaders rows={leaders[board.key]} label={board.title} unit={board.unit} />
+          ) : (
+            <p className={s.paneHint}>{board.empty}</p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -493,9 +533,11 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
 
       {snapshot && onAir && (snapshot.upNext ?? []).length > 0 && <UpNext items={snapshot.upNext} />}
 
+      {snapshot && onAir && snapshot.vote && <FinalVote vote={snapshot.vote} />}
+
       {snapshot && <Games store={store} game={snapshot.game ?? null} ranking={snapshot.ranking ?? { rows: [], games: 0, revealing: false }} disabled={!usable} />}
 
-      {snapshot && onAir && <TopLikers likers={snapshot.likers ?? []} />}
+      {snapshot && onAir && <Rankings leaders={snapshot.leaders ?? { likes: [], gifts: [] }} />}
 
       {snapshot && (
         <MusicPane

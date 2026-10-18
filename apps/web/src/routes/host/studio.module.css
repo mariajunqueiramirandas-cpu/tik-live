@@ -287,6 +287,10 @@
     display: grid;
     gap: var(--s-2);
   }
+  .rankingBoard {
+    display: grid;
+    gap: var(--s-2);
+  }
   .ranking {
     padding-top: var(--s-2);
     border-top: 1px solid var(--hairline);
@@ -297,13 +301,15 @@
     font-weight: 700;
   }
   .ranking h3,
-  .likers h2 {
+  .likers h2,
+  .upNext h2 {
     display: inline-flex;
     align-items: center;
     gap: 6px;
   }
   .ranking h3 svg,
-  .likers h2 svg {
+  .likers h2 svg,
+  .upNext h2 svg {
     width: 1em;
     height: 1em;
     color: var(--haze);

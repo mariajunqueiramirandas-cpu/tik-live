@@ -164,11 +164,40 @@ own scene (`gameSceneSchema` in `packages/shared/src/game.ts`): `trivia`,
 run of show ([ADR-0028](adr/0028-up-next-likes-and-loop-ranking.md)): the
 top three of the loop's ranking, with `places` (first place first) null
 until each is revealed and `suspense` naming the place the drumroll is
-building up to. The full scene is re-sent on every change
+building up to. Round scenes may carry `boosts` (the power-ups gifts
+unlocked, see [`boost`](#boost)), and a quiz may carry `removed` (options a
+50/50 took away). The full scene is re-sent on every change
 (live counts at most four times a second), so the stage updates in place.
 `remainingMs` and `durationMs` are relative to when the message arrives;
 answers are never in the scene before `phase` is `reveal`. A stage that
 connects mid-game gets the current scene right after `hello`.
+
+#### `boost`
+
+```json
+{ "v": 1, "t": "boost", "boost": "double", "by": "duda" }
+```
+
+A gift just powered up the open game round for everyone
+([ADR-0029](adr/0029-gifts-power-ups-and-final-vote.md)): `time` (+10 s),
+`hint` (the hint shows early; in a quiz, two wrong options go away; in
+guess the number, the window narrows), or `double` (double points this
+round). The stage shows a banner for the moment; the round's own scene
+carries the lasting change (`boosts`, a quiz's `removed` options, the new
+`durationMs`).
+
+#### `vote`
+
+```json
+{ "v": 1, "t": "vote", "vote": { "title": "Jogo do quadro final", "options": ["Quiz", "Charadas", "Dedo mais rápido"], "tally": [4, 1, 9] } }
+```
+
+Chat's vote on the minigame the run of show's last segment plays
+([ADR-0029](adr/0029-gifts-power-ups-and-final-vote.md)): open during the
+last three minutes of the second-to-last segment, with the live tally (at
+most once a second). Viewers type the number. The stage's ranking card shows
+the vote instead of the rankings while it's open; `"vote": null` when it
+closes. Sent right after `hello` to a stage that connects mid-vote.
 
 #### `schedule`
 
@@ -185,16 +214,20 @@ a quiet moment, so an overdue item has `inMs` 0 ("já já"). Sent when the
 list or a time changes, and right after `hello` to a stage that connects;
 an empty `items` hides the panel.
 
-#### `likers`
+#### `leaders`
 
 ```json
-{ "v": 1, "t": "likers", "windowMin": 15, "rows": [{ "name": "mari.souza", "likes": 1834 }, { "name": "thiago_k", "likes": 960 }] }
+{ "v": 1, "t": "leaders", "board": "gifts", "windowMin": 60, "rows": [{ "name": "duda", "value": 25300 }, { "name": "lu.desenha", "value": 1200 }] }
 ```
 
-The viewers who sent the most likes in the last `windowMin` minutes, most
-first (up to five; the stage shows three). Likes older than the window no
-longer count, so the board changes as they expire. Sent at most once a
-second, and right after `hello`; empty `rows` hides the panel.
+A ranking for the stage's card, most first (up to five; the stage shows
+three): `board` `likes` counts likes over the last 15 minutes
+([ADR-0028](adr/0028-up-next-likes-and-loop-ranking.md)), `gifts` counts
+diamonds over the last hour ([ADR-0029](adr/0029-gifts-power-ups-and-final-vote.md)).
+Anything older than `windowMin` no longer counts, so a board changes as
+things expire. Each board is sent at most once a second, and right after
+`hello`; empty `rows` takes that board off the card. The card takes turns
+between the two boards.
 
 #### `music`
 
@@ -303,8 +336,9 @@ The whole `RuntimeSnapshot`: status and its detail, pause, standby (waiting
 for the TikTok account to go live), react-only mode (budget reached or
 nobody watching), the current segment and the list to jump to, audience
 stats, what's up next (`upNext`, with seconds to go), the top likers of the
-last 15 minutes (`likers`), the loop's minigame ranking (`ranking`: rows,
-games played this loop, and whether its podium is being revealed), what the
+last 15 minutes and top gifters of the last hour (`leaders`), the loop's minigame ranking (`ranking`: rows,
+games played this loop, and whether its podium is being revealed), the open
+vote on the last segment's game (`vote`, with votes per option), what the
 host is saying, the queue of things it may react to, counts
 of filtered events by reason, and health (event source, connected stages by
 role, engine telemetry, models in use, how much of the host's recent input

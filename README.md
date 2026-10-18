@@ -60,9 +60,14 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   start one from the studio. Every game's points add up over a loop of the
   run of show, and when the last segment ends the top three are revealed on
   a podium, one place at a time, before the ranking starts over.
-- **Up next and top likers**: the stage shows what's coming (the next game,
-  segment or podium) with a countdown, and who sent the most likes in the
-  last 15 minutes ([ADR-0028](docs/adr/0028-up-next-likes-and-loop-ranking.md)).
+- **Up next and rankings**: the stage shows what's coming (the next game,
+  segment or podium) with a countdown, and a card that takes turns between
+  who sent the most likes in the last 15 minutes and the most diamonds in
+  the last hour ([ADR-0028](docs/adr/0028-up-next-likes-and-loop-ranking.md)).
+- **Gift combos, power-ups and a vote**: gifts in a row build a combo on
+  stage; gifts during a game round unlock power-ups for everyone (more time,
+  a hint, double points); and chat votes which minigame the last segment
+  plays ([ADR-0029](docs/adr/0029-gifts-power-ups-and-final-vote.md)).
 - **Reactions and music**: confetti, fireworks, hearts and character moves
   the host can cue, gift effects that scale with the gift, sound effects, and
   short original music the host writes as a score and the stage synthesizes
