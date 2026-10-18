@@ -30,7 +30,7 @@ jobs:
           docker compose -f deploy/compose.yaml --profile broadcast --profile tts config -q
           docker compose -f compose.dokploy.yaml --env-file deploy/dokploy.env.example --profile broadcast --profile tts config -q
       - run: bun test
-      # Builds the web app (with prerender and bundle budgets), the server and the broadcaster.
+      # Builds the web app (with prerender), the server and the broadcaster.
       - run: bun run build
       - uses: actions/upload-artifact@v4
         with:

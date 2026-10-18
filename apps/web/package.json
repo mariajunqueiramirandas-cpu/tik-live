@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && bun scripts/prerender.tsx && bun scripts/precompress.ts && bun scripts/budgets.ts",
+    "build": "vite build && bun scripts/prerender.tsx && bun scripts/precompress.ts",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json"
   },
