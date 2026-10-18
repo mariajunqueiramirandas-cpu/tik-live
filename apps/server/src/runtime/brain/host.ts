@@ -3,7 +3,7 @@ import type { Effect, MusicTrack, Persona, SafetySettings } from "@tik-live/shar
 import type { Logger } from "../../log";
 import type { UsageReport } from "../usage";
 import { PLAY_MUSIC_TOOL, PLAY_MUSIC_TOOL_NAME, readMusicCall } from "./music-tool";
-import { buildSystemPrompt, type BriefLayout, type TurnRequest } from "./prompt";
+import { buildSystemPrompt, reactionSentences, type BriefLayout, type TurnRequest } from "./prompt";
 import { effectTags, SentenceSplitter, toUtterance, type Emotion, type Utterance } from "./sentences";
 
 /** Things the host can do besides talking. */
@@ -177,8 +177,7 @@ export class ClaudeHost implements HostBrain {
     );
 
     const splitter = new SentenceSplitter();
-    // A game turn reads a question and its options, so it gets a little more room.
-    const maxUtterances = turn.brief ? BRIEF_SENTENCES : persona.maxSentences + (turn.kind === "game" ? 3 : 1);
+    const maxUtterances = turn.brief ? BRIEF_SENTENCES : sentenceCap(turn, persona.maxSentences);
     let emotion: Emotion = "neutral";
     let produced = 0;
     // Metered from the stream itself, so a reply cut off mid-way is still counted. The API reports
@@ -278,6 +277,16 @@ export class ClaudeHost implements HostBrain {
       signal.removeEventListener("abort", abort);
     }
   }
+}
+
+/** Where a reply is cut off: one sentence past what the brief asked for. */
+function sentenceCap(turn: TurnRequest, maxSentences: number): number {
+  // A game turn reads a question and its options, so it gets a little more room.
+  if (turn.kind === "game") return maxSentences + 3;
+  const chat = turn.items.filter((item) => item.event.kind === "chat" || item.event.kind === "question").length;
+  // An answer to chat is kept as short as the brief asked: people are waiting on it.
+  if (turn.kind === "react" && chat) return reactionSentences(chat, turn.items.length - chat, maxSentences) + 1;
+  return maxSentences + 1;
 }
 
 /**

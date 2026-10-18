@@ -82,7 +82,8 @@ the kill switch (pause, skip, stop) cuts a sentence.
 - Each turn kind has a priority: filler 10, segment change 20, milestone 30,
   opening 40, reaction 50. Each queued event has an urgency: gift 35,
   chat or question 15, others 0. When an event outranks the turn in progress,
-  the director stops generating that turn and drops its queued lines. The
+  the director stops generating that turn and drops its queued lines,
+  including the next one if it's still waiting for its audio. The
   sentence on stage finishes, and the reaction starts on the next tick with
   no gap. A reaction is never cut short by another event.
 - A reaction covers the top four events plus up to eight in total, with other
@@ -90,7 +91,12 @@ the kill switch (pause, skip, stop) cuts a sentence.
   `brief`: the prompt asks for one or two sentences that thank people
   together, and the host stops after two sentences.
 - Triage merges gifts from the same viewer with the same gift name into one
-  item, adding up the counts and diamonds.
+  item, adding up the counts and diamonds. A viewer who shares again within
+  five minutes isn't thanked again.
+- A reaction to chat gets about one sentence per message (plus one for the
+  thank-yous and one for flavor, within the persona's limit), answer first,
+  and no question back to the room while people are waiting. The host stops
+  one sentence past that.
 
 ## Options Considered
 

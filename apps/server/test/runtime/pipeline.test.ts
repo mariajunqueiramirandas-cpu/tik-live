@@ -103,6 +103,30 @@ describe("SpeechPipeline", () => {
     expect(played).toEqual(["filler one", "thanks for the rose"]);
   });
 
+  it("drop() also takes the next line while it's still waiting for its audio", async () => {
+    const output = new RecordingOutput();
+    const aborted: string[] = [];
+    let finish: () => void = () => {};
+    const tts: TtsProvider = {
+      name: "stuck",
+      synthesize: (text, _emotion, signal) =>
+        new Promise((resolve) => {
+          signal?.addEventListener("abort", () => aborted.push(text));
+          finish = () => resolve(null);
+        }),
+    };
+    const pipeline = new SpeechPipeline(tts, new SafetyGate({ blocklist: [] }), output);
+    pipeline.enqueue(say("chat is quiet, so here's a fact"), { meta: { turnId: "t1", turnKind: "filler", originAt: 0, first: true } });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(pipeline.pending()).toBe(0); // off the queue, waiting for its audio
+    expect(pipeline.drop((meta) => meta?.turnKind === "filler").map((line) => line.text)).toEqual(["chat is quiet, so here's a fact"]);
+    expect(aborted).toEqual(["chat is quiet, so here's a fact"]);
+    expect(pipeline.upcoming()).toEqual([]);
+    finish();
+    await settle(pipeline);
+    expect(output.played).toEqual([]);
+  });
+
   it("puts operator lines right after the current sentence, in the order typed", async () => {
     const output = new RecordingOutput();
     const pipeline = new SpeechPipeline(new SlowTts(), new SafetyGate({ blocklist: [] }), output);

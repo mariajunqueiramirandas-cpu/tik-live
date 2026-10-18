@@ -4,7 +4,7 @@ import type { TurnContext } from "../../src/runtime/brain/conversation";
 import { ClaudeHost } from "../../src/runtime/brain/host";
 import type { TurnRequest } from "../../src/runtime/brain/prompt";
 import type { UsageReport } from "../../src/runtime/usage";
-import { persona } from "./helpers";
+import { chat, persona } from "./helpers";
 
 interface Captured {
   params?: Record<string, unknown>;
@@ -206,6 +206,15 @@ describe("ClaudeHost", () => {
     const lines = ["Thanks for the roses, Ana! ", "Welcome in, Joe and Bia! ", "Great question about cats. ", "And one more thing here."];
     const host = new ClaudeHost({ client: fakeClient(lines, {}), persona, safety, model: "claude-haiku-5-5", effort: "low" });
     expect(await collect(host, turn({ kind: "react", brief: true }))).toHaveLength(2);
+  });
+
+  it("cuts an answer to one message off a sentence past what the brief asked for", async () => {
+    const lines = ["Pizza, always, Ana! ", "Extra cheese, obviously. ", "Now let me tell you a long story. ", "It starts in Naples. ", "And it goes on."];
+    const host = new ClaudeHost({ client: fakeClient(lines, {}), persona, safety, model: "claude-haiku-5-5", effort: "low" });
+    const event = chat("ana", "pizza or burger?");
+    const items = [{ event, events: [event], priority: 1, expiresAt: Infinity, seq: 1 }];
+    // The brief asks for 1 or 2 sentences; a third gets through, the rest is cut.
+    expect(await collect(host, turn({ kind: "react", items }))).toHaveLength(3);
   });
 
   it("offers the music tool and plays only scores that parse", async () => {

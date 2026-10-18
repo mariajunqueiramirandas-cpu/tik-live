@@ -35,6 +35,8 @@ const TTL_MS: Partial<Record<LiveEvent["kind"], number>> = {
 const FLOOD_WINDOW_MS = 15_000;
 const FLOOD_MAX_MESSAGES = 3;
 const DUPLICATE_WINDOW_MS = 60_000;
+/** A viewer who shares again this soon isn't thanked again: one thank-you per sharer, not one per tap. */
+const SHARE_THANKS_MS = 5 * 60_000;
 
 /**
  * Decides which audience events deserve the host's attention, and in what
@@ -45,6 +47,7 @@ export class Triage {
   private queue: QueueItem[] = [];
   private seq = 0;
   private readonly history = new Map<string, Array<{ text: string; at: number }>>();
+  private readonly shared = new Map<string, number>();
   private readonly now: () => number;
   readonly dropped = new Map<string, number>();
 
@@ -145,7 +148,7 @@ export class Triage {
       case "gift":
         return 100 + 15 * Math.log10(event.diamonds + 1);
       case "share":
-        return 50;
+        return this.isRepeatShare(event.viewer.id) ? "repeated share" : 50;
       case "follow":
         return 45;
       case "join":
@@ -207,6 +210,15 @@ export class Triage {
     this.queue[index] = merged;
     this.queue.sort((a, b) => b.priority - a.priority);
     return merged;
+  }
+
+  private isRepeatShare(viewerId: string): boolean {
+    const now = this.now();
+    const last = this.shared.get(viewerId);
+    if (last !== undefined && now - last < SHARE_THANKS_MS) return true;
+    this.shared.set(viewerId, now);
+    if (this.shared.size > 5_000) this.shared.delete(this.shared.keys().next().value as string);
+    return false;
   }
 
   private isDuplicateQueued(text: string): boolean {

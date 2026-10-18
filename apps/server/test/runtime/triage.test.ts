@@ -33,6 +33,17 @@ describe("Triage", () => {
     expect(gifts).toEqual(["maria 1x Lion 29999", "maria 10x Rose 10", "joe 1x Rose 1"]);
   });
 
+  it("thanks a viewer for sharing once, not once per share", () => {
+    const { clock, triage, ingest } = setup();
+    const share = (handle: string) => ingest({ kind: "share", at: clock.now(), viewer: viewer(handle) });
+    expect(share("bebe").queued).toBe(true);
+    expect(share("bebe")).toEqual({ queued: false, reason: "repeated share" });
+    expect(share("ana").queued).toBe(true);
+    clock.advance(5 * 60_000);
+    expect(share("bebe").queued).toBe(true);
+    expect(triage.pending()).toBe(1); // the earlier shares expired meanwhile
+  });
+
   it("boosts questions and messages that mention the host", () => {
     const { triage, ingest } = setup();
     ingest(chat("a", "nice stream"));

@@ -352,7 +352,6 @@ export class Director {
         this.counters.shares += 1;
         this.options.stage.alert(event);
         this.sound("whoosh");
-        this.remember({ at: event.at, kind: "support", event });
         break;
       case "chat":
       case "question":
@@ -376,7 +375,8 @@ export class Director {
       if (event.kind === "chat" || event.kind === "question") {
         this.remember({ at: event.at, kind: "viewer", event });
         this.recentChat = [...this.recentChat, event.text].slice(-CHAT_SAMPLE);
-      } else if (event.kind === "join") {
+      } else if (event.kind === "join" || event.kind === "share") {
+        // A repeat share isn't queued, so the host isn't nudged to thank it again.
         this.remember({ at: event.at, kind: "support", event });
       }
       this.yieldTo(eventUrgency(event));
