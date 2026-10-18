@@ -241,7 +241,7 @@ describe("ClaudeHost", () => {
     const lines = ["Pizza, always, Ana! ", "Extra cheese, obviously. ", "Now let me tell you a long story. ", "It starts in Naples. ", "And it goes on."];
     const host = new ClaudeHost({ client: fakeClient(lines, {}), persona, safety, model: "claude-haiku-5-5", effort: "low" });
     const event = chat("ana", "pizza or burger?");
-    const items = [{ event, events: [event], priority: 1, expiresAt: Infinity, seq: 1 }];
+    const items = [{ event, events: [event], priority: 1, expiresAt: Infinity, queuedAt: 0, seq: 1 }];
     // The brief asks for 1 or 2 sentences; a third gets through, the rest is cut.
     expect(await collect(host, turn({ kind: "react", items }))).toHaveLength(3);
   });

@@ -5,7 +5,7 @@ import { escapeForPrompt } from "../safety/gate";
 import { containsBlockedTerm } from "../safety/rules";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
-import { Conversation, type Draft, type UnsaidReason } from "./conversation";
+import { Conversation, PASS, type Draft, type UnsaidReason } from "./conversation";
 import type { HostActions, HostBrain } from "./host";
 import type { ViewerMemory } from "./memory";
 import { buildBrief, type BriefRefs, type TurnKind, type TurnPlan, type TurnRequest } from "./prompt";
@@ -186,8 +186,11 @@ export class TurnEngine {
     }
     const at = this.now();
     if (repeats.length) this.conversation.add({ at, kind: "unsaid", why: "repeat", lines: repeats });
-    // Even a failed or interrupted turn commits what it got out: those lines are on their way to air.
-    const committed = this.conversation.commit(draft, brief, reply.join("\n"), at);
+    // Even a failed or interrupted turn commits what it got out: those lines are on their way to air. A turn that
+    // finished in silence ([pass], or only lines it had said already) read its room too: left uncommitted, the next
+    // turn would show those messages again as new, and the host would answer them late.
+    const finished = error === undefined && !abort.signal.aborted;
+    const committed = this.conversation.commit(draft, brief, reply.length ? reply.join("\n") : finished ? PASS : "", at);
     const scrolledBy = committed ? draft.scrolledBy : [];
     return error === undefined ? { ok: true, lines: said.length, scrolledBy } : { ok: false, error, scrolledBy };
   }

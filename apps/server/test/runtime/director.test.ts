@@ -468,6 +468,18 @@ describe("Director ordering", () => {
     expect(turn.context.brief).toContain("you didn't get to it: say who asked");
   });
 
+  it("lets a question go once it's too old to answer", async () => {
+    const { director, step, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.pause();
+    director.handleEvent(chat("lumy", "gato ou cachorro?"));
+    await step(95_000); // the show was busy for over a minute and a half
+    director.resume();
+    await step(2_000);
+    expect(host.turns.some((turn) => turn.items.some((item) => "viewer" in item.event && item.event.viewer.handle === "lumy"))).toBe(false);
+  });
+
   it("gives chat time to answer through the stream delay after the host asks something", async () => {
     const { director, step, kinds } = setup({ streamDelayMs: 5_000 });
     director.handleEvent({ kind: "viewers", at: 0, count: 12 });

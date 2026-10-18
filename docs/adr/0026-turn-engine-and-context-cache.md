@@ -157,6 +157,10 @@ the brief, stream the reply into speech, commit. It also:
 - **guards against repeats:** a line the host said in the last 10 minutes
   (same words, or 90% the same with 6+ words) is dropped before it reaches
   the voice, and the host is told; catchphrases and game turns are exempt;
+- **shows each room once:** a turn that ends in silence (`[pass]`, or only
+  lines it had said already) is committed as `[pass]`, because the host read
+  that room; left uncommitted, the next turn showed the same messages again
+  as new and the host answered them late;
 - **never speaks an id:** `e12` is stripped from speech;
 - **meters cut-off replies:** input usage is read from the stream's
   `message_start` event, and output (which the API reports only when a
@@ -182,7 +186,7 @@ the brief, stream the reply into speech, commit. It also:
    to three messages, **oldest first**. Messages older than the newest one
    answered are passed over (they're still in the room the host saw);
    questions among them come back in the next quiet moment ("you didn't get
-   to e7 earlier"), unless a reply the host wrote after seeing it already
+   to e7 earlier") if they were sent under 90 s ago, unless a reply the host wrote after seeing it already
    named whoever asked: the host sees the questions it moved past and often
    answers them anyway, and asking again made it answer twice. A pending
    like milestone rides along;

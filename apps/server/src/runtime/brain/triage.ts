@@ -8,6 +8,8 @@ export interface QueueItem {
   events: LiveEvent[];
   priority: number;
   expiresAt: number;
+  /** When it was queued: how old the message is, for coming back to a question. */
+  queuedAt: number;
   /** Arrival order, to cover events in the order they happened. */
   seq: number;
 }
@@ -120,7 +122,7 @@ export class Triage {
       if (merged) return { queued: true, item: merged };
     }
 
-    const item: QueueItem = { event, events: [event], priority, expiresAt: this.now() + ttl, seq: ++this.seq };
+    const item: QueueItem = { event, events: [event], priority, expiresAt: this.now() + ttl, queuedAt: this.now(), seq: ++this.seq };
     this.queue.push(item);
     this.queue.sort((a, b) => b.priority - a.priority);
     const max = this.options.maxQueue ?? 50;
@@ -265,6 +267,7 @@ export class Triage {
       events: [...item.events, event],
       priority: this.score(combined) as number,
       expiresAt: this.now() + ttl,
+      queuedAt: item.queuedAt,
       seq: item.seq,
     };
     this.queue[index] = merged;

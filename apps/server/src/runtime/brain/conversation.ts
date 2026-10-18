@@ -6,6 +6,9 @@ import { displayName } from "./prompt";
 /** Why one of the host's own lines never made it to air. */
 export type UnsaidReason = "cut" | "blocked" | "skipped" | "repeat";
 
+/** The reply a turn commits when the host chose to stay quiet: it saw that room, so the next turn doesn't show it again. */
+export const PASS = "[pass]";
+
 /** One thing that happened in the room, in the order it happened. */
 export type RoomEntry =
   | { at: number; kind: "viewer"; event: Extract<LiveEvent, { kind: "chat" | "question" }> }
@@ -347,7 +350,7 @@ export class Conversation {
         }
       }
       const last = exchange.reply.split("\n").at(-1)?.trim();
-      if (last) recap.lastLine = clip(last, RECAP_MAX.text * 2);
+      if (last && last !== PASS) recap.lastLine = clip(last, RECAP_MAX.text * 2);
     }
     recap.viewers = recap.viewers.slice(-RECAP_MAX.viewers * 4);
     // The biggest gifts are the ones worth remembering.

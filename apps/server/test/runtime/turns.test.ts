@@ -114,6 +114,26 @@ describe("TurnEngine", () => {
     expect(host.requests[2]?.context.room).toContain('<unsaid why="you\'d said this already, so it was dropped">"Thanks for the rose!"</unsaid>');
   });
 
+  it("doesn't show a room again after the host passed on it, or only had repeats to say", async () => {
+    const { engine, host, plan } = setup();
+    engine.conversation.add({ at: 0, kind: "viewer", event: chat("ana", "kkkkk") as never });
+    host.replies.push([]); // [pass]: nothing to say
+    expect(await engine.run(plan({ kind: "react" }))).toEqual({ ok: true, lines: 0, scrolledBy: [] });
+    engine.conversation.add({ at: 0, kind: "viewer", event: chat("bia", "boa noite") as never });
+    host.replies.push([{ text: "Boa noite, Bia!", emotion: "happy" }]);
+    await engine.run(plan({ kind: "react" }));
+    // The second turn's room is new: ana's laugh was in the last one, and the host stayed quiet on it.
+    expect(host.requests[1]?.context.room).not.toContain("kkkkk");
+    expect(host.requests[1]?.context.room).toContain("boa noite");
+    expect(host.requests[1]?.context.history.map((exchange) => exchange.reply)).toEqual(["[pass]"]);
+
+    engine.conversation.add({ at: 0, kind: "viewer", event: chat("caio", "oi") as never });
+    host.replies.push([{ text: "Boa noite, Bia!", emotion: "happy" }]); // only a repeat
+    await engine.run(plan({ kind: "react" }));
+    await engine.run(plan());
+    expect(host.requests[3]?.context.room).not.toContain(">oi<");
+  });
+
   it("lets catchphrases and game announcements repeat", async () => {
     const { engine, host, plan, speech } = setup();
     for (let i = 0; i < 2; i++) host.replies.push([{ text: "Blip blip!", emotion: "excited" }]);
@@ -150,8 +170,8 @@ describe("TurnEngine", () => {
       plan({
         kind: "react",
         items: [
-          { event: rose, events: [rose], priority: 100, expiresAt: 0, seq: 2 },
-          { event: question, events: [question], priority: 70, expiresAt: 0, seq: 1 },
+          { event: rose, events: [rose], priority: 100, expiresAt: 0, queuedAt: 0, seq: 2 },
+          { event: question, events: [question], priority: 70, expiresAt: 0, queuedAt: 0, seq: 1 },
         ],
       }),
     );
