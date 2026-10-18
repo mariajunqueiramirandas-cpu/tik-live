@@ -496,3 +496,9 @@ what's playing.
 ##### `music_stop`
 
 Stop the music on stage.
+
+##### `reset`
+
+Clears the stage without ending the stream: cuts the line being said and drops
+the queue, ends any game or podium, stops the music, and restarts the stream's
+counters and leaderboards. Viewer memory is kept.

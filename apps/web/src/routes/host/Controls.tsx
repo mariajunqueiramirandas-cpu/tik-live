@@ -1,5 +1,5 @@
 import { GAME_KINDS, GAME_LABELS, MUSIC_LIBRARY, type GameKind, type GameStatus, type LoopRankingStatus, type RuntimeSnapshot, type StudioCommand } from "@tik-live/shared";
-import { Gamepad2, Gift, Heart, Music, Pause, Play, Send, SkipForward, Sparkles, Square, Trophy, Vote } from "lucide-react";
+import { Gamepad2, Gift, Heart, Music, Pause, Play, RotateCcw, Send, SkipForward, Sparkles, Square, Trophy, Vote } from "lucide-react";
 import { Link } from "react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { clock, plural } from "../../lib/format";
@@ -186,7 +186,7 @@ function GameRunning({ game, store, disabled }: { game: GameStatus; store: Studi
 }
 
 function GameSetup({ store, disabled }: { store: StudioStore; disabled: boolean }) {
-  const [kind, setKind] = useState<GameKind>("trivia");
+  const [kind, setKind] = useState<GameKind | "random">("trivia");
   const [rounds, setRounds] = useState(5);
   const [topic, setTopic] = useState("");
   const [busy, setBusy] = useState(false);
@@ -195,21 +195,24 @@ function GameSetup({ store, disabled }: { store: StudioStore; disabled: boolean 
     event.preventDefault();
     if (!validRounds || busy) return;
     const trimmed = topic.trim();
+    // "random" draws one of the games each time the host starts it.
+    const chosen: GameKind = kind === "random" ? (GAME_KINDS[Math.floor(Math.random() * GAME_KINDS.length)] ?? "trivia") : kind;
     setBusy(true);
-    const preparing: GameStatus = { kind, topic: trimmed || null, phase: "preparing", round: 0, rounds, prompt: "", answer: null, remainingSec: 0, answers: 0, boosts: [], leaderboard: [], source: "studio" };
-    await send(store, { kind: "game_start", game: { kind, rounds, ...(trimmed ? { topic: trimmed } : {}) } }, { game: preparing }, "Não deu para começar o jogo");
+    const preparing: GameStatus = { kind: chosen, topic: trimmed || null, phase: "preparing", round: 0, rounds, prompt: "", answer: null, remainingSec: 0, answers: 0, boosts: [], leaderboard: [], source: "studio" };
+    await send(store, { kind: "game_start", game: { kind: chosen, rounds, ...(trimmed ? { topic: trimmed } : {}) } }, { game: preparing }, "Não deu para começar o jogo");
     setBusy(false);
   };
   return (
     <form className={s.gameForm} onSubmit={submit}>
-      <Field label="Jogo" hint={GAME_HOW[kind]}>
+      <Field label="Jogo" hint={kind === "random" ? "Sorteia um dos jogos ao começar." : GAME_HOW[kind]}>
         {(props) => (
-          <Select {...props} value={kind} disabled={disabled} onChange={(e) => setKind(e.target.value as GameKind)}>
+          <Select {...props} value={kind} disabled={disabled} onChange={(e) => setKind(e.target.value as GameKind | "random")}>
             {GAME_KINDS.map((k) => (
               <option key={k} value={k}>
                 {GAME_LABELS[k]}
               </option>
             ))}
+            <option value="random">Aleatório</option>
           </Select>
         )}
       </Field>
@@ -495,6 +498,10 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
     void send(store, { kind: paused ? "resume" : "pause" }, { paused: !paused });
   };
   const skip = () => usable && void send(store, { kind: "skip" }, { nowSaying: null });
+  const reset = () => {
+    if (!usable || !window.confirm("Reiniciar a live? Corta a fala, para jogo e música e zera os placares desta live.")) return;
+    void send(store, { kind: "reset" }, { nowSaying: null, game: null, music: null });
+  };
 
   useHotkeys({ p: togglePause, k: skip, s: () => sayRef.current?.focus() }, usable);
 
@@ -530,6 +537,10 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
       </div>
 
       <SayBox store={store} disabled={!usable} inputRef={sayRef} />
+
+      <Button size="sm" variant="quietDanger" icon={<RotateCcw aria-hidden />} disabled={!usable} onClick={reset}>
+        Reiniciar live
+      </Button>
 
       {snapshot && onAir && (snapshot.upNext ?? []).length > 0 && <UpNext items={snapshot.upNext} />}
 
