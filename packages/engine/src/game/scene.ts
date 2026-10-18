@@ -210,6 +210,8 @@ export class GameLayer implements Layer {
   private accent = "#FFFFFF";
   private accentRgba: Rgba = WHITE;
   private painted = false;
+  /** Podium places already on screen (bit per place), so only a new one makes an entrance; -1 before the first paint. */
+  private podiumShown = -1;
   private scale = 1;
   private time = 0;
 
@@ -464,6 +466,7 @@ export class GameLayer implements Layer {
       this.deadline = null;
       this.lastSecond = -1;
       this.key = "";
+      this.podiumShown = -1;
       this.vis.snap(1);
       for (const spring of this.vals) spring.snap(0);
       for (const spring of this.dim) spring.snap(1);
@@ -553,6 +556,15 @@ export class GameLayer implements Layer {
       case "scoreboard":
         footer("", "");
         break;
+      case "podium": {
+        const shown = scene.places.filter((place) => place !== null).length;
+        if (scene.suspense !== null) footer(`${scene.suspense}º lugar`, " · rufem os tambores…");
+        else if (shown === scene.places.length) footer("Parabéns!", " O placar geral começa do zero");
+        else footer("", "Somando os pontos de todos os jogos");
+        // The place being built up to stays bright; the rest step back.
+        for (let i = 0; i < 3; i++) (this.dim[G_OPT + i] as Spring).target = scene.suspense === null || scene.suspense === i + 1 ? 1 : 0.55;
+        break;
+      }
     }
     // Reveals dim the wrong answers.
     if ((scene.kind === "trivia" || scene.kind === "truefalse") && scene.phase === "reveal" && scene.correct !== null) {
@@ -615,6 +627,9 @@ export class GameLayer implements Layer {
           break;
         case "scoreboard":
           this.scoreboard(scene);
+          break;
+        case "podium":
+          this.podium(scene);
           break;
       }
       this.ctx2d = null;
@@ -1130,6 +1145,53 @@ export class GameLayer implements Layer {
       this.single(row.name, 42, 740, L + 150, y + 20, g, { align: 0, weight: 740, maxWidth: 470 });
       this.single(`${formatCount(row.points)} pts`, 40, 800, R - 84, y + 21, g, { align: 1, color: this.accent });
     });
+  }
+
+  /**
+   * The loop's podium (ADR-0028): hidden places are question marks, the one
+   * the drumroll is for pulses, and each place makes its entrance (the block
+   * grows back with the name on it) the moment it's revealed.
+   */
+  private podium(scene: Extract<GameScene, { kind: "podium" }>): void {
+    this.text(this.fit(scene.title, W, 1, [68, 60, 54], 800), CX, 600, G_MAIN, { weight: 800, color: "#FFD15C", glow: "#FFD15C" });
+    const base = 1180;
+    const width = 270;
+    const heights = [300, 220, 170];
+    const columns = [1, 0, 2]; // second, first, third from the left
+    const order = [0.75, 0.5, 0.3]; // first place grows last
+    const first = this.podiumShown < 0;
+    const elapsed = this.time - this.enterAt;
+    let shown = 0;
+    for (let place = 0; place < scene.places.length; place++) {
+      const row = scene.places[place];
+      const x = CX - 423 + (columns[place] as number) * (width + 18);
+      const h = heights[place] as number;
+      const g = G_OPT + place;
+      const color = PODIUM[place] as string;
+      const bit = 1 << place;
+      if (row) shown |= bit;
+      // A place revealed just now makes its entrance again; the rest stay put.
+      if (first) this.delay[g] = order[place] as number;
+      else if (row && !(this.podiumShown & bit)) this.delay[g] = elapsed + 0.05;
+      else this.delay[g] = elapsed - 1;
+      if (!row) {
+        const block = this.box(x, base - h, width, h, 26, g, rgba(color, 0.16), rgba(color, 0.55), rgba(color, 0.3), 26);
+        block.bind = B_GROW;
+        if (scene.suspense === place + 1) block.flags = F_PULSE;
+        const ref = this.index;
+        this.single("?", 130, 800, x + width / 2, base - h + 14, g, { color, glow: scene.suspense === place + 1 ? color : null, bind: B_FOLLOW, arg: ref });
+        this.single(`${place + 1}º lugar`, 40, 700, x + width / 2, base - h - 74, g, { color: HAZE, weight: 700, bind: B_FOLLOW, arg: ref });
+        continue;
+      }
+      const block = this.box(x, base - h, width, h, 26, g, rgba(color, 0.95), rgba("#FFFFFF", 0.5), rgba(color, place === 0 ? 0.6 : 0.35), 34);
+      block.bind = B_GROW;
+      if (place === 0) block.flags = F_PULSE | F_SHINE;
+      const ref = this.index;
+      this.single(String(place + 1), 130, 800, x + width / 2, base - h + 14, g, { color: DARK, bind: B_FOLLOW, arg: ref });
+      this.single(row.name, 44, 800, x + width / 2, base - h - 134, g, { bind: B_FOLLOW, arg: ref, maxWidth: width + 30, ...(place === 0 ? { glow: color } : {}) });
+      this.single(`${formatCount(row.points)} pts`, 38, 700, x + width / 2, base - h - 74, g, { color, weight: 700, bind: B_FOLLOW, arg: ref });
+    }
+    this.podiumShown = shown;
   }
 }
 

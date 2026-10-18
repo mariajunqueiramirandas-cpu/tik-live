@@ -63,12 +63,24 @@ describe("scene transitions", () => {
   });
 
   it("has a palette for every scene kind", () => {
-    for (const kind of [...GAME_KINDS, "scoreboard" as const]) {
+    for (const kind of [...GAME_KINDS, "scoreboard" as const, "podium" as const]) {
       const palette = PALETTES[kind];
       for (const color of Object.values(palette)) expect(color).toMatch(/^#[0-9A-F]{6}$/i);
     }
     const accents = new Set(Object.values(PALETTES).map((p) => p.background));
-    expect(accents.size).toBe(GAME_KINDS.length + 1);
+    expect(accents.size).toBe(GAME_KINDS.length + 2);
+  });
+
+  it("reveals podium places in place, repainting for each one", () => {
+    const podium = (places: Array<{ name: string; points: number } | null>, suspense: number | null): GameScene => ({ kind: "podium", title: "Pódio geral", places, suspense });
+    const hidden = podium([null, null, null], 3);
+    const third = podium([null, null, { name: "duda", points: 20 }], null);
+    expect(sceneChange(null, hidden)).toBe("enter");
+    expect(sceneChange(hidden, third)).toBe("update");
+    expect(sceneChange(third, podium([null, null, { name: "duda", points: 20 }], 2))).toBe("update");
+    expect(staticKey(hidden)).not.toBe(staticKey(third));
+    expect(staticKey(third)).not.toBe(staticKey(podium([null, null, { name: "duda", points: 20 }], 2)));
+    expect(sceneChange(third, null)).toBe("exit");
   });
 });
 

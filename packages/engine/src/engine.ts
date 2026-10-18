@@ -421,6 +421,12 @@ export class Engine implements StageEngine {
       case "fx":
         this.play(message.fx, message.intensity ?? 1);
         break;
+      case "schedule":
+        this.text.upNext.set(message.items, this.time, this.scale);
+        break;
+      case "likers":
+        this.text.likers.set(message.rows, message.windowMin, this.scale);
+        break;
       case "game": {
         const { scene } = message;
         this.gameMix.target = scene ? 1 : 0;

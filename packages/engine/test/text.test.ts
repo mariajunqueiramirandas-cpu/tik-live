@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { syllableCount, syllableEnvelope } from "../src/audio/envelope";
+import { formatCountdown, formatLikes } from "../src/text/hud";
 import { layoutCaption, wordAtProgress } from "../src/text/layout";
 
 // Monospace stand-in: every character is 0.5em wide.
@@ -71,5 +72,21 @@ describe("syllable envelope", () => {
     expect(env.shape(unit * 0.5, shape)).toEqual({ round: 1, wide: 0 });
     expect(env.shape(unit * 2.1, shape)).toEqual({ round: 0, wide: 1 });
     expect(env.shape(unit * 3.7, shape)).toEqual({ round: 0, wide: 0 });
+  });
+});
+
+describe("heads-up panels", () => {
+  it("counts down to what's up next in minutes and seconds", () => {
+    expect(formatCountdown(154)).toBe("2:34");
+    expect(formatCountdown(9.2)).toBe("0:10");
+    expect(formatCountdown(59)).toBe("0:59");
+    expect(formatCountdown(3_900)).toBe("1h05");
+    expect(formatCountdown(0)).toBe("já já");
+    expect(formatCountdown(-3)).toBe("já já");
+  });
+
+  it("writes like counts the Brazilian way", () => {
+    expect(formatLikes(1834)).toBe("1.834");
+    expect(formatLikes(12)).toBe("12");
   });
 });
