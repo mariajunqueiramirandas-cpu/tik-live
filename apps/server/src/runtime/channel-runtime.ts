@@ -517,6 +517,7 @@ export class ChannelRuntime {
       upNext: (this.director?.upNext() ?? []).map((item) => ({ kind: item.kind, title: item.title, inSec: Math.max(0, Math.ceil((item.at - this.now()) / 1000)) })),
       leaders: this.director?.leaders() ?? { likes: [], gifts: [] },
       ranking: this.ranking?.status() ?? { rows: [], games: 0, revealing: false },
+      goals: this.director?.goalsView() ?? [],
       vote: this.director?.voteStatus() ?? null,
       music: this.music && this.music.endsAt > this.now()
         ? { title: this.music.title, endsInSec: Math.ceil((this.music.endsAt - this.now()) / 1000), byHost: this.music.byHost }

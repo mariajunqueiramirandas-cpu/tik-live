@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { GameScene, UpNextItem } from "@tik-live/shared";
+import type { GameScene, GoalView, Persona, UpNextItem } from "@tik-live/shared";
 import { deadAirFor, Director, nextLikeMilestone, type StageNotifier } from "../../src/runtime/brain/director";
 import type { HostBrain } from "../../src/runtime/brain/host";
 import { ViewerMemory } from "../../src/runtime/brain/memory";
@@ -32,7 +32,7 @@ class FakeHost implements HostBrain {
 const stage: StageNotifier = { alert: () => {}, segment: () => {}, stats: () => {} };
 const instantOutput: SpeechOutput = { play: async () => {}, interrupt: () => {} };
 
-function setup(options: { startInStandby?: boolean; streamDelayMs?: number } = {}) {
+function setup(options: { startInStandby?: boolean; streamDelayMs?: number; persona?: Persona; stage?: StageNotifier } = {}) {
   const clock = fakeClock();
   const memory = new ViewerMemory({ now: clock.now });
   const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
@@ -104,8 +104,8 @@ describe("Director", () => {
     expect(director.segment().id).toBe("b");
   });
 
-  it("celebrates like milestones", async () => {
-    const { director, step, kinds, host } = setup();
+  it("celebrates like milestones when the goals are off", async () => {
+    const { director, step, kinds, host } = setup({ persona: { ...persona, goals: { show: false } } });
     const like = (count: number, total: number) =>
       director.handleEvent({ kind: "like", at: 0, viewer: { id: "1", handle: "a", nickname: "a" }, count, total });
     await step();
@@ -561,7 +561,7 @@ describe("Director ordering", () => {
   });
 
   it("folds a like milestone into a reaction instead of making it wait", async () => {
-    const { director, step, kinds, host } = setup();
+    const { director, step, kinds, host } = setup({ persona: { ...persona, goals: { show: false } } });
     await step();
     director.handleEvent({ kind: "like", at: 0, viewer: { id: "1", handle: "a", nickname: "a" }, count: 120 });
     director.handleEvent(chat("joe", "hello there"));
@@ -859,5 +859,69 @@ describe("Director support card", () => {
     for (let i = 0; i < 20; i++) await step(30_000);
     expect(cards).toEqual([]);
     expect(host.turns.some((turn) => turn.note?.includes("support it"))).toBe(false);
+  });
+});
+
+describe("Director: like and gift goals (ADR-0036)", () => {
+  function goalSetup(goals?: Persona["goals"]) {
+    const published: GoalView[][] = [];
+    const effects: string[] = [];
+    const sounds: string[] = [];
+    const goalStage: StageNotifier = {
+      ...stage,
+      goals: (views) => published.push(views),
+      fx: (fx) => effects.push(fx),
+      sfx: (sound) => sounds.push(sound),
+    };
+    const run = setup({ persona: { ...persona, ...(goals ? { goals } : {}) }, stage: goalStage });
+    const like = (count: number, total?: number) =>
+      run.director.handleEvent({ kind: "like", at: 0, viewer: { id: "1", handle: "a", nickname: "a" }, count, ...(total === undefined ? {} : { total }) });
+    return { ...run, like, published, effects, sounds };
+  }
+
+  it("shows both goals, celebrates the like goal once instead of a milestone, and moves on to the next", async () => {
+    const { director, step, kinds, host, like, published, effects, sounds } = goalSetup();
+    expect(director.goalsView()).toEqual([
+      { kind: "likes", value: 0, target: 500, level: 1 },
+      { kind: "gifts", value: 0, target: 100, level: 1 },
+    ]);
+    await step();
+    like(15, 120); // joined mid-stream: a baseline, not a party
+    await step(2_000);
+    expect(kinds()).toEqual(["opening"]);
+    like(400, 1_200); // past 500 and 1,000 at once: one goal to celebrate, the highest
+    expect(published.at(-1)?.[0]).toEqual({ kind: "likes", value: 1_200, target: 2_500, level: 2 });
+    expect(effects).toContain("confetti");
+    expect(sounds).toContain("fanfare");
+    await step(2_000);
+    expect(kinds()).toEqual(["opening", "milestone"]);
+    expect(host.turns[1]?.note).toBe("the stream just reached its like goal of 1,000 likes (thank chat; the next goal is 2,500)");
+    expect(host.turns[1]?.context.brief).toContain("Goals: likes 1,200 of 2,500 (goal 2); gifts 0 of 100 diamonds (goal 1).");
+  });
+
+  it("counts diamonds toward the gift goal and folds it into the thank-you", async () => {
+    const { director, step, kinds, host, published } = goalSetup({ show: true, gifts: 50 });
+    await step();
+    director.handleEvent(gift("maria", "Galaxy", 60));
+    expect(published.at(-1)?.[1]).toEqual({ kind: "gifts", value: 60, target: 100, level: 2 });
+    await step(2_000);
+    expect(kinds()).toEqual(["opening", "react"]);
+    expect(host.turns[1]?.also).toBe("the stream just reached its gift goal of 50 diamonds (thank the gifters; the next goal is 100 diamonds): celebrate it in a few words.");
+  });
+
+  it("follows a new target from the studio, and hides the goals when they're turned off", async () => {
+    const { director, step, kinds, like, published } = goalSetup();
+    await step();
+    like(300);
+    director.reconfigure({ ...persona, goals: { show: true, likes: 250 } });
+    // 300 likes are already past 250: the goal moves on to 500 without a party for likes already in.
+    expect(published.at(-1)?.[0]).toEqual({ kind: "likes", value: 300, target: 500, level: 1 });
+    director.reconfigure({ ...persona, goals: { show: false } });
+    expect(published.at(-1)).toEqual([]);
+    like(300);
+    await step(2_000);
+    expect(kinds()).toEqual(["opening", "milestone"]); // the milestones are back: 500 likes
+    director.reconfigure({ ...persona, goals: { show: true, likes: 250 } });
+    expect(published.at(-1)?.[0]).toEqual({ kind: "likes", value: 600, target: 750, level: 1 });
   });
 });

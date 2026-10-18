@@ -102,4 +102,23 @@ describe("StageHub pacing", () => {
     expect(stats.at(-1)).toMatchObject({ viewers: 3, likes: 50 });
     after();
   });
+
+  it("coalesces goal progress, sends a goal reached at once, and replays the goals to a stage that connects", async () => {
+    const { hub, attach, clock, after } = setup();
+    const obs = attach("obs", "program");
+    const goals = (likes: number, target = 500, level = 1) => [
+      { kind: "likes" as const, value: likes, target, level },
+      { kind: "gifts" as const, value: 0, target: 100, level: 1 },
+    ];
+    hub.goals(goals(0));
+    for (let likes = 1; likes <= 40; likes++) hub.goals(goals(likes));
+    hub.goals(goals(520, 1_000, 2)); // reached: no waiting
+    expect(obs.sent.filter((m) => m.t === "goals").map((m) => (m.goals as Array<{ value: number }>)[0]?.value)).toEqual([0, 520]);
+    clock.advance(300);
+    await wait(300);
+    expect(obs.sent.filter((m) => m.t === "goals")).toHaveLength(2); // nothing new to send
+    const late = attach("late", "program");
+    expect(late.sent.find((m) => m.t === "goals")).toMatchObject({ goals: goals(520, 1_000, 2) });
+    after();
+  });
 });

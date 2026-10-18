@@ -105,6 +105,36 @@ test("up next and the top likers show under the badge, and leave when emptied", 
   expect(await lit(), "panels faded out").toBeLessThanOrEqual(before + 2);
 });
 
+test("the goals show top right, turn gold when one is reached, and leave when hidden", async ({ page }) => {
+  // The goal panel's area: right of the title, above the alerts, clear of the orb.
+  const area = async (match: (rgba: Rgba) => boolean) => {
+    let n = 0;
+    for (let y = 214; y <= 340; y += 8) for (let x = 728; x <= 1004; x += 12) if (match(await probe(page, x, y))) n++;
+    return n;
+  };
+  const bright = (rgba: Rgba) => brightness(rgba) > 450;
+  const gold = ([r, g, b]: Rgba) => r > 180 && g > 140 && b < 120;
+  await page.evaluate(() => (window as any).__lab.frame(2));
+  const before = await area(bright);
+  await page.evaluate(() => {
+    (window as any).__lab.goals(true);
+    (window as any).__lab.frame(3);
+  });
+  expect(await area(bright), "goal text and bars").toBeGreaterThan(before + 8);
+  const goldBefore = await area(gold);
+  await page.evaluate(() => {
+    (window as any).__lab.reachGoal();
+    (window as any).__lab.frame(3.5);
+  });
+  expect(await area(gold), "the goal reached turns gold").toBeGreaterThan(goldBefore + 4);
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+  await page.evaluate(() => {
+    (window as any).__lab.goals(false);
+    (window as any).__lab.frame(6);
+  });
+  expect(await area(bright), "panel faded out").toBeLessThanOrEqual(before + 2);
+});
+
 test("the stage recovers from a lost GPU context", async ({ page }) => {
   await page.evaluate(() => (window as any).__lab.frame(2));
   expect(brightness(await probe(page, 540, 625))).toBeGreaterThan(300);

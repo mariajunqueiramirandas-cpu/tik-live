@@ -285,6 +285,7 @@
   .games,
   .music,
   .upNext,
+  .goals,
   .likers,
   .ranking {
     display: grid;
@@ -305,6 +306,7 @@
   }
   .ranking h3,
   .likers h2,
+  .goals h2,
   .upNext h2 {
     display: inline-flex;
     align-items: center;
@@ -312,10 +314,54 @@
   }
   .ranking h3 svg,
   .likers h2 svg,
+  .goals h2 svg,
+  .goalLabel svg,
   .upNext h2 svg {
     width: 1em;
     height: 1em;
     color: var(--haze);
+  }
+  .goalList {
+    list-style: none;
+    display: grid;
+    gap: var(--s-2);
+    font-size: var(--t-12);
+  }
+  .goalList li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px var(--s-2);
+    align-items: baseline;
+  }
+  .goalLabel {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .goalCount {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .goalBar {
+    grid-column: 1 / -1;
+    width: 100%;
+    height: 6px;
+    appearance: none;
+    border: 0;
+    border-radius: 3px;
+    background: var(--shelf);
+    overflow: hidden;
+  }
+  .goalBar::-webkit-progress-bar {
+    background: var(--shelf);
+  }
+  .goalBar::-webkit-progress-value {
+    background: var(--glow);
+    border-radius: 3px;
+  }
+  .goalBar::-moz-progress-bar {
+    background: var(--glow);
+    border-radius: 3px;
   }
   .upNextList {
     list-style: none;

@@ -41,6 +41,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0033](0033-host-memory.md) | Host memory that's cheap, fast and accurate | Proposed |
 | [0034](0034-names-that-sound-rude.md) | Names that sound rude out loud | Proposed |
 | [0035](0035-automatic-run-of-show.md) | A run of show the host plans by itself | Proposed |
+| [0036](0036-like-and-gift-goals.md) | Like and gift goals on stage | Proposed |
 
 ## Evidence used
 

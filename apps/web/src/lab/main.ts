@@ -10,7 +10,8 @@ import { HUD, SCENES, tick } from "./samples";
  * `?scene=trivia|trivia-reveal|poll|...` (see samples.ts), `?fx=confetti`,
  * `?gift=galaxy`, `?emotion=shy`, `?music=lofi-night`, `?caption=0` (no
  * sample caption with scenes), `?hud` (up next and top likers), `?support`
- * (the "apoie a live" card), `?bare` (no control panel).
+ * (the "apoie a live" card), `?goals` (the stream's goals), `?bare` (no
+ * control panel).
  */
 const params = new URLSearchParams(location.search);
 const manual = params.get("clock") === "manual";
@@ -81,6 +82,17 @@ const lab = {
   },
   /** Shows (or with false, hides) the "how to support the show" card. */
   support: (on = true) => engine.apply(on ? HUD.support : { t: "support", card: null }),
+  /** Shows (or with false, hides) the stream's goals. */
+  goals: (on = true) => engine.apply(on ? HUD.goals : { t: "goals", goals: [] }),
+  /** Reaches the like goal: the bar celebrates, then the next goal comes up. */
+  reachGoal: () =>
+    engine.apply({
+      t: "goals",
+      goals: [
+        { kind: "likes", value: 5_020, target: 10_000, level: 3 },
+        { kind: "gifts", value: 120, target: 500, level: 1 },
+      ],
+    }),
   caption(text: string) {
     engine.apply({ t: "speak", id: `lab-${Date.now()}`, text, emotion: "happy", audioUrl: null, durationMs: 2600 });
   },
@@ -111,6 +123,7 @@ const music = params.get("music");
 if (music) lab.music(music);
 if (params.has("hud")) lab.hud();
 if (params.has("support")) lab.support();
+if (params.has("goals")) lab.goals();
 
 if (!manual && !params.has("bare")) panel();
 
@@ -143,9 +156,12 @@ function panel(): void {
     }
   });
   group("Jogos", ["(none)", ...Object.keys(SCENES)], (s) => lab.scene(s === "(none)" ? null : s));
-  group("Painéis", ["a seguir e curtidas", "apoie a live", "esconder"], (k) => {
+  group("Painéis", ["a seguir e curtidas", "apoie a live", "metas", "bater a meta", "esconder"], (k) => {
     if (k === "apoie a live") lab.support();
+    else if (k === "metas") lab.goals();
+    else if (k === "bater a meta") lab.reachGoal();
     else {
+      if (k === "esconder") lab.goals(false);
       lab.support(false);
       lab.hud(k !== "esconder");
     }

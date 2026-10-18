@@ -1,5 +1,5 @@
 import { GAME_KINDS, GAME_LABELS, MUSIC_LIBRARY, type GameKind, type GameStatus, type LoopRankingStatus, type RuntimeSnapshot, type StudioCommand } from "@tik-live/shared";
-import { Gamepad2, Gift, Heart, Music, Pause, Play, RotateCcw, Send, SkipForward, Sparkles, Square, Trophy, Vote } from "lucide-react";
+import { Gamepad2, Gift, Heart, Music, Pause, Play, RotateCcw, Send, SkipForward, Sparkles, Square, Target, Trophy, Vote } from "lucide-react";
 import { Link } from "react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { clock, plural } from "../../lib/format";
@@ -359,6 +359,38 @@ function UpNext({ items }: { items: RuntimeSnapshot["upNext"] }) {
   );
 }
 
+/** The stream's like and gift goals, as the stage shows them (ADR-0036). */
+function Goals({ goals }: { goals: RuntimeSnapshot["goals"] }) {
+  const looks = {
+    likes: { title: "Curtidas", icon: <Heart aria-hidden /> },
+    gifts: { title: "Diamantes", icon: <Gift aria-hidden /> },
+  } as const;
+  return (
+    <div className={s.goals}>
+      <div className={s.paneHead}>
+        <h2 id="goals-heading">
+          <Target aria-hidden /> Metas da live
+        </h2>
+        <span className={s.paneHint}>Também aparece no palco</span>
+      </div>
+      <ul role="list" aria-labelledby="goals-heading" className={s.goalList}>
+        {goals.map((goal) => (
+          <li key={goal.kind}>
+            <span className={s.goalLabel}>
+              {looks[goal.kind].icon} {looks[goal.kind].title}
+              {goal.level > 1 && <span className={s.dim}> · meta {goal.level}</span>}
+            </span>
+            <span className={s.goalCount}>
+              {goal.value.toLocaleString("pt-BR")} / {goal.target.toLocaleString("pt-BR")}
+            </span>
+            <progress className={s.goalBar} value={Math.min(goal.value, goal.target)} max={goal.target} aria-label={`${looks[goal.kind].title}: ${goal.value} de ${goal.target}`} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The stage's two rankings: likes over the last 15 minutes, gifts (diamonds) over the last hour. */
 function Rankings({ leaders }: { leaders: RuntimeSnapshot["leaders"] }) {
   const boards = [
@@ -547,6 +579,7 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
 
       {snapshot && <Games store={store} game={snapshot.game ?? null} ranking={snapshot.ranking ?? { rows: [], games: 0, revealing: false }} disabled={!usable} />}
 
+      {snapshot && onAir && (snapshot.goals ?? []).length > 0 && <Goals goals={snapshot.goals} />}
       {snapshot && onAir && <Rankings leaders={snapshot.leaders ?? { likes: [], gifts: [] }} />}
 
       {snapshot && (

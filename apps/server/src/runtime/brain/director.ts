@@ -10,6 +10,7 @@ import {
   type GameConfig,
   type GameKind,
   type GiftAsks,
+  type GoalView,
   type LeaderBoard,
   type LeaderRow,
   type LiveEvent,
@@ -26,6 +27,7 @@ import type { Logger } from "../../log";
 import type { GameMaster } from "../games/master";
 import type { LoopRanking } from "../games/ranking";
 import { FinalVote, voteOptions } from "../games/vote";
+import { type GoalReached, StreamGoals } from "../goals";
 import { GIFT_WINDOW_MS, LIKE_WINDOW_MS, RollingBoard } from "../leaderboards";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
@@ -65,6 +67,8 @@ export interface StageNotifier {
   leaders?(board: LeaderBoard, rows: LeaderRow[], windowMin: number): void;
   /** The "how to support the show" card, or null to put the rankings back (ADR-0032). */
   support?(card: SupportCard | null): void;
+  /** The stream's like and gift goals; an empty list hides them (ADR-0036). */
+  goals?(goals: GoalView[]): void;
 }
 
 /** Observability hooks for the studio feed and analytics. */
@@ -204,12 +208,13 @@ export function eventUrgency(event: LiveEvent): number {
 const EMPTY_ROOM_REACT_ONLY_MS = 10 * 60 * 1000;
 
 /** Ideas for quiet moments, in rotation, so fillers don't all sound alike. */
-const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean }> = [
+const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean; needsGoals?: boolean }> = [
   { beat: "ask chat one fresh, easy question you haven't asked before." },
   { beat: "share a quick, original opinion or hot take, then ask chat if they agree." },
   { beat: "follow up on something a viewer told you earlier, by name.", needsChat: true },
   { beat: "tell a tiny story or a funny observation that fits your character, two sentences at most." },
   { beat: "welcome anyone who just arrived, say in one line what this show is about, and invite them to say hi." },
+  { beat: "cheer chat on toward the stream's goals: say how many likes or diamonds are left to the next one.", needsGoals: true },
   { beat: "start a quick challenge chat can answer in one word." },
 ];
 
@@ -297,6 +302,9 @@ export class Director {
   private viewers = 0;
   private peakViewers = 0;
   private pendingMilestone: number | undefined;
+  /** The stream's like and gift goals (ADR-0036), and the ones reached that the host hasn't celebrated yet. */
+  private readonly goals: StreamGoals;
+  private pendingGoals: GoalReached[] = [];
   private nextMilestone = LIKE_MILESTONES[0] as number;
   private recentLines: string[] = [];
   private budgetReactOnly = false;
@@ -347,6 +355,7 @@ export class Director {
     this.lastEventAt = this.startedAt;
     this.standby = options.startInStandby ?? false;
     this.boards = { likes: new RollingBoard(this.now, LIKE_WINDOW_MS), gifts: new RollingBoard(this.now, GIFT_WINDOW_MS) };
+    this.goals = new StreamGoals(goalSteps(this.persona));
     const blocklist = options.blocklist ?? (() => []);
     this.engine = new TurnEngine({
       host: options.host,
@@ -367,6 +376,7 @@ export class Director {
 
   start(intervalMs = 200): void {
     this.options.stage.segment(this.segment());
+    this.publishGoals();
     this.timer = setInterval(() => void this.tick(), intervalMs);
   }
 
@@ -399,8 +409,19 @@ export class Director {
       this.finalGame = null;
     }
     if (wasAuto !== isAuto) this.segmentDraws.clear();
+    const goalsWere = this.goalsOn();
     this.persona = persona;
     this.show = show;
+    const stepsChanged = this.goals.setSteps(goalSteps(persona));
+    if (goalsWere !== this.goalsOn()) {
+      // Whichever takes over picks up from the counts so far, without celebrating them.
+      this.goals.baseline("likes", this.counters.likes);
+      this.goals.baseline("gifts", this.counters.diamonds);
+      this.nextMilestone = nextLikeMilestone(this.counters.likes);
+      this.pendingGoals = [];
+      this.pendingMilestone = undefined;
+    }
+    if (stepsChanged || goalsWere !== this.goalsOn()) this.publishGoals();
     if (!this.supportOn()) {
       this.hideSupport();
       this.supportCardAt = Infinity;
@@ -486,6 +507,10 @@ export class Director {
         this.counters.likes = Math.max(this.counters.likes + event.count, event.total ?? 0);
         if (joinedMidStream) {
           this.nextMilestone = nextLikeMilestone(this.counters.likes);
+          this.goals.baseline("likes", this.counters.likes);
+        } else if (this.goalsOn()) {
+          // The like goal takes the milestones' place: one celebration, not two.
+          this.reachGoal(this.goals.update("likes", this.counters.likes));
         } else if (this.counters.likes >= this.nextMilestone) {
           let crossed = this.nextMilestone;
           while (nextLikeMilestone(crossed) <= this.counters.likes) crossed = nextLikeMilestone(crossed);
@@ -496,6 +521,7 @@ export class Director {
         }
         this.boards.likes.add(event.viewer.id, this.boardName(event.viewer), event.count);
         this.options.stage.stats({ viewers: this.viewers, likes: this.counters.likes });
+        if (this.goalsOn()) this.publishGoals();
         this.options.hooks?.onEvent?.(event, null);
         return;
       }
@@ -503,6 +529,10 @@ export class Director {
         this.counters.gifts += 1;
         this.counters.diamonds += event.diamonds;
         this.boards.gifts.add(event.viewer.id, this.boardName(event.viewer), event.diamonds);
+        if (this.goalsOn()) {
+          this.reachGoal(this.goals.update("gifts", this.counters.diamonds));
+          this.publishGoals();
+        }
         // Gifts during an open round power it up for everyone (ADR-0029).
         this.options.games?.handleGift(event);
         this.options.stage.alert(event);
@@ -701,6 +731,9 @@ export class Director {
     this.peakViewers = this.viewers;
     this.nextMilestone = LIKE_MILESTONES[0] as number;
     this.pendingMilestone = undefined;
+    this.goals.reset();
+    this.pendingGoals = [];
+    this.publishGoals();
     this.clearBoards();
   }
 
@@ -785,6 +818,7 @@ export class Director {
       stats: { viewers: this.viewers, likes: this.counters.likes, uptimeMinutes: this.stats().uptimeMinutes },
       clock: describeClock(now, this.persona.timezone),
       segmentLeftMin: Math.max(0, Math.ceil((segmentEndsAt - now) / 60_000)),
+      ...(this.goalsOn() ? { goals: this.goals.describe() } : {}),
       ...(game ? { game } : {}),
       ...(this.music && this.music.endsAt > now ? { music: `"${this.music.title}" is playing (${Math.ceil((this.music.endsAt - now) / 1000)} s left).` } : {}),
       originAt: now,
@@ -920,14 +954,39 @@ export class Director {
   }
 
   private takeMilestone(): { note: string; line: string } | undefined {
-    if (this.pendingMilestone === undefined) return undefined;
-    const crossed = this.pendingMilestone;
-    this.pendingMilestone = undefined;
     // The note is for the model (English numbers); the line is spoken by the offline host (Brazilian numbers).
-    return {
-      note: `the stream just passed ${crossed.toLocaleString("en-US")} likes`,
-      line: `Passamos de ${crossed.toLocaleString("pt-BR")} curtidas`,
-    };
+    const moments: Array<{ note: string; line: string }> = [];
+    if (this.pendingMilestone !== undefined) {
+      const crossed = this.pendingMilestone;
+      moments.push({ note: `the stream just passed ${crossed.toLocaleString("en-US")} likes`, line: `Passamos de ${crossed.toLocaleString("pt-BR")} curtidas` });
+    }
+    for (const goal of this.pendingGoals) moments.push(goalMoment(goal));
+    this.pendingMilestone = undefined;
+    this.pendingGoals = [];
+    if (moments.length === 0) return undefined;
+    return { note: moments.map((m) => m.note).join("; and "), line: moments.map((m) => m.line).join(". ") };
+  }
+
+  private goalsOn(): boolean {
+    return this.persona.goals?.show !== false;
+  }
+
+  /** A goal was just reached: a big moment on stage now, and the host celebrates it at the next free turn. */
+  private reachGoal(reached: GoalReached | null): void {
+    if (!reached) return;
+    this.pendingGoals = [...this.pendingGoals.filter((goal) => goal.kind !== reached.kind), reached];
+    this.options.stage.fx?.(reached.kind === "likes" ? "hearts" : "fireworks", 3);
+    this.options.stage.fx?.("confetti", 2);
+    this.sound("fanfare");
+  }
+
+  private publishGoals(): void {
+    this.options.stage.goals?.(this.goalsView());
+  }
+
+  /** The stream's goals as the stage shows them; none when they're turned off. */
+  goalsView(): GoalView[] {
+    return this.goalsOn() ? this.goals.view() : [];
   }
 
   /** Moves to the next segment in the rotation; the last one ends the loop, and its podium goes first. */
@@ -1003,8 +1062,9 @@ export class Director {
     const segment = this.segment();
     if (this.takeSupportTalk()) return `Keep the show alive for "${segment.title}". This time, ${SUPPORT_TALK[this.giftAsks()]}`;
     const chat = this.engine.conversation.hasViewerChat();
+    const usable = (beat: (typeof FILLER_BEATS)[number]) => (!beat.needsChat || chat) && (!beat.needsGoals || this.goalsOn());
     let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
-    if (pick.needsChat && !chat) pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
+    if (!usable(pick)) pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     return `Keep the show alive for "${segment.title}" (${segment.prompt}). This time, ${pick.beat}`;
   }
 
@@ -1231,4 +1291,22 @@ function segmentTitle(segment: Segment, config: GameConfig | undefined): string 
 function gameTitle(config: GameConfig): string {
   const label = GAME_LABELS[config.kind];
   return clip(config.topic ? `${label}: ${config.topic}` : label, 60);
+}
+
+/** The targets the creator set for the goals, if any. */
+function goalSteps(persona: Persona): { likes?: number; gifts?: number } {
+  const goals = persona.goals;
+  return { ...(goals?.likes ? { likes: goals.likes } : {}), ...(goals?.gifts ? { gifts: goals.gifts } : {}) };
+}
+
+/** What the host celebrates for a goal reached: a note for the model (English numbers), a line for the offline host. */
+function goalMoment(goal: GoalReached): { note: string; line: string } {
+  const en = (n: number) => n.toLocaleString("en-US");
+  const pt = (n: number) => n.toLocaleString("pt-BR");
+  return goal.kind === "likes"
+    ? { note: `the stream just reached its like goal of ${en(goal.target)} likes (thank chat; the next goal is ${en(goal.next)})`, line: `Batemos a meta de ${pt(goal.target)} curtidas! Próxima meta: ${pt(goal.next)}` }
+    : {
+        note: `the stream just reached its gift goal of ${en(goal.target)} diamonds (thank the gifters; the next goal is ${en(goal.next)} diamonds)`,
+        line: `Batemos a meta de ${pt(goal.target)} diamantes! Próxima meta: ${pt(goal.next)}`,
+      };
 }

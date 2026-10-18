@@ -52,6 +52,18 @@ export const supportCardSchema = z.object({
 });
 export type SupportCard = z.infer<typeof supportCardSchema>;
 
+export const GOAL_KINDS = ["likes", "gifts"] as const;
+export type GoalKind = (typeof GOAL_KINDS)[number];
+
+/** One of the stream's goals: likes, or diamonds in gifts. `level` counts up each time one is reached (goal 1, goal 2...). */
+export const goalViewSchema = z.object({
+  kind: z.enum(GOAL_KINDS),
+  value: z.number().int().min(0),
+  target: z.number().int().min(1),
+  level: z.number().int().min(1),
+});
+export type GoalView = z.infer<typeof goalViewSchema>;
+
 export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({
     v,
@@ -113,6 +125,8 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   }),
   /** The "how to support the show" card, in the ranking card's place for a moment, or null to put the rankings back (ADR-0032). */
   z.object({ v, t: z.literal("support"), card: supportCardSchema.nullable() }),
+  /** The stream's like and gift goals and how far along they are; an empty list hides them (ADR-0036). */
+  z.object({ v, t: z.literal("goals"), goals: z.array(goalViewSchema).max(GOAL_KINDS.length) }),
   /** What's coming up on the show, soonest first, with times relative to receipt (ADR-0028). */
   z.object({ v, t: z.literal("schedule"), items: z.array(upNextItemSchema).max(UP_NEXT_MAX) }),
   /** Who gave the most in the last `windowMin` minutes, most first: likes, or diamonds in gifts (ADR-0028, ADR-0029). */
@@ -189,6 +203,8 @@ export interface RuntimeSnapshot {
   leaders: Record<LeaderBoard, LeaderRow[]>;
   /** Minigame points summed over this loop of the run of show. */
   ranking: LoopRankingStatus;
+  /** The stream's like and gift goals, when the stage shows them (ADR-0036). */
+  goals: GoalView[];
   /** Chat's vote on the last segment's game, while it's open. */
   vote: { segment: string; options: Array<{ label: string; votes: number }>; closesInSec: number } | null;
   /** The piece of music playing on stage, if any. */

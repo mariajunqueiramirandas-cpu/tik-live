@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { syllableCount, syllableEnvelope } from "../src/audio/envelope";
-import { formatCount, formatCountdown, nextBoard, windowLabel } from "../src/text/hud";
+import { formatCount, formatCountdown, goalFraction, goalProgress, nextBoard, windowLabel } from "../src/text/hud";
 import { layoutCaption, wordAtProgress } from "../src/text/layout";
 
 // Monospace stand-in: every character is 0.5em wide.
@@ -102,5 +102,13 @@ describe("heads-up panels", () => {
     expect(nextBoard("likes", likesOnly)).toBe("likes");
     expect(nextBoard("gifts", likesOnly)).toBe("likes");
     expect(nextBoard(null, () => false)).toBeNull();
+  });
+
+  it("fills a goal's bar and writes its progress in Portuguese", () => {
+    expect(goalProgress({ value: 3_240, target: 5_000 })).toBe("3.240 / 5.000");
+    expect(goalProgress({ value: 25_300, target: 50_000 })).toBe("25,3 mil / 50 mil");
+    expect(goalFraction({ value: 250, target: 1_000 })).toBe(0.25);
+    expect(goalFraction({ value: 1_200, target: 1_000 })).toBe(1);
+    expect(goalFraction({ value: 0, target: 500 })).toBe(0);
   });
 });

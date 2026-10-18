@@ -91,6 +91,14 @@ describe("prompts", () => {
     expect(buildSystemPrompt({ ...persona, rules: [] })).not.toContain("show rules");
   });
 
+  it("tells the host about the goals when the stage shows them, and keeps the gift goal light unless the channel asks actively", () => {
+    const light = buildSystemPrompt(persona);
+    expect(light).toContain("# Goals");
+    expect(light).toContain("never to one viewer by name");
+    expect(buildSystemPrompt(persona, { strictness: "standard", avoidTopics: [], giftAsks: "active" })).toContain("Rally the room for the gift goal");
+    expect(buildSystemPrompt({ ...persona, goals: { show: false } })).not.toContain("# Goals");
+  });
+
   it("speaks Brazilian Portuguese, unless the voice can only speak something else", () => {
     expect(buildSystemPrompt(persona)).toContain("Always speak Brazilian Portuguese (natural, everyday Brazilian speech), whatever language a viewer writes in");
     expect(buildSystemPrompt(persona, undefined, "pt-BR")).toContain("Always speak Brazilian Portuguese (natural");

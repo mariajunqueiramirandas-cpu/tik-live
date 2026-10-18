@@ -1,4 +1,4 @@
-import type { LeaderBoard, LeaderRow, SupportCard, SupportWay, UpNextItem } from "@tik-live/shared";
+import type { GoalKind, GoalView, LeaderBoard, LeaderRow, SupportCard, SupportWay, UpNextItem } from "@tik-live/shared";
 import { Spring, SPRINGS } from "../anim/spring";
 import type { Gl } from "../gl/gl";
 import { FONT_FAMILY, GOLD, HAZE, INK, measureWith, roundRect, TextSprite, truncate, withAlpha } from "./sprites";
@@ -12,7 +12,8 @@ import { FONT_FAMILY, GOLD, HAZE, INK, measureWith, roundRect, TextSprite, trunc
  * character (x 375 at rest, 430 during games) and ends above where a game
  * board starts (y 560), clear of TikTok's header, right rail and comments.
  * Painted when content changes; the countdown repaints once a second and
- * the card crossfades when it turns.
+ * the card crossfades when it turns. The stream's goals (ADR-0036) sit top
+ * right, across from the title and above the alerts.
  */
 
 const X = 64;
@@ -42,6 +43,16 @@ export function formatCountdown(seconds: number): string {
 export function formatCount(n: number): string {
   if (n >= 10_000) return `${(Math.round(n / 100) / 10).toLocaleString("pt-BR")} mil`;
   return n.toLocaleString("pt-BR");
+}
+
+/** How full a goal's bar is, 0 to 1. */
+export function goalFraction(goal: Pick<GoalView, "value" | "target">): number {
+  return goal.target > 0 ? Math.max(0, Math.min(1, goal.value / goal.target)) : 0;
+}
+
+/** "3.240 / 5.000", "25,3 mil / 50 mil". */
+export function goalProgress(goal: Pick<GoalView, "value" | "target">): string {
+  return `${formatCount(goal.value)} / ${formatCount(goal.target)}`;
 }
 
 /** "15 MIN", "1 H". */
@@ -537,6 +548,127 @@ export class LeaderCard {
           ctx.fillStyle = HAZE;
           ctx.fillText(total ? `${Math.round(share * 100)}%` : "", WIDTH - PAD - 10, y + 21);
           ctx.textAlign = "left";
+        });
+      },
+      crossfade,
+      now,
+    );
+  }
+}
+
+// ---- the stream's goals ----------------------------------------------------------
+
+const GOALS = { right: 1080 - 64, top: 200, width: 300, rowH: 52, head: 42 };
+/** How long a goal just reached shows "META BATIDA!" before the next goal. */
+const CELEBRATE_S = 4;
+const GOAL_LOOK: Record<GoalKind, { label: string; color: string }> = {
+  likes: { label: "CURTIDAS", color: HEART },
+  gifts: { label: "DIAMANTES", color: DIAMOND },
+};
+
+/** The like and gift goals: a bar each, filling as they come in, and a moment of gold when one is reached. */
+export class GoalPanel {
+  readonly sprite: TextSprite;
+  private goals: GoalView[] = [];
+  /** Until when (stage clock, seconds) each goal just reached shows its celebration. */
+  private readonly celebrating = new Map<GoalKind, number>();
+
+  constructor(gl: Gl) {
+    this.sprite = new TextSprite(gl);
+  }
+
+  set(goals: readonly GoalView[], now: number, scale: number): void {
+    const wasHidden = this.goals.length === 0;
+    for (const goal of goals) {
+      const before = this.goals.find((old) => old.kind === goal.kind);
+      if (before && goal.level > before.level) this.celebrating.set(goal.kind, now + CELEBRATE_S);
+    }
+    this.goals = goals.slice(0, 2);
+    if (this.goals.length === 0) {
+      this.celebrating.clear();
+      this.sprite.opacity.target = 0;
+      return;
+    }
+    const reached = this.goals.some((goal) => (this.celebrating.get(goal.kind) ?? 0) > now);
+    this.paint(now, scale);
+    if (wasHidden) enter(this.sprite, true);
+    else if (reached) {
+      // A little hop for the goal just reached.
+      this.sprite.offsetY.snap(-14);
+      this.sprite.offsetY.target = 0;
+    }
+  }
+
+  update(dt: number, now: number, scale: number): void {
+    let ended = false;
+    for (const [kind, until] of this.celebrating) {
+      if (until > now) continue;
+      this.celebrating.delete(kind);
+      ended = true;
+    }
+    if (ended && this.goals.length) this.paint(now, scale, true);
+    this.sprite.update(dt, now);
+  }
+
+  repaint(scale: number): void {
+    if (this.goals.length) this.paint(0, scale);
+  }
+
+  private paint(now: number, scale: number, crossfade = false): void {
+    const { width, rowH, head } = GOALS;
+    const goals = this.goals;
+    const height = head + goals.length * rowH + 6;
+    const labelFont = `800 15px ${FONT_FAMILY}`;
+    const valueFont = `800 21px ${FONT_FAMILY}`;
+    this.sprite.x = GOALS.right - width;
+    this.sprite.y = GOALS.top;
+    const party = goals.some((goal) => this.celebrating.has(goal.kind));
+    this.sprite.draw(
+      width,
+      height,
+      scale,
+      (ctx) => {
+        glass(ctx, width, height, party ? GOLD : HEART, party ? "#FF8A3D" : DIAMOND, 20);
+        ctx.textBaseline = "alphabetic";
+        ctx.font = `800 17px ${FONT_FAMILY}`;
+        ctx.fillStyle = party ? GOLD : HAZE;
+        ctx.fillText("METAS DA LIVE", PAD, 32);
+        goals.forEach((goal, i) => {
+          const top = head + i * rowH;
+          const look = GOAL_LOOK[goal.kind];
+          const done = this.celebrating.has(goal.kind);
+          const color = done ? GOLD : look.color;
+          if (goal.kind === "gifts") diamond(ctx, PAD + 9, top + 13, 15, color);
+          else heart(ctx, PAD + 9, top + 12, 16, color);
+          const value = done ? "META BATIDA!" : goalProgress(goal);
+          ctx.font = valueFont;
+          const valueW = measureWith(valueFont)(value);
+          ctx.textAlign = "right";
+          ctx.fillStyle = done ? GOLD : INK;
+          ctx.fillText(value, width - PAD, top + 21);
+          ctx.textAlign = "left";
+          ctx.font = labelFont;
+          ctx.fillStyle = HAZE;
+          // "CURTIDAS · META 2" when there's room next to the numbers, else just "CURTIDAS".
+          const room = width - PAD * 2 - 24 - valueW - 10;
+          const numbered = `${look.label} · META ${goal.level}`;
+          const label = goal.level > 1 && measureWith(labelFont)(numbered) <= room ? numbered : look.label;
+          ctx.fillText(fit(label, labelFont, room), PAD + 24, top + 19);
+          // The bar: a dim track, then the fill (full and gold while it celebrates).
+          const barY = top + 30;
+          const barW = width - PAD * 2;
+          ctx.fillStyle = "rgba(255,255,255,0.08)";
+          roundRect(ctx, PAD, barY, barW, 12, 6);
+          ctx.fill();
+          const share = done ? 1 : goalFraction(goal);
+          if (share > 0) {
+            const fill = ctx.createLinearGradient(PAD, 0, PAD + barW, 0);
+            fill.addColorStop(0, withAlpha(color, 0.75));
+            fill.addColorStop(1, color);
+            ctx.fillStyle = fill;
+            roundRect(ctx, PAD, barY, Math.max(12, barW * share), 12, 6);
+            ctx.fill();
+          }
         });
       },
       crossfade,

@@ -432,6 +432,9 @@ export class Engine implements StageEngine {
       case "support":
         this.text.card.setSupport(message.card, this.time, this.scale);
         break;
+      case "goals":
+        this.text.goals.set(message.goals, this.time, this.scale);
+        break;
       case "schedule":
         this.text.upNext.set(message.items, this.time, this.scale);
         break;

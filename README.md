@@ -76,6 +76,10 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   it's an AI whose voice and brain cost money; each channel picks whether
   the host asks for gifts lightly or actively
   ([ADR-0032](docs/adr/0032-gifts-and-supporting-the-show.md)).
+- **Like and gift goals**: two bars on stage fill with the stream's likes
+  and diamonds; when one is reached there's a party on stage, the host
+  celebrates and the next goal starts. The creator sets the targets or lets
+  them climb on their own ([ADR-0036](docs/adr/0036-like-and-gift-goals.md)).
 - **Reactions and music**: confetti, fireworks, hearts and character moves
   the host can cue, gift effects that scale with the gift, sound effects, and
   short original music the host writes as a score and the stage synthesizes
