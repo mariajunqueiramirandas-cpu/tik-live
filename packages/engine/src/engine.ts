@@ -22,7 +22,7 @@ export const BROADCAST_SAMPLE_RATE = 48_000;
 export { STAGE_HEIGHT, STAGE_WIDTH };
 
 export type EngineMode = "program" | "preview" | "broadcast" | "demo";
-export type QualitySetting = "auto" | "high" | "balanced" | "low";
+export type QualitySetting = "auto" | "ultra" | "high" | "balanced" | "low";
 
 export interface Telemetry {
   fps: number;
@@ -77,7 +77,7 @@ export interface StageEngine {
   captureStats?(): CaptureStats | null;
 }
 
-const QUALITY_LEVEL: Record<Exclude<QualitySetting, "auto">, number> = { high: 0, balanced: 1, low: 2 };
+const QUALITY_LEVEL: Record<Exclude<QualitySetting, "auto">, number> = { ultra: 0, high: 1, balanced: 2, low: 3 };
 const DEFAULT_LOOK: Look = { character: "orb", primary: "#7CF5FF", secondary: "#FF5FD2", background: "#0B0420" };
 /** How far the atmosphere moves toward a game's palette (the rest stays the host's). */
 const GAME_TINT = 0.85;
@@ -311,7 +311,8 @@ export class Engine implements StageEngine {
     this.random = createRandom(options.seed ?? 0x7a11);
     // A broadcast's output size is fixed: never trade resolution for frame rate there.
     const quality = options.quality ?? (options.mode === "broadcast" ? "high" : "auto");
-    this.governor = new QualityGovernor(quality === "auto" ? 0 : QUALITY_LEVEL[quality], quality !== "auto");
+    // "auto" starts at high and climbs to ultra as soon as the machine shows it has room (ADR-0009).
+    this.governor = new QualityGovernor(quality === "auto" ? QUALITY_LEVEL.high : QUALITY_LEVEL[quality], quality !== "auto");
     const gl = (() => {
       try {
         return new Gl(canvas, {
@@ -434,6 +435,9 @@ export class Engine implements StageEngine {
         break;
       case "goals":
         this.text.goals.set(message.goals, this.time, this.scale);
+        break;
+      case "hook":
+        this.text.hook.set(message.text, this.time, this.scale);
         break;
       case "schedule":
         this.text.upNext.set(message.items, this.time, this.scale);
@@ -629,7 +633,7 @@ export class Engine implements StageEngine {
   /** Sizes what follows the output: the reduced-resolution atmosphere and the text scale. */
   private layout(): void {
     const width = this.outputWidth;
-    this.atmosphere?.resize(width, this.outputHeight);
+    this.atmosphere?.resize(width, this.outputHeight, this.governor.settings.atmosphereDownscale);
     const nextScale = Math.max(0.25, Math.min(2, width / STAGE_WIDTH));
     if (Math.abs(nextScale - this.scale) > 0.01) {
       this.scale = nextScale;
@@ -826,6 +830,7 @@ export function alertDetail(message: Extract<StageServerPayload, { t: "alert" }>
     const count = message.count ?? 1;
     return `${message.giftName || "um presente"}${count > 1 ? ` ×${count}` : ""}`;
   }
+  if (message.kind === "level") return `subiu pro nível ${message.level ?? 2}!`;
   return message.kind === "follow" ? "começou a seguir" : "compartilhou a live";
 }
 

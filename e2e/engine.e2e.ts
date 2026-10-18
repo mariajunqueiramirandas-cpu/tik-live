@@ -142,6 +142,34 @@ test("the goals show top right, turn gold when one is reached, and leave when hi
   expect(await area(bright), "panel faded out").toBeLessThanOrEqual(before + 2);
 });
 
+test("the call to passers-by drops in under the character and comes down again", async ({ page }) => {
+  // Warm pink-to-orange pixels across the banner, above and below its white letters.
+  const pink = async () => {
+    let n = 0;
+    for (const y of [954, 998]) {
+      for (let x = 200; x <= 880; x += 20) {
+        const [r, , b] = await probe(page, x, y);
+        if (r > 200 && r - b > 50) n++;
+      }
+    }
+    return n;
+  };
+  await page.evaluate(() => (window as any).__lab.frame(2));
+  expect(await pink()).toBeLessThan(3);
+  await page.evaluate(() => {
+    (window as any).__lab.hook(true);
+    (window as any).__lab.levelUp("duda", 7);
+    (window as any).__lab.frame(3.5);
+  });
+  expect(await pink(), "the banner").toBeGreaterThan(15);
+  await page.evaluate(() => {
+    (window as any).__lab.hook(false);
+    (window as any).__lab.frame(5);
+  });
+  expect(await pink(), "taken down").toBeLessThan(3);
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+});
+
 test("the stage recovers from a lost GPU context", async ({ page }) => {
   await page.evaluate(() => (window as any).__lab.frame(2));
   expect(brightness(await probe(page, 540, 625))).toBeGreaterThan(300);

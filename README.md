@@ -78,6 +78,12 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   it's an AI whose voice and brain cost money; each channel picks whether
   the host asks for gifts lightly or actively
   ([ADR-0032](docs/adr/0032-gifts-and-supporting-the-show.md)).
+- **Fan levels and calls to passers-by**: every viewer climbs fan levels by
+  coming back, chatting, following, sharing and gifting, across streams;
+  level-ups get an alert and a shout-out. Every few minutes, and after a
+  wave of arrivals, the host calls out to people scrolling past with a
+  concrete reason to stay, shown big on stage
+  ([ADR-0037](docs/adr/0037-fan-levels-and-passers-by.md)).
 - **Like and gift goals**: two bars on stage fill with the stream's likes
   and diamonds; when one is reached there's a party on stage, the host
   celebrates and the next goal starts. The creator sets the targets or lets

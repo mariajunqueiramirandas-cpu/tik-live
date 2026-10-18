@@ -952,3 +952,98 @@ export class GoalPanel {
     );
   }
 }
+
+// ---- the call to people scrolling past ----------------------------------------------
+
+const HOOK_BANNER = { centerX: 540, top: 936, height: 80, maxWidth: 920, margin: 12 };
+
+/**
+ * A big, bright call to people scrolling past (ADR-0037), under the
+ * character and above the caption: it drops in, bobs gently while it's up,
+ * and stays out of the way of a game board.
+ */
+export class HookBanner {
+  readonly sprite: TextSprite;
+  private text: string | null = null;
+  private shownAt = 0;
+
+  constructor(gl: Gl) {
+    this.sprite = new TextSprite(gl);
+  }
+
+  set(text: string | null, now: number, scale: number): void {
+    this.text = text;
+    if (!text) {
+      this.sprite.opacity.target = 0;
+      return;
+    }
+    this.shownAt = now;
+    this.paint(scale);
+    this.sprite.opacity.snap(0);
+    this.sprite.opacity.target = 1;
+    this.sprite.offsetY.snap(46);
+    this.sprite.offsetY.target = 0;
+  }
+
+  /** `game` is how far a game board has come in (0 to 1): the banner gives way to it. */
+  update(dt: number, now: number, game: number): void {
+    if (this.text) {
+      this.sprite.opacity.target = game > 0.05 ? 0 : 1;
+      if (now - this.shownAt > 0.6) this.sprite.offsetY.target = Math.sin((now - this.shownAt) * 3.2) * 5;
+    }
+    this.sprite.update(dt, now);
+  }
+
+  repaint(scale: number): void {
+    if (this.text) this.paint(scale);
+  }
+
+  private paint(scale: number): void {
+    const text = (this.text as string).toUpperCase();
+    const { height, margin, maxWidth } = HOOK_BANNER;
+    const natural = measureWith(`900 38px ${FONT_FAMILY}`)(text);
+    // Long calls shrink a little before they're cut.
+    const size = natural > maxWidth - 150 ? Math.max(30, Math.floor((38 * (maxWidth - 150)) / natural)) : 38;
+    const font = `900 ${size}px ${FONT_FAMILY}`;
+    const shown = fit(text, font, maxWidth - 150);
+    const width = Math.min(maxWidth, measureWith(font)(shown) + 150);
+    this.sprite.x = HOOK_BANNER.centerX - width / 2;
+    this.sprite.y = HOOK_BANNER.top;
+    this.sprite.draw(width, height, scale, (ctx) => {
+      const w = width - margin * 2;
+      const h = height - margin * 2;
+      ctx.save();
+      ctx.shadowColor = "rgba(255,61,139,0.7)";
+      ctx.shadowBlur = margin;
+      const fill = ctx.createLinearGradient(margin, 0, margin + w, 0);
+      fill.addColorStop(0, "#FF3D8B");
+      fill.addColorStop(1, "#FFB03B");
+      ctx.fillStyle = fill;
+      roundRect(ctx, margin, margin, w, h, h / 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 3;
+      roundRect(ctx, margin, margin, w, h, h / 2);
+      ctx.stroke();
+      // Light along the top, and a twinkle at each end.
+      const shine = ctx.createLinearGradient(0, margin, 0, margin + h / 2);
+      shine.addColorStop(0, "rgba(255,255,255,0.35)");
+      shine.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = shine;
+      roundRect(ctx, margin + 4, margin + 3, w - 8, h / 2, h / 4);
+      ctx.fill();
+      sparkle(ctx, margin + 36, height / 2, 26, "#FFF6D6");
+      sparkle(ctx, width - margin - 36, height / 2, 26, "#FFF6D6");
+      ctx.font = font;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineWidth = 6;
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "rgba(90,10,40,0.55)";
+      ctx.strokeText(shown, width / 2, height / 2 + 2);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillText(shown, width / 2, height / 2 + 2);
+    });
+  }
+}

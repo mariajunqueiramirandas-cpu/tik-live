@@ -906,7 +906,7 @@ describe("Director: like and gift goals (ADR-0036)", () => {
     expect(published.at(-1)?.[1]).toEqual({ kind: "gifts", value: 60, target: 100, level: 2 });
     await step(2_000);
     expect(kinds()).toEqual(["opening", "react"]);
-    expect(host.turns[1]?.also).toBe("the stream just reached its gift goal of 50 diamonds (thank the gifters; the next goal is 100 diamonds): celebrate it in a few words.");
+    expect(host.turns[1]?.also).toContain("the stream just reached its gift goal of 50 diamonds (thank the gifters; the next goal is 100 diamonds)");
   });
 
   it("follows a new target from the studio, and hides the goals when they're turned off", async () => {
@@ -923,5 +923,60 @@ describe("Director: like and gift goals (ADR-0036)", () => {
     expect(kinds()).toEqual(["opening", "milestone"]); // the milestones are back: 500 likes
     director.reconfigure({ ...persona, goals: { show: true, likes: 250 } });
     expect(published.at(-1)?.[0]).toEqual({ kind: "likes", value: 600, target: 750, level: 1 });
+  });
+});
+
+describe("Director: fan levels and calls to people scrolling past (ADR-0037)", () => {
+  function scrollSetup() {
+    const levels: Array<[string, number]> = [];
+    const hooks: Array<string | null> = [];
+    const effects: string[] = [];
+    const run = setup({
+      stage: { ...stage, fanLevel: (name, level) => levels.push([name, level]), hook: (text) => hooks.push(text), fx: (fx) => effects.push(fx) },
+    });
+    run.director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    return { ...run, levels, hooks, effects };
+  }
+
+  it("announces a level-up on stage, and the host congratulates bigger ones by name", async () => {
+    const { director, step, host, levels } = scrollSetup();
+    await step();
+    for (let i = 0; i < 13; i++) director.handleEvent(chat("joe", `hello ${i}`)); // 25 + 13 × 2 points: level 2
+    expect(levels).toEqual([["joe", 2]]);
+    director.handleEvent(gift("maria", "Leão", 100)); // 25 + 300 points: level 4
+    expect(levels.at(-1)).toEqual(["maria", 4]);
+    await step(2_000);
+    const thanks = host.turns.find((turn) => turn.items.some((item) => item.event.kind === "gift"));
+    expect(thanks?.also).toContain("maria reached fan level 4");
+    expect(thanks?.also).not.toContain("joe"); // level 2 is the stage's alone
+  });
+
+  it("calls out to people scrolling past in a quiet moment, with the offer big on stage, and sooner after a wave of arrivals", async () => {
+    const { director, step, host, hooks } = scrollSetup();
+    await step();
+    for (let i = 0; i < 12; i++) await step(8_000); // 96 seconds of quiet
+    const hook = host.turns.find((turn) => turn.note?.includes("People scrolling through LIVEs"));
+    expect(hook?.kind).toBe("filler");
+    expect(hooks[0]).toBe("COMENTA SEU NOME E GANHA UM APELIDO");
+    expect(hook?.note).toContain("invent a funny nickname");
+    await step(10_000);
+    expect(hooks.at(-1)).toBeNull(); // the banner came down
+    // Three arrivals in a few seconds: the next call comes after a minute, not four.
+    const before = host.turns.filter((turn) => turn.note?.includes("People scrolling")).length;
+    for (const handle of ["a", "b", "c"]) director.handleEvent({ kind: "join", at: 0, viewer: { id: handle, handle, nickname: handle } });
+    for (let i = 0; i < 8; i++) await step(8_000);
+    expect(host.turns.filter((turn) => turn.note?.includes("People scrolling")).length).toBe(before + 1);
+    expect(hooks.filter(Boolean)[1]).toBe("PERGUNTA QUALQUER COISA PRA IA");
+  });
+
+  it("keeps the stage moving when nothing has happened for a while, but not right after a gift", async () => {
+    const { director, step, effects } = scrollSetup();
+    await step();
+    await step(20_000);
+    director.handleEvent(gift("maria", "Rose", 1));
+    await step(10_000); // 30 s in, but the gift moved the stage 10 s ago
+    expect(effects).toEqual([]);
+    await step(26_000);
+    expect(effects).toEqual(["sparkles"]);
   });
 });

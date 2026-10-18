@@ -29,6 +29,7 @@ describe("names that sound rude out loud", () => {
     const pranks = [
       "Tomas Turbando", "Thomas Turbano", "Oscar Alho", "Jacinto Pinto", "Cuca Beludo", "Paula Tejano",
       "Jacinto Leite Aquino Rego", "Kuzaun", "Bu Seta", "Pi Roca", "Po Rra", "p o r r a", "KARAIO", "Vi4do", "Mike Hunt",
+      "Bucetinha123", "Thiago Viadão", "Corninho", "kuzaun2007",
     ];
     for (const name of pranks) expect({ name, rude: nameSoundsRude(name) }).toEqual({ name, rude: true });
   });
@@ -38,6 +39,7 @@ describe("names that sound rude out loud", () => {
       "Ana Clara", "Peruca", "Peru", "Ana Pinto", "Paulo Duro", "Bruno Rego", "Marcos Augusto", "Cara Lucas", "Paula Tejada",
       "Deputado João", "Artesão", "Viaduto", "Fagundes", "Nigel", "Picanha", "Rolando Lero", "Leite Moça", "Vera Cruz",
       "Kauã", "Thalita", "Cássio", "Ícaro Alves", "Oscar Silva", "Jacinto Costa", "Pô Tá",
+      "Bichinho", "Cacetinho", "Porrinha", "Sapatinho", "Picolé", "xX_dark_Xx", "user8273648", "ana2007",
     ];
     for (const name of names) expect({ name, rude: nameSoundsRude(name) }).toEqual({ name, rude: false });
   });
@@ -58,6 +60,9 @@ describe("asking the host to say a rude name", () => {
     expect(asksForRudeName("fala oi pro jacinto pinto kkkkk")).toBe(true);
     expect(asksForRudeName("manda salve pro kuzaun")).toBe(true);
     expect(asksForRudeName("Cuca Beludo mandou um oi")).toBe(true);
+    expect(asksForRudeName("salve pra Deusa Puta")).toBe(true);
+    expect(asksForRudeName("fala porra")).toBe(true);
+    expect(asksForRudeName("Salve Pro Meu Primo Bosta")).toBe(true);
   });
 
   it("lets ordinary shout-outs and chat through", () => {
@@ -69,6 +74,14 @@ describe("asking the host to say a rude name", () => {
       "por raiva eu saí do jogo",
       "fala cara, Lucas chegou",
       "porra que jogo bom", // swearing, but nobody asked the host to say a name
+      // Slang after a greeting or a thank-you is how people talk, not a name for the host to say.
+      "oi gente essa live é foda demais",
+      "obrigado pela live foda",
+      "Que Foda Essa Live",
+      "fala sério que bosta de pergunta",
+      "amigo isso é foda",
+      "minha mãe acha essa merda engraçada kkk",
+      "valeu Blip, que porra de pergunta difícil",
     ]) {
       expect({ text, rude: asksForRudeName(text) }).toEqual({ text, rude: false });
     }

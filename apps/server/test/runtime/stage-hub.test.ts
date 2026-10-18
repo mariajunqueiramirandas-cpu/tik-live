@@ -103,6 +103,18 @@ describe("StageHub pacing", () => {
     after();
   });
 
+  it("sends fan level-ups as alerts, and replays a call to passers-by that's still up", () => {
+    const { hub, attach, after } = setup();
+    const obs = attach("obs", "program");
+    hub.fanLevel("duda", 7);
+    hub.hook("COMENTA SEU NOME E GANHA UM APELIDO");
+    expect(obs.sent.find((m) => m.t === "alert")).toMatchObject({ kind: "level", name: "duda", level: 7 });
+    expect(attach("late", "program").sent.find((m) => m.t === "hook")).toMatchObject({ text: "COMENTA SEU NOME E GANHA UM APELIDO" });
+    hub.hook(null);
+    expect(attach("later", "program").sent.some((m) => m.t === "hook")).toBe(false);
+    after();
+  });
+
   it("coalesces goal progress, sends a goal reached at once, and replays the goals to a stage that connects", async () => {
     const { hub, attach, clock, after } = setup();
     const obs = attach("obs", "program");

@@ -93,7 +93,7 @@ broadcaster allow autoplay.
 
 | Failure | Handling |
 |---|---|
-| Slow machine | A quality governor watches frame time (EMA and p95). It steps render scale (1.0 → 0.85 → 0.7) and mote count (100% → 60% → 30%) down after 2 s over budget, and back up after 10 s of headroom. The level is reported in telemetry. |
+| Slow machine | A quality governor watches frame time (EMA and p95). It steps render scale (1.5 → 1.0 → 0.85 → 0.7), background resolution (1/2 → 1/3 → 1/4 of the output) and mote count (100% → 60% → 30%) down after 2 s over budget, and back up after 10 s of headroom. "auto" starts at 1.0 and climbs to 1.5, which supersamples: drawn half again past the display and scaled down by the browser or OBS, edges and text come out smoother. The level is reported in telemetry. |
 | GPU context lost (driver reset, OBS scene switch) | `webglcontextlost`: pause the loop. `webglcontextrestored`: rebuild programs, buffers and textures from owned descriptors and re-rasterize text. The stream shows at most a brief freeze. |
 | Shader compile failure | Fall back to the atmosphere-only program and caption sprites; report the error in telemetry so the studio shows it. |
 | No WebGL2 | Draw a plain message ("Enable hardware acceleration in OBS: Settings > Advanced > Sources") and report it. No second renderer in v1. |

@@ -5,14 +5,14 @@ import "./stage.css";
 /**
  * The stage page (`/s/:stageKey`): what OBS shows as a browser source and
  * what the cloud broadcaster captures. Query options:
- * `role=program|preview|broadcast`, `quality=auto|high|balanced|low`, `fps=30`.
+ * `role=program|preview|broadcast`, `quality=auto|ultra|high|balanced|low`, `fps=30`.
  */
 const params = new URLSearchParams(location.search);
 const stageKey = decodeURIComponent(location.pathname.replace(/^\/s\//, "").split("/")[0] ?? "");
 const requestedRole = params.get("role") ?? "program";
 const role: StageRole = (STAGE_ROLES as readonly string[]).includes(requestedRole) ? (requestedRole as StageRole) : "program";
 const requestedQuality = params.get("quality") ?? "auto";
-const quality: QualitySetting = ["auto", "high", "balanced", "low"].includes(requestedQuality) ? (requestedQuality as QualitySetting) : "auto";
+const quality: QualitySetting = ["auto", "ultra", "high", "balanced", "low"].includes(requestedQuality) ? (requestedQuality as QualitySetting) : "auto";
 const fps = Number(params.get("fps")) || undefined;
 
 const canvas = document.getElementById("stage") as HTMLCanvasElement;

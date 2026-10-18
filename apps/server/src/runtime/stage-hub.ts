@@ -89,6 +89,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
   private readonly lastLeaders = new Map<LeaderBoard, { rows: LeaderRow[]; windowMin: number }>();
   private lastVote: VoteView | null = null;
   private lastSupport: SupportCard | null = null;
+  private lastHook: string | null = null;
   /** The goals as last sent, and as last given (sent with the next tick of the coalescer). */
   private sentGoals: GoalView[] = [];
   private lastGoals: GoalView[] = [];
@@ -123,6 +124,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
     for (const [board, last] of this.lastLeaders) if (last.rows.length) this.sendTo(peer, { t: "leaders", board, ...last });
     if (this.lastVote) this.sendTo(peer, { t: "vote", vote: this.lastVote });
     if (this.lastSupport) this.sendTo(peer, { t: "support", card: this.lastSupport });
+    if (this.lastHook) this.sendTo(peer, { t: "hook", text: this.lastHook });
     if (this.lastGoals.length) this.sendTo(peer, { t: "goals", goals: this.lastGoals });
     // A piece that's nearly over isn't worth restarting from the top.
     if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
@@ -324,6 +326,15 @@ export class StageHub implements SpeechOutput, StageNotifier {
   vote(vote: VoteView | null): void {
     this.lastVote = vote;
     this.broadcast({ t: "vote", vote });
+  }
+
+  hook(text: string | null): void {
+    this.lastHook = text;
+    this.broadcast({ t: "hook", text });
+  }
+
+  fanLevel(name: string, level: number): void {
+    this.broadcast({ t: "alert", kind: "level", name, level });
   }
 
   support(card: SupportCard | null): void {

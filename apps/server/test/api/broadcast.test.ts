@@ -60,6 +60,7 @@ describe("cloud broadcast", () => {
     expect(request.streamKey).toBe("live_123_SECRET");
     expect(request.rtmpUrl).toBe("rtmps://push.example.com/live");
     expect(request.stageUrl).toBe(`http://lantern-app:8080/s/${stageKeyFrom(channel.stageUrl)}`);
+    expect(request.video).toEqual({ width: 720, height: 1280, fps: 30, bitrateKbps: 4000 });
 
     const studio = await server.socket(`/ws/studio/${channel.id}`, "caster");
     const snapshot = await studio.next<{ state: RuntimeSnapshot }>((m) => m.t === "snapshot");

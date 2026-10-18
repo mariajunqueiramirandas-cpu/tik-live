@@ -92,11 +92,14 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({
     v,
     t: z.literal("alert"),
-    kind: z.enum(["gift", "follow", "share"]),
+    /** "level": a viewer just reached a new fan level (ADR-0037). */
+    kind: z.enum(["gift", "follow", "share", "level"]),
     name: z.string(),
     giftName: z.string().optional(),
     count: z.number().optional(),
     diamonds: z.number().optional(),
+    /** The fan level reached, for "level". */
+    level: z.number().int().min(1).optional(),
   }),
   z.object({ v, t: z.literal("segment"), title: z.string() }),
   z.object({ v, t: z.literal("stats"), viewers: z.number(), likes: z.number() }),
@@ -125,6 +128,8 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   }),
   /** The "how to support the show" card, in the ranking card's place for a moment, or null to put the rankings back (ADR-0032). */
   z.object({ v, t: z.literal("support"), card: supportCardSchema.nullable() }),
+  /** A big call to people scrolling past, under the character for a few seconds, or null to take it down (ADR-0037). */
+  z.object({ v, t: z.literal("hook"), text: z.string().max(60).nullable() }),
   /** The stream's like and gift goals and how far along they are; an empty list hides them (ADR-0036). */
   z.object({ v, t: z.literal("goals"), goals: z.array(goalViewSchema).max(GOAL_KINDS.length) }),
   /** What's coming up on the show, soonest first, with times relative to receipt (ADR-0028). */

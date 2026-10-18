@@ -42,6 +42,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0034](0034-names-that-sound-rude.md) | Names that sound rude out loud | Proposed |
 | [0035](0035-automatic-run-of-show.md) | A run of show the host plans by itself | Proposed |
 | [0036](0036-like-and-gift-goals.md) | Like and gift goals on stage | Proposed |
+| [0037](0037-fan-levels-and-passers-by.md) | Fan levels, and catching people scrolling past | Proposed |
 
 ## Evidence used
 

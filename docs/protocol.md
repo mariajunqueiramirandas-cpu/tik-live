@@ -105,9 +105,11 @@ waiting to be spoken are discarded, and the caption clears at once.
 { "v": 1, "t": "alert", "kind": "gift", "name": "Theo", "giftName": "Rose", "count": 5, "diamonds": 5 }
 ```
 
-An on-screen alert. `kind` is `gift`, `follow` or `share`; gift alerts also
-carry `giftName`, `count` and `diamonds`. Up to four alerts stack on screen;
-each stays about six seconds.
+An on-screen alert. `kind` is `gift`, `follow`, `share` or `level`; gift
+alerts also carry `giftName`, `count` and `diamonds`, and `level` alerts
+(a viewer reached a new fan level, [ADR-0037](adr/0037-fan-levels-and-passers-by.md))
+carry `level`. Up to four alerts stack on screen; each stays about six
+seconds.
 
 #### `segment`
 
@@ -211,6 +213,18 @@ or `gift`) that picks its icon. The stage's ranking card shows it for about
 20 seconds every few minutes, and while the host explains it; an open
 `vote` stays on top. `"card": null` puts the rankings back. Sent right
 after `hello` to a stage that connects while it's up.
+
+#### `hook`
+
+```json
+{ "v": 1, "t": "hook", "text": "COMENTA SEU NOME E GANHA UM APELIDO" }
+```
+
+A big call to people scrolling past ([ADR-0037](adr/0037-fan-levels-and-passers-by.md)),
+in a bright banner under the character, while the host says it out loud.
+It drops in, bobs while it's up and gives way to a game board. `"text":
+null` takes it down (after about nine seconds). Sent right after `hello` to
+a stage that connects while it's up.
 
 #### `goals`
 

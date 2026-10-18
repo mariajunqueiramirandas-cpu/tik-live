@@ -1,8 +1,18 @@
-import type { BroadcastStatus } from "@tik-live/shared";
+import type { BroadcastStatus, VideoSettings } from "@tik-live/shared";
 import type { Secrets } from "../crypto/secrets";
 import type { Logger } from "../log";
 import type { ChannelRow } from "../repos/channels";
 import { BroadcasterError, type BroadcasterClient } from "./client";
+
+/**
+ * The cloud broadcast's video by quality. The bitrates sit at the top of what
+ * TikTok takes for each size: with x264's fast presets, bits are what keep
+ * the motion and the gradients clean.
+ */
+export const BROADCAST_VIDEO: Record<"720p" | "1080p", VideoSettings> = {
+  "720p": { width: 720, height: 1280, fps: 30, bitrateKbps: 4000 },
+  "1080p": { width: 1080, height: 1920, fps: 30, bitrateKbps: 6000 },
+};
 
 interface Wanted {
   fingerprint: string;
@@ -27,6 +37,8 @@ export class BroadcastSupervisor {
       secrets: Secrets;
       /** Origin the broadcaster loads stage pages from (the app as the broadcaster sees it). */
       stageOrigin: string;
+      /** The video to send; 720p when unset. */
+      video?: VideoSettings;
       log: Logger;
       pollMs?: number;
       now?: () => number;
@@ -86,6 +98,7 @@ export class BroadcastSupervisor {
         stageUrl: `${this.options.stageOrigin.replace(/\/$/, "")}/s/${encodeURIComponent(stageKey)}`,
         rtmpUrl: channel.broadcast.rtmpUrl!,
         streamKey,
+        video: this.options.video ?? BROADCAST_VIDEO["720p"],
       });
       this.statuses.set(channelId, status);
     } catch (err) {

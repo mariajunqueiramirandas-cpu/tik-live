@@ -211,6 +211,7 @@ describe("pt-BR board text", () => {
     expect(alertDetail({ t: "alert", kind: "gift", name: "duda", count: 1, diamonds: 1 })).toBe("um presente");
     expect(alertDetail({ t: "alert", kind: "follow", name: "lu" })).toBe("começou a seguir");
     expect(alertDetail({ t: "alert", kind: "share", name: "lu" })).toBe("compartilhou a live");
+    expect(alertDetail({ t: "alert", kind: "level", name: "lu", level: 7 })).toBe("subiu pro nível 7!");
   });
 });
 

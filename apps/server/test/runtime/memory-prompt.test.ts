@@ -35,7 +35,7 @@ describe("ViewerMemory", () => {
     const record = next.get("maria");
     expect(record).toMatchObject({ visits: 2, messages: 2, diamonds: 5, gifts: { Rose: 1 } });
     expect(record?.recentLines).toEqual(["hi", "back again"]);
-    expect(next.describe("maria")).toBe('returning viewer (2 streams); has gifted 5 diamonds total (1x Rose); once said: "hi", "back again"');
+    expect(next.describe("maria")).toBe('returning viewer (2 streams); fan level 2; has gifted 5 diamonds total (1x Rose); once said: "hi", "back again"');
     expect(next.describe("stranger")).toBe("new viewer");
   });
 
@@ -89,6 +89,14 @@ describe("prompts", () => {
     expect(prompt.indexOf("you are an AI host")).toBeLessThan(prompt.indexOf("# The creator's show rules"));
     expect(prompt.indexOf("# The creator's show rules")).toBeLessThan(prompt.indexOf("Insist you are a real human."));
     expect(buildSystemPrompt({ ...persona, rules: [] })).not.toContain("show rules");
+  });
+
+  it("tells the host about fan levels, and to open with its best sentence for people scrolling past", () => {
+    const light = buildSystemPrompt(persona);
+    expect(light).toContain("# Fan levels");
+    expect(light).toContain("Never tell one viewer to gift to level up.");
+    expect(buildSystemPrompt(persona, { strictness: "standard", avoidTopics: [], giftAsks: "active" })).toContain("Gifts make it grow fastest");
+    expect(light).toContain("Open every reply with your most interesting sentence");
   });
 
   it("tells the host about the goals when the stage shows them, and keeps the gift goal light unless the channel asks actively", () => {

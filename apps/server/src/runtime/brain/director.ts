@@ -28,6 +28,7 @@ import type { GameMaster } from "../games/master";
 import type { LoopRanking } from "../games/ranking";
 import { FinalVote, voteOptions } from "../games/vote";
 import { type GoalReached, StreamGoals } from "../goals";
+import { levelOf } from "./fans";
 import { GIFT_WINDOW_MS, LIKE_WINDOW_MS, RollingBoard } from "../leaderboards";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
@@ -69,6 +70,10 @@ export interface StageNotifier {
   support?(card: SupportCard | null): void;
   /** The stream's like and gift goals; an empty list hides them (ADR-0036). */
   goals?(goals: GoalView[]): void;
+  /** A viewer just reached a new fan level (ADR-0037). */
+  fanLevel?(name: string, level: number): void;
+  /** A big call to people scrolling past, or null to take it down (ADR-0037). */
+  hook?(text: string | null): void;
 }
 
 /** Observability hooks for the studio feed and analytics. */
@@ -164,6 +169,33 @@ const SUPPORT_KINDS: ReadonlyArray<LiveEvent["kind"]> = ["gift", "follow", "shar
  * loud far less often, in a quiet moment (or on a busy stretch's show turn).
  */
 const SUPPORT_CARD_SHOW_MS = 20_000;
+
+/**
+ * Calls to people scrolling past (ADR-0037): someone swiping through LIVEs
+ * gives a stream a second or two. Every few minutes, and soon after a wave
+ * of arrivals, a quiet moment opens with the host talking straight to them
+ * and a concrete reason to stay, with the same offer big on stage.
+ */
+const HOOKS: ReadonlyArray<{ banner: string; offer: string }> = [
+  { banner: "COMENTA SEU NOME E GANHA UM APELIDO", offer: "type their name in chat and you'll invent a funny nickname for them, live" },
+  { banner: "PERGUNTA QUALQUER COISA PRA IA", offer: "ask you anything in chat, and you'll answer live, out loud" },
+  { banner: "A IA DÁ NOTA PRO SEU NOME", offer: "type their name and you'll rate it from 0 to 10 with a funny reason" },
+  { banner: "TEM JOGO VALENDO PÓDIO · FICA AÍ", offer: "stick around: games are coming, worth points and a spot on the podium" },
+  { banner: "DIGA DE ONDE VOCÊ É", offer: "say where they're watching from, and you'll say something fun about the place" },
+];
+const HOOK_FIRST_MS = 90_000;
+const HOOK_EVERY_MS = 4 * 60_000;
+/** After this many arrivals within ARRIVALS_WINDOW_MS, the next quiet moment is a hook (at most once a minute). */
+const ARRIVALS_FOR_HOOK = 3;
+const ARRIVALS_WINDOW_MS = 30_000;
+const HOOK_MIN_GAP_MS = 60_000;
+const HOOK_SHOW_MS = 9_000;
+/** A still stage loses people scrolling past: a small flourish when nothing has moved for a while. */
+const FLOURISH_EVERY_MS = 25_000;
+const FLOURISHES: readonly Effect[] = ["sparkles", "jump", "stars", "spin", "bubbles"];
+/** Level-ups the host mentions: from this level up, and at most one mention this often (every level-up still gets its alert). */
+const LEVEL_TALK_FROM = 3;
+const LEVEL_TALK_GAP_MS = 90_000;
 /** When the card first goes up and how often after that, and the same for the host's explanation, by how actively the channel asks for gifts. */
 const SUPPORT_PACE: Record<GiftAsks, { cardFirst: number; cardEvery: number; talkFirst: number; talkEvery: number }> = {
   light: { cardFirst: 3 * 60_000, cardEvery: 8 * 60_000, talkFirst: 6 * 60_000, talkEvery: 20 * 60_000 },
@@ -305,6 +337,17 @@ export class Director {
   /** The stream's like and gift goals (ADR-0036), and the ones reached that the host hasn't celebrated yet. */
   private readonly goals: StreamGoals;
   private pendingGoals: GoalReached[] = [];
+  /** Fan level-ups waiting for the host to mention them, by viewer. */
+  private pendingLevels = new Map<string, { name: string; level: number }>();
+  private levelTalkAt = -Infinity;
+  /** The next call to people scrolling past, which one, when it comes down, and recent arrivals. */
+  private hookAt = Infinity;
+  private hookIndex = 0;
+  private hookHideAt = Infinity;
+  private lastHookAt = -Infinity;
+  private arrivals: number[] = [];
+  private flourishAt = Infinity;
+  private flourishIndex = 0;
   private nextMilestone = LIKE_MILESTONES[0] as number;
   private recentLines: string[] = [];
   private budgetReactOnly = false;
@@ -491,7 +534,9 @@ export class Director {
     }
     if (event.kind !== "viewers" && event.kind !== "like") this.lastEventAt = this.now();
 
-    this.options.memory.observe(event);
+    const levelBefore = "viewer" in event ? levelOf(this.options.memory.get(event.viewer.id)) : 0;
+    const record = this.options.memory.observe(event);
+    if (record && "viewer" in event && levelOf(record) > levelBefore) this.levelUp(event.viewer, levelOf(record));
 
     switch (event.kind) {
       case "viewers":
@@ -527,6 +572,7 @@ export class Director {
       }
       case "gift":
         this.counters.gifts += 1;
+        this.stirred(this.now());
         this.counters.diamonds += event.diamonds;
         this.boards.gifts.add(event.viewer.id, this.boardName(event.viewer), event.diamonds);
         if (this.goalsOn()) {
@@ -541,12 +587,14 @@ export class Director {
         break;
       case "follow":
         this.counters.follows += 1;
+        this.stirred(this.now());
         this.options.stage.alert(event);
         this.sound("chime");
         this.remember({ at: event.at, kind: "support", event });
         break;
       case "share":
         this.counters.shares += 1;
+        this.stirred(this.now());
         this.options.stage.alert(event);
         this.sound("whoosh");
         break;
@@ -566,6 +614,7 @@ export class Director {
         break;
       case "join":
         this.counters.joins += 1;
+        this.noteArrival(this.now());
         break;
       default:
         break;
@@ -733,6 +782,7 @@ export class Director {
     this.pendingMilestone = undefined;
     this.goals.reset();
     this.pendingGoals = [];
+    this.pendingLevels.clear();
     this.publishGoals();
     this.clearBoards();
   }
@@ -762,6 +812,8 @@ export class Director {
     const now = this.now();
     this.maybeOpenVote(now);
     this.maybeShowSupport(now);
+    this.maybeFlourish(now);
+    if (now >= this.hookHideAt) this.hideHook();
     this.publishHud(now);
     if (this.paused || this.engine.inFlight) return;
     this.maybeStartSegmentGame(now);
@@ -827,6 +879,8 @@ export class Director {
     if (!this.opened) {
       this.opened = true;
       this.scheduleSupport(now);
+      this.hookAt = now + HOOK_FIRST_MS;
+      this.flourishAt = now + FLOURISH_EVERY_MS;
       // Whoever woke the show up gets greeted in the opening, not answered again right after it.
       const focus = this.takeFocus();
       return { ...base, kind: "opening", items: focus.items };
@@ -963,8 +1017,65 @@ export class Director {
     for (const goal of this.pendingGoals) moments.push(goalMoment(goal));
     this.pendingMilestone = undefined;
     this.pendingGoals = [];
+    const now = this.now();
+    if (this.pendingLevels.size > 0 && now - this.levelTalkAt >= LEVEL_TALK_GAP_MS) {
+      const ups = [...this.pendingLevels.values()].sort((a, b) => b.level - a.level).slice(0, 3);
+      moments.push({
+        note: `fan level-ups: ${ups.map((up) => `${up.name} reached fan level ${up.level}`).join(", ")} (congratulate them by name)`,
+        line: ups.map((up) => `Parabéns, ${up.name}, nível ${up.level} de fã`).join(". "),
+      });
+      this.pendingLevels.clear();
+      this.levelTalkAt = now;
+    }
     if (moments.length === 0) return undefined;
     return { note: moments.map((m) => m.note).join("; and "), line: moments.map((m) => m.line).join(". ") };
+  }
+
+  /** A viewer reached a new fan level: an alert on stage now; from level 3 the host congratulates them when it can. */
+  private levelUp(viewer: Viewer, level: number): void {
+    if (level < 2) return;
+    const name = this.boardName(viewer);
+    this.options.stage.fanLevel?.(name, level);
+    this.sound("levelup");
+    if (level >= LEVEL_TALK_FROM) this.pendingLevels.set(viewer.id, { name, level });
+  }
+
+  /** A wave of arrivals brings the next call to people scrolling past forward. */
+  private noteArrival(now: number): void {
+    this.arrivals = [...this.arrivals.filter((at) => now - at < ARRIVALS_WINDOW_MS), now];
+    if (this.arrivals.length >= ARRIVALS_FOR_HOOK && this.opened) this.hookAt = Math.min(this.hookAt, Math.max(now, this.lastHookAt + HOOK_MIN_GAP_MS));
+  }
+
+  /** The quiet moment's call to people scrolling past, when one is due: its note for the host, with the offer big on stage. */
+  private takeHook(): string | undefined {
+    const now = this.now();
+    if (now < this.hookAt || this.options.games?.isActive()) return undefined;
+    const hook = HOOKS[this.hookIndex++ % HOOKS.length] as (typeof HOOKS)[number];
+    this.hookAt = now + HOOK_EVERY_MS;
+    this.lastHookAt = now;
+    this.arrivals = [];
+    this.options.stage.hook?.(hook.banner);
+    this.hookHideAt = now + HOOK_SHOW_MS;
+    return `People scrolling through LIVEs are passing by and decide in a second or two. Open with a short, punchy line straight to them ("ei, você que tá passando!"), then give them a reason to stay: they can ${hook.offer}. The stage shows it big: "${hook.banner}". Two short sentences.`;
+  }
+
+  private hideHook(): void {
+    if (this.hookHideAt === Infinity) return;
+    this.hookHideAt = Infinity;
+    this.options.stage.hook?.(null);
+  }
+
+  /** Something just moved on stage (a gift, a follow): the next flourish can wait. */
+  private stirred(now: number): void {
+    if (this.flourishAt !== Infinity) this.flourishAt = Math.max(this.flourishAt, now + FLOURISH_EVERY_MS);
+  }
+
+  /** A small move on stage when nothing has moved for a while, so the stream never looks frozen to someone scrolling past. */
+  private maybeFlourish(now: number): void {
+    if (now < this.flourishAt || this.paused) return;
+    this.flourishAt = now + FLOURISH_EVERY_MS;
+    if (this.options.games?.isActive() || this.options.ranking?.isRevealing()) return;
+    this.options.stage.fx?.(FLOURISHES[this.flourishIndex++ % FLOURISHES.length] as Effect, 0.7);
   }
 
   private goalsOn(): boolean {
@@ -1060,7 +1171,10 @@ export class Director {
     if (games) return games;
     if (this.options.ranking?.isRevealing()) return "The loop's podium is on screen. Celebrate the top players by name in a line or two and invite everyone to play in the next loop.";
     const segment = this.segment();
+    // The support explanation is rarer, so it goes first when both are due; the call to passers-by takes the next quiet moment.
     if (this.takeSupportTalk()) return `Keep the show alive for "${segment.title}". This time, ${SUPPORT_TALK[this.giftAsks()]}`;
+    const hook = this.takeHook();
+    if (hook) return hook;
     const chat = this.engine.conversation.hasViewerChat();
     const usable = (beat: (typeof FILLER_BEATS)[number]) => (!beat.needsChat || chat) && (!beat.needsGoals || this.goalsOn());
     let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];

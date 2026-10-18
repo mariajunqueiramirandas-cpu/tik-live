@@ -37,9 +37,9 @@ export class AtmosphereLayer implements Layer {
     this.moteQuad.attachInstances(1, 4, seeds);
   }
 
-  /** Follows the output size (canvas or capture target). */
-  resize(width: number, height: number): void {
-    this.target.resize(Math.max(1, Math.ceil(width / DOWNSCALE)), Math.max(1, Math.ceil(height / DOWNSCALE)));
+  /** Follows the output size (canvas or capture target), at 1/`downscale` of it (finer at higher quality). */
+  resize(width: number, height: number, downscale = DOWNSCALE): void {
+    this.target.resize(Math.max(1, Math.ceil(width / downscale)), Math.max(1, Math.ceil(height / downscale)));
   }
 
   get ready(): boolean {
