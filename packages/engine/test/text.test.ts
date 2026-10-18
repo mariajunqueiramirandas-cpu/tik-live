@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { syllableCount, syllableEnvelope } from "../src/audio/envelope";
-import { formatCountdown, formatLikes } from "../src/text/hud";
+import { formatCount, formatCountdown, nextBoard, windowLabel } from "../src/text/hud";
 import { layoutCaption, wordAtProgress } from "../src/text/layout";
 
 // Monospace stand-in: every character is 0.5em wide.
@@ -85,8 +85,22 @@ describe("heads-up panels", () => {
     expect(formatCountdown(-3)).toBe("já já");
   });
 
-  it("writes like counts the Brazilian way", () => {
-    expect(formatLikes(1834)).toBe("1.834");
-    expect(formatLikes(12)).toBe("12");
+  it("writes counts the Brazilian way, and windows in minutes or hours", () => {
+    expect(formatCount(1834)).toBe("1.834");
+    expect(formatCount(12)).toBe("12");
+    expect(formatCount(25_300)).toBe("25,3 mil");
+    expect(windowLabel(15)).toBe("15 MIN");
+    expect(windowLabel(60)).toBe("1 H");
+  });
+
+  it("takes turns between the rankings that have someone on them", () => {
+    const both = () => true;
+    const likesOnly = (board: string) => board === "likes";
+    expect(nextBoard(null, both)).toBe("likes");
+    expect(nextBoard("likes", both)).toBe("gifts");
+    expect(nextBoard("gifts", both)).toBe("likes");
+    expect(nextBoard("likes", likesOnly)).toBe("likes");
+    expect(nextBoard("gifts", likesOnly)).toBe("likes");
+    expect(nextBoard(null, () => false)).toBeNull();
   });
 });

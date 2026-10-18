@@ -85,9 +85,22 @@ test("up next and the top likers show under the badge, and leave when emptied", 
   });
   expect(await lit(), "text in the panels").toBeGreaterThan(before + 8);
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+  // A vote takes the ranking card's place, then gives it back.
+  await page.evaluate(() => {
+    const lab = (window as any).__lab;
+    lab.apply({ t: "vote", vote: { title: "Jogo do quadro final", options: ["Quiz", "Charadas", "Dedo mais rápido"], tally: [4, 1, 9] } });
+    lab.frame(5);
+    lab.apply({ t: "boost", boost: "double", by: "duda" });
+    lab.frame(5.5);
+  });
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+  await page.evaluate(() => {
+    (window as any).__lab.apply({ t: "vote", vote: null });
+    (window as any).__lab.frame(5.6);
+  });
   await page.evaluate(() => {
     (window as any).__lab.hud(false);
-    (window as any).__lab.frame(6);
+    (window as any).__lab.frame(8);
   });
   expect(await lit(), "panels faded out").toBeLessThanOrEqual(before + 2);
 });

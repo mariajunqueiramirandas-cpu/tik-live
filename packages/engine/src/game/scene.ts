@@ -566,6 +566,10 @@ export class GameLayer implements Layer {
         break;
       }
     }
+    // A 50/50 power-up takes two wrong options away.
+    if (scene.kind === "trivia" && scene.phase === "open" && scene.removed) {
+      for (const i of scene.removed) (this.dim[G_OPT + i] as Spring).target = 0.22;
+    }
     // Reveals dim the wrong answers.
     if ((scene.kind === "trivia" || scene.kind === "truefalse") && scene.phase === "reveal" && scene.correct !== null) {
       const correct = scene.kind === "trivia" ? scene.correct : scene.correct ? 0 : 1;
@@ -805,7 +809,7 @@ export class GameLayer implements Layer {
 
   private header(scene: RoundScene): void {
     const label = GAME_LABELS[scene.kind].toUpperCase();
-    const round = `Rodada ${scene.round}/${scene.rounds}`;
+    const round = `Rodada ${scene.round}/${scene.rounds}${scene.boosts?.includes("double") ? " · ×2" : ""}`;
     // The right end is the timer's ("Tempo esgotado" at the reveal, up to 300 px).
     const room = W - 300 - 24 - 22 - this.measure(34, 600)(round);
     const labelWidth = Math.min(this.measure(34, 800)(label), room);

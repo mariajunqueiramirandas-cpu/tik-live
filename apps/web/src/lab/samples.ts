@@ -158,7 +158,7 @@ export const SCENES: Record<string, GameScene> = {
 };
 
 /** The heads-up panels: what's up next, and the top likers of the last 15 minutes. */
-export const HUD: { schedule: StageServerPayload; likers: StageServerPayload } = {
+export const HUD: { schedule: StageServerPayload; likes: StageServerPayload; gifts: StageServerPayload } = {
   schedule: {
     t: "schedule",
     items: [
@@ -166,13 +166,24 @@ export const HUD: { schedule: StageServerPayload; likers: StageServerPayload } =
       { kind: "segment", title: "Papo da madrugada", inMs: 600_000 },
     ],
   },
-  likers: {
-    t: "likers",
+  likes: {
+    t: "leaders",
+    board: "likes",
     windowMin: 15,
     rows: [
-      { name: "mari.souza", likes: 1834 },
-      { name: "thiago_k", likes: 960 },
-      { name: "joão.pedro.silva.oficial", likes: 412 },
+      { name: "mari.souza", value: 1834 },
+      { name: "thiago_k", value: 960 },
+      { name: "joão.pedro.silva.oficial", value: 412 },
+    ],
+  },
+  gifts: {
+    t: "leaders",
+    board: "gifts",
+    windowMin: 60,
+    rows: [
+      { name: "duda", value: 25_300 },
+      { name: "lu.desenha", value: 1_200 },
+      { name: "caio", value: 99 },
     ],
   },
 };

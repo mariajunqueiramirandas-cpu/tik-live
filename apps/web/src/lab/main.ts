@@ -73,10 +73,11 @@ const lab = {
   },
   music: (id: string | null) => engine.apply({ t: "music", track: id && MUSIC_LIBRARY[id] ? musicTrackSchema.parse(MUSIC_LIBRARY[id]) : null }),
   sfx: (sound: Sound) => engine.apply({ t: "sfx", sound }),
-  /** Shows (or with false, hides) the up-next and top-likers panels. */
-  hud(on = true) {
+  /** Shows (or with false, hides) the up-next pill and the ranking card; "gifts" shows only the gift ranking. */
+  hud(on: boolean | "gifts" = true) {
     engine.apply(on ? HUD.schedule : { t: "schedule", items: [] });
-    engine.apply(on ? HUD.likers : { t: "likers", windowMin: 15, rows: [] });
+    engine.apply(on === true ? HUD.likes : { t: "leaders", board: "likes", windowMin: 15, rows: [] });
+    engine.apply(on ? HUD.gifts : { t: "leaders", board: "gifts", windowMin: 60, rows: [] });
   },
   caption(text: string) {
     engine.apply({ t: "speak", id: `lab-${Date.now()}`, text, emotion: "happy", audioUrl: null, durationMs: 2600 });
@@ -140,6 +141,18 @@ function panel(): void {
   });
   group("Jogos", ["(none)", ...Object.keys(SCENES)], (s) => lab.scene(s === "(none)" ? null : s));
   group("Painéis", ["a seguir e curtidas", "esconder"], (k) => lab.hud(k !== "esconder"));
+  group("Votação", ["abrir votação", "fechar votação"], (k) =>
+    lab.apply({ t: "vote", vote: k === "abrir votação" ? { title: "Jogo do quadro final", options: ["Quiz", "Charadas", "Dedo mais rápido"], tally: [4, 1, 9] } : null }),
+  );
+  group("Poderes e combo", ["+10 segundos", "dica", "pontos em dobro", "combo de presentes"], (k) => {
+    if (k === "combo de presentes") {
+      let n = 0;
+      const timer = setInterval(() => {
+        lab.gift(n % 3 ? "rose" : "doughnut", ["duda", "caio", "bia"][n % 3]);
+        if (++n >= 10) clearInterval(timer);
+      }, 400);
+    } else lab.apply({ t: "boost", boost: k === "dica" ? "hint" : k === "pontos em dobro" ? "double" : "time", by: "duda" });
+  });
   group("Música", ["(stop)", ...Object.keys(MUSIC_LIBRARY)], (m) => lab.music(m === "(stop)" ? null : m));
   group("Sons", SOUNDS, (s) => lab.sfx(s as Sound));
   group("Voz", ["speak a line", "unmute"], (k) => {

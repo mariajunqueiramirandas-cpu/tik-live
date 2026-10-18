@@ -79,6 +79,12 @@ export function sceneChange(previous: GameScene | null, next: GameScene | null):
  * and springs only.
  */
 export function staticKey(scene: GameScene): string {
+  // Power-ups change the header (×2) and a quiz's options (50/50).
+  const boosts = isRound(scene) && scene.boosts?.length ? `|${scene.boosts.join(",")}|${scene.kind === "trivia" ? (scene.removed ?? []).join(",") : ""}` : "";
+  return contentKey(scene) + boosts;
+}
+
+function contentKey(scene: GameScene): string {
   switch (scene.kind) {
     case "trivia":
       return JSON.stringify([scene.kind, scene.round, scene.rounds, scene.phase, scene.question, scene.options, scene.correct, scene.tally]);
