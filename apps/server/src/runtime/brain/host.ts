@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Effect, MusicTrack, Persona, SafetySettings } from "@tik-live/shared";
 import type { Logger } from "../../log";
+import { THINKING_OFF_MODELS } from "../safety/gate";
 import type { UsageReport } from "../usage";
 import { PLAY_MUSIC_TOOL, PLAY_MUSIC_TOOL_NAME, readMusicCall } from "./music-tool";
 import { buildSystemPrompt, reactionSentences, type BriefLayout, type TurnRequest } from "./prompt";
@@ -62,6 +63,8 @@ export interface ClaudeHostOptions {
   speechLanguage?: string;
   model: string;
   effort: "low" | "medium" | "high";
+  /** "off" skips thinking for a faster first word, where the model allows it (THINKING_OFF_MODELS). */
+  thinking?: "adaptive" | "off";
   onUsage?: (usage: UsageReport) => void;
   log?: Logger;
 }
@@ -84,6 +87,9 @@ export class ClaudeHost implements HostBrain {
     this.name = options.model;
     this.layout = SYSTEM_MESSAGE_MODELS.has(options.model) ? "system" : "inline";
     this.system = this.buildSystem();
+    if (options.thinking === "off" && !THINKING_OFF_MODELS.has(options.model)) {
+      options.log?.warn(`${options.model} can't turn thinking off; it keeps adaptive thinking`);
+    }
   }
 
   reconfigure(update: { persona?: Persona; safety?: SafetySettings; speechLanguage?: string | null }): void {
@@ -157,6 +163,7 @@ export class ClaudeHost implements HostBrain {
 
   private async *attempt(turn: TurnRequest, signal: AbortSignal, actions: HostActions): AsyncGenerator<Utterance> {
     const { client, model, effort, persona, log } = this.options;
+    const thinkingOff = this.options.thinking === "off" && THINKING_OFF_MODELS.has(model);
     // Stable per persona, so the cached prefix (tools, then system) survives across turns.
     const music = persona.sound?.music !== false;
     const local = new AbortController();
@@ -170,6 +177,7 @@ export class ClaudeHost implements HostBrain {
         system: [{ type: "text", text: this.system, cache_control: { type: "ephemeral" } }],
         ...(music ? { tools: [PLAY_MUSIC_TOOL], tool_choice: { type: "auto" as const } } : {}),
         output_config: { effort },
+        ...(thinkingOff ? { thinking: { type: "disabled" as const } } : {}),
         messages: this.messages(turn),
         ...(FALLBACK_CAPABLE.has(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
       },

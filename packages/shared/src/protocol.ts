@@ -141,7 +141,17 @@ export interface RuntimeSnapshot {
       /** The host's conversation: its size in tokens, and how much of recent turns' input came from the prompt cache. */
       context: { tokens: number; cachedPct: number } | null;
     };
-    latency: { p50: number; p95: number; samples: number } | null;
+    /**
+     * From a viewer's event to the host's first line going on stage, with the
+     * median of each stage: waiting for the turn, writing, voice, and the line
+     * before it.
+     */
+    latency: {
+      p50: number;
+      p95: number;
+      samples: number;
+      stages?: { waitMs: number; writeMs: number; voiceMs: number; queueMs: number } | null;
+    } | null;
     budget: { usedPct: number; limitTokensPerHour: number | null };
     /** Cloud broadcast, when it's turned on for this channel. */
     broadcast?: { state: "starting" | "live" | "retrying" | "failed" | "stopped"; detail: string; bitrateKbps: number | null } | null;

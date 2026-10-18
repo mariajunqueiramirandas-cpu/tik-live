@@ -97,6 +97,14 @@ the kill switch (pause, skip, stop) cuts a sentence.
   thank-yous and one for flavor, within the persona's limit), answer first,
   and no question back to the room while people are waiting. The host stops
   one sentence past that.
+- Questions are never just lost. A question (or a message to the host by
+  name) stays in the queue for a minute instead of 25 s; one the host moved
+  past, or that expired while it was busy with a game or a segment change,
+  comes back at the next free moment as its own short reaction, saying who
+  asked.
+- After the host asks the room something, dead air waits the stream delay
+  (`STREAM_DELAY_MS`) longer: replies can't arrive before viewers have
+  heard the question.
 
 ## Options Considered
 

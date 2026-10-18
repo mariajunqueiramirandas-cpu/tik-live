@@ -219,7 +219,8 @@ function task(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, options: BriefO
     }
     case "react": {
       const people = reaction(refs);
-      return people ? `${people.charAt(0).toUpperCase()}${people.slice(1)}` : "React to what's new in the room.";
+      const what = people ? `${people.charAt(0).toUpperCase()}${people.slice(1)}` : "React to what's new in the room.";
+      return plan.note ? `${what} ${plan.note}` : what;
     }
     case "filler":
       return `Nobody has said anything for a bit. ${plan.note ?? `Keep the show alive with something new for "${plan.segment.title}": ${plan.segment.prompt}`}`;

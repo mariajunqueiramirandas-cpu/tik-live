@@ -81,12 +81,25 @@ describe("Triage", () => {
 
   it("expires stale chat but keeps gifts longer", () => {
     const { triage, ingest, clock } = setup();
-    ingest(chat("a", "what's up?"));
+    ingest(chat("a", "nice stream"));
     ingest(gift("b", "Rose", 1));
     clock.advance(30_000);
     const left = triage.take(5);
     expect(left).toHaveLength(1);
     expect(left[0]?.event.kind).toBe("gift");
+    expect(triage.takeLapsed()).toEqual([]); // plain chat just goes
+  });
+
+  it("keeps questions for a minute, then hands the ones nobody got to back", () => {
+    const { triage, ingest, clock } = setup();
+    ingest(chat("lumy", "gato ou cachorro?"));
+    ingest(chat("ana", "blip, sing something"));
+    clock.advance(30_000);
+    expect(triage.pending()).toBe(2); // a question, and a message to the host by name
+    clock.advance(31_000);
+    expect(triage.pending()).toBe(0);
+    expect(triage.takeLapsed().map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["lumy"]);
+    expect(triage.takeLapsed()).toEqual([]);
   });
 
   it("only queues joins from returning viewers", () => {

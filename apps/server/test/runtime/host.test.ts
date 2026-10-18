@@ -102,6 +102,18 @@ describe("ClaudeHost", () => {
     });
   });
 
+  it("skips thinking when asked, only on models that allow it", async () => {
+    const haiku: Captured = {};
+    await collect(new ClaudeHost({ client: fakeClient(["Hi."], haiku), persona, safety, model: "claude-haiku-5-5", effort: "low", thinking: "off" }));
+    expect(haiku.params?.thinking).toEqual({ type: "disabled" });
+    const opus: Captured = {};
+    await collect(new ClaudeHost({ client: fakeClient(["Hi."], opus), persona, safety, model: "claude-opus-5-5", effort: "low", thinking: "off" }));
+    expect(opus.params).not.toHaveProperty("thinking"); // Opus 5.5 always thinks
+    const adaptive: Captured = {};
+    await collect(new ClaudeHost({ client: fakeClient(["Hi."], adaptive), persona, safety, model: "claude-haiku-5-5", effort: "low" }));
+    expect(adaptive.params).not.toHaveProperty("thinking");
+  });
+
   it("sends the show as one cached conversation: rooms, the director's briefs as system messages, and its own replies", async () => {
     const captured: Captured = {};
     const host = new ClaudeHost({ client: fakeClient(["Hi there friends."], captured), persona, safety, model: "claude-haiku-5-5", effort: "low" });

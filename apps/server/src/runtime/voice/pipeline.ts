@@ -14,6 +14,10 @@ export interface CueMeta {
   originAt: number;
   /** True for the first line of a turn. */
   first: boolean;
+  /** When the turn started being written. */
+  startedAt?: number;
+  /** When the model finished writing this line. */
+  writtenAt?: number;
 }
 
 export interface SpeechCue {
@@ -28,6 +32,8 @@ export interface SpeechCue {
   audio: AudioClip | null;
   /** How long the cue should take; the stage may report completion earlier or later. */
   durationMs: number;
+  /** When it passed the safety gate and its audio was ready. */
+  readyAt?: number;
 }
 
 /** Where cues get performed: the stage server (browser source in OBS). */
@@ -257,6 +263,7 @@ export class SpeechPipeline {
       emotion: utterance.emotion,
       audio,
       durationMs: audio?.durationMs ?? estimateSpeechMs(utterance.text),
+      readyAt: this.now(),
       ...(utterance.fx?.length ? { fx: utterance.fx } : {}),
       ...(meta ? { meta } : {}),
       ...(trusted ? { operator: true } : {}),

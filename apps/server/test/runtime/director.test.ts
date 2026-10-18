@@ -26,7 +26,7 @@ class FakeHost implements HostBrain {
 const stage: StageNotifier = { alert: () => {}, segment: () => {}, stats: () => {} };
 const instantOutput: SpeechOutput = { play: async () => {}, interrupt: () => {} };
 
-function setup(options: { startInStandby?: boolean } = {}) {
+function setup(options: { startInStandby?: boolean; streamDelayMs?: number } = {}) {
   const clock = fakeClock();
   const memory = new ViewerMemory({ now: clock.now });
   const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
@@ -298,7 +298,7 @@ describe("Director turn-taking", () => {
 });
 
 describe("Director with games and context", () => {
-  function gameSetup() {
+  function gameSetup(output: SpeechOutput = instantOutput) {
     const clock = fakeClock(Date.UTC(2026, 9, 16, 17, 0)); // Friday 14:00 in São Paulo
     const memory = new ViewerMemory({ now: clock.now });
     const triage = new Triage({ blocklist: [], hostName: persona.name, memory, now: clock.now });
@@ -313,7 +313,7 @@ describe("Director with games and context", () => {
         },
       },
     });
-    const speech = new SpeechPipeline(new NoTts(), gate, instantOutput, {}, clock.now);
+    const speech = new SpeechPipeline(new NoTts(), gate, output, {}, clock.now);
     const host = new FakeHost();
     const sounds: string[] = [];
     const stageWithFx: StageNotifier = { ...stage, sfx: (sound) => sounds.push(sound) };
@@ -367,6 +367,29 @@ describe("Director with games and context", () => {
     expect(react.context.history.at(-1)?.room).toContain("round 1 of 2 opened");
   });
 
+  it("holds new turns while a round waits for the host to stop talking, then reads it first", async () => {
+    const output = new HeldOutput();
+    const { director, host, games, step } = gameSetup(output);
+    const flush = async () => {
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    };
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    await flush();
+    expect(output.played).toEqual(["line for opening"]); // still on stage
+    await step(5_000);
+    expect(games.isActive()).toBe(true);
+    expect(games.status()?.phase).toBe("preparing"); // ready, waiting for the host
+    director.handleEvent(chat("joe", "this game is fun"));
+    await step(2_000);
+    expect(host.turns.map((turn) => turn.kind)).toEqual(["opening"]); // the round goes first
+    output.finish();
+    await flush();
+    await step();
+    expect(games.status()?.phase).toBe("open");
+    expect(host.turns.map((turn) => turn.kind)).toEqual(["opening", "game"]);
+  });
+
   it("gives the moderator what a line replies to, and plays sounds for gifts", async () => {
     const { director, step, contexts, sounds } = gameSetup();
     await step();
@@ -396,14 +419,42 @@ describe("Director ordering", () => {
     const who = react.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""));
     expect(who).toEqual(["leo", "ana", "bia", "dani"]);
     expect(react.context.brief).toContain("Now: Thank e5 (gift), then answer e1 (chat), then e2 (chat), then e4 (chat).");
-    // caio's question is older than dani's, so it isn't answered after it...
+    // caio's question is older than dani's, so it isn't answered in the same breath, but right after, saying who asked.
     await step(2_000);
-    expect(host.turns.at(-1)).toBe(react);
-    // ...but comes back in the next quiet moment.
+    const owed = host.turns.at(-1)!;
+    expect(owed).not.toBe(react);
+    expect(owed.kind).toBe("react");
+    expect(owed.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["caio"]);
+    expect(owed.context.brief).toContain("Now: Answer e3 (chat). It came in a bit earlier and you didn't get to it: say who asked.");
+  });
+
+  it("comes back to a question that expired while the host couldn't get to it", async () => {
+    const { director, step, host } = setup();
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.pause();
+    director.handleEvent(chat("lumy", "gato ou cachorro?"));
+    await step(61_000); // gone from the queue
+    director.resume();
+    await step(2_000);
+    const turn = host.turns.at(-1)!;
+    expect(turn.kind).toBe("react");
+    expect(turn.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["lumy"]);
+    expect(turn.context.brief).toContain("you didn't get to it: say who asked");
+  });
+
+  it("gives chat time to answer through the stream delay after the host asks something", async () => {
+    const { director, step, kinds } = setup({ streamDelayMs: 5_000 });
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    director.noteSpoken("Qual animal vocês querem que eu explore?");
     await step(8_000);
-    const filler = host.turns.at(-1)!;
-    expect(filler.kind).toBe("filler");
-    expect(filler.note).toBe("You didn't get to e3 earlier. Answer it now, saying who asked, then carry on.");
+    expect(kinds()).toEqual(["opening"]); // 7 s of dead air isn't enough: viewers only just heard it
+    await step(5_000);
+    expect(kinds()).toEqual(["opening", "filler"]);
+    director.noteSpoken("O polvo tem três corações.");
+    await step(8_000);
+    expect(kinds()).toEqual(["opening", "filler", "filler"]); // no question, the usual dead air
   });
 
   it("moves an overdue segment on even when chat keeps the host busy", async () => {
