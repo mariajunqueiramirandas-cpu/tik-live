@@ -61,3 +61,28 @@ pressure rather than asking, and they're what TikTok enforces against.
   likely to draw TikTok enforcement; the safety page says so.
 - The moderator no longer blocks a general "gifts help pay for the AI"
   line, and in active mode it allows direct asks.
+
+## Amendment (2026-10-19): the host's bills, and what a gift gets
+
+The owner wants the host to talk about supporting the show more, to say
+plainly that it needs gifts to keep paying its bills, and to explain what
+gifting gets a viewer.
+
+- The explanation now says the host is an AI with real bills to pay (its
+  voice, its brain, the computers that keep it live, every minute) and that
+  gifts are what pay them. That's true, so it's an honest ask, not a guilt
+  trip; "the show ends without gifts" stays out in both modes.
+- It also names two or three benefits of gifting, all of them the show's
+  own rules: the gifter's moment with their name out loud, a spot on the
+  top gifters card, combos, power-ups for everyone during a game round,
+  being remembered as a VIP, and the gift goal when it's on screen. Active
+  mode adds playful on-stream rewards and faster fan levels.
+- Gift thanks mention what the gift did (the bills, and what it moved on
+  screen) often, not now and then. A filler beat tells the room one thing a
+  gift does, never by name.
+- Pace: the card every 6 min (light) / 4 min (active); the host explains
+  it every 12 min (light, first at 5 min) / 6 min (active). The card's gift
+  line reads "Presentes pagam as contas da IA".
+- The moderator treats the bills line and explaining the show's own gift
+  rules to the whole room as SAFE; "if nobody gifts I can't pay my bills
+  and the live ends" is still UNSAFE.

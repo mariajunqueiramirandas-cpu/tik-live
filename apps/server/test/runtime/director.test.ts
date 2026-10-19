@@ -839,10 +839,12 @@ describe("Director support card", () => {
     await step(20_000);
     expect(cards).toEqual(["Blip é uma IA ao vivo", null]);
     expect(host.turns.some((turn) => turn.note?.includes("how people can support it"))).toBe(false);
-    await step(3 * 60_000); // 6 minutes in: the next quiet moment explains it
+    await step(3 * 60_000); // past 5 minutes in: the next quiet moment explains it
     const talk = host.turns.find((turn) => turn.note?.includes("how people can support it"));
     expect(talk?.kind).toBe("filler");
     expect(talk?.note).toContain("don't guilt anyone");
+    expect(talk?.note).toContain("bills to pay");
+    expect(talk?.note).toContain("top gifters card");
     expect(cards.at(-1)).toBe("Blip é uma IA ao vivo"); // the card goes up with it
   });
 

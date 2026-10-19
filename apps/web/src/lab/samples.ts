@@ -332,7 +332,7 @@ export const HUD: { schedule: StageServerPayload; likes: StageServerPayload; gif
         { way: "like", text: "Curta a live" },
         { way: "follow", text: "Siga para não perder" },
         { way: "share", text: "Compartilhe com amigos" },
-        { way: "gift", text: "Presentes mantêm a live" },
+        { way: "gift", text: "Presentes pagam as contas da IA" },
       ],
     },
   },
