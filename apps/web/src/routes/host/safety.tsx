@@ -87,7 +87,7 @@ export default function Safety() {
           hint={
             safety.giftAsks === "active"
               ? "O apresentador pede presentes com frequência e oferece recompensas na hora (um salve, uma música, um título, efeitos). Nunca faz chantagem, não diz que vai ser desligado e não insiste com quem disse que não pode. Pedir presentes demais pode ir contra as regras do TikTok LIVE: o risco é seu."
-              : "De vez em quando o palco mostra como apoiar a live e o apresentador explica que é uma IA e que presentes ajudam a pagar os custos dela, sem pedir para ninguém."
+              : "De vez em quando o palco mostra como apoiar a live e o apresentador explica que é uma IA com contas para pagar (voz, cérebro, servidores), que os presentes pagam essas contas e o que cada presente rende na live, sem pedir para ninguém."
           }
         >
           {() => (

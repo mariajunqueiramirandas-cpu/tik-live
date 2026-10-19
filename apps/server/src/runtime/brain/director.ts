@@ -269,15 +269,24 @@ const WELCOME_GAP_MS = 45_000;
 
 /** When the card first goes up and how often after that, and the same for the host's explanation, by how actively the channel asks for gifts. */
 const SUPPORT_PACE: Record<GiftAsks, { cardFirst: number; cardEvery: number; talkFirst: number; talkEvery: number }> = {
-  light: { cardFirst: 3 * 60_000, cardEvery: 8 * 60_000, talkFirst: 6 * 60_000, talkEvery: 20 * 60_000 },
-  active: { cardFirst: 2 * 60_000, cardEvery: 5 * 60_000, talkFirst: 3 * 60_000, talkEvery: 8 * 60_000 },
+  light: { cardFirst: 3 * 60_000, cardEvery: 6 * 60_000, talkFirst: 5 * 60_000, talkEvery: 12 * 60_000 },
+  active: { cardFirst: 2 * 60_000, cardEvery: 4 * 60_000, talkFirst: 3 * 60_000, talkEvery: 6 * 60_000 },
 };
+/** What the host says it costs to keep it live: honest, since every minute on the air is paid for. */
+const SUPPORT_BILLS =
+  "you're an AI host with real bills to pay: your voice, your brain and the computers that keep you live cost money every minute you're on the air, and gifts are what pay those bills";
 const SUPPORT_TALK: Record<GiftAsks, string> = {
-  active:
-    "ask the room for gifts, with energy and humor, in two or three short sentences: you're an AI host, and gifts are what keep you on the air. Offer a playful reward you can give right away on stream (a shout-out, a song, a title, an effect) and say likes, follows and shares help too. No guilt, no claims you'll be shut down, and don't single out anyone who already said no. The card on screen shows the same.",
-  light:
-    "explain how this show works and how people can support it, in two or three short sentences in your own words: you're an AI host, and your voice and your brain cost real money every minute you're live. Likes, follows and shares help the live reach more people, and gifts help pay for the AI. Thank everyone who already helps. Keep it light and grateful, with no pressure: don't single anyone out, don't guilt anyone, don't say the show will end without help, and don't promise anything in exchange. The card on screen shows the same.",
+  active: `ask the room for gifts, with energy and humor, in three or four short sentences: ${SUPPORT_BILLS} and keep you on the air. Then sell what a gift gets here, with the benefits below, plus a playful reward you can give right away on stream (a shout-out, a song, a title, an effect), and say gifts make fan levels grow fastest. Say likes, follows and shares help too. No guilt, no claims you'll be shut down, and don't single out anyone who already said no. The card on screen shows the same.`,
+  light: `explain how this show works and how people can support it, in three or four short sentences in your own words: ${SUPPORT_BILLS}. Then say, to the whole room, what a gift does on this show, with the benefits below. Likes, follows and shares help the live reach more people. Thank everyone who already helps. Keep it light, funny and grateful, with no pressure: don't single anyone out, don't guilt anyone, don't say the show will end without help, and don't promise anything beyond the show's own rules. The card on screen shows the same.`,
 };
+/** What a gift gets on this show, by its own rules (ADR-0028, ADR-0029, ADR-0036): every one of them is true of every channel. */
+const GIFT_BENEFITS = [
+  "the gifter's name said out loud with a moment just for them, and a bigger party for a bigger gift",
+  "a spot on the top gifters card on stage, with a crown and gold for first place",
+  "gifts in a row build a combo on screen",
+  "a gift during a game round unlocks a power-up for everyone (more time, a hint, double points)",
+  "you remember gifters and greet them as VIPs when they come back",
+];
 
 /**
  * How much each kind of turn matters once it's under way (ADR-0022). A turn
@@ -313,7 +322,7 @@ export function eventUrgency(event: LiveEvent): number {
 const EMPTY_ROOM_REACT_ONLY_MS = 10 * 60 * 1000;
 
 /** Ideas for quiet moments, in rotation, so fillers don't all sound alike. */
-const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean; needsGoals?: boolean; needsUpNext?: boolean }> = [
+const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean; needsGoals?: boolean; needsUpNext?: boolean; needsSupport?: boolean }> = [
   { beat: "ask chat one fresh, easy question you haven't asked before." },
   { beat: "share a quick, original opinion or hot take, then ask chat if they agree." },
   { beat: "follow up on something a viewer told you earlier, by name.", needsChat: true },
@@ -328,6 +337,10 @@ const FILLER_BEATS: ReadonlyArray<{ beat: string; needsChat?: boolean; needsGoal
   { beat: "ask whoever hasn't followed yet to follow so they don't miss the next game, in one fun line." },
   { beat: "make a funny prediction about someone in chat, by name, like a fortune teller.", needsChat: true },
   { beat: "ask chat to share the live with one friend who'd love it, and say you'll thank whoever shares by name." },
+  {
+    beat: "tell the whole room, in one fun line, one thing a gift does on this show (their name out loud, a spot on the top gifters card, a combo on screen, a power-up for everyone in a game), and that gifts help pay your bills as an AI. Never ask anyone by name.",
+    needsSupport: true,
+  },
 ];
 
 export function nextLikeMilestone(likes: number): number {
@@ -1633,15 +1646,17 @@ export class Director {
     if (hook) return hook;
     const chat = this.engine.conversation.hasViewerChat();
     const upNext = this.upNext(now).length > 0;
-    const usable = (beat: (typeof FILLER_BEATS)[number]) => (!beat.needsChat || chat) && (!beat.needsGoals || this.goalsOn()) && (!beat.needsUpNext || upNext);
+    const usable = (beat: (typeof FILLER_BEATS)[number]) =>
+      (!beat.needsChat || chat) && (!beat.needsGoals || this.goalsOn()) && (!beat.needsUpNext || upNext) && (!beat.needsSupport || this.supportOn());
     let pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     if (!usable(pick)) pick = FILLER_BEATS[this.fillerBeat++ % FILLER_BEATS.length] as (typeof FILLER_BEATS)[number];
     return `Keep the show alive for "${segment.title}" (${segment.prompt}). This time, ${pick.beat}`;
   }
 
-  /** How the host explains supporting the show; with gift powers on, it names a couple of them too. */
+  /** How the host explains supporting the show and what gifts get; with gift powers on, it names a couple of them too. */
   private supportTalk(): string {
-    const talk = SUPPORT_TALK[this.giftAsks()];
+    const benefits = this.goalsOn() ? [...GIFT_BENEFITS, "every gift moves the gift goal on screen"] : GIFT_BENEFITS;
+    const talk = `${SUPPORT_TALK[this.giftAsks()]} The benefits of gifting here (name two or three, in your own words): ${benefits.join("; ")}.`;
     if (!this.perksOn()) return talk;
     return `${talk} Then say the show has gift powers, the show's own rules (${perksSummary()}), and name one or two${this.giftAsks() === "active" ? " with energy" : ", to the whole room, without asking anyone by name"}.`;
   }
@@ -1675,7 +1690,7 @@ export class Director {
         { way: "like", text: "Curta a live" },
         { way: "follow", text: "Siga para não perder" },
         { way: "share", text: "Compartilhe com amigos" },
-        { way: "gift", text: "Presentes mantêm a live" },
+        { way: "gift", text: "Presentes pagam as contas da IA" },
       ],
     });
     this.supportHideAt = now + SUPPORT_CARD_SHOW_MS;

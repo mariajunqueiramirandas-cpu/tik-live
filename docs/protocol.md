@@ -226,7 +226,7 @@ chat's vote while it's open.
 #### `support`
 
 ```json
-{ "v": 1, "t": "support", "card": { "title": "Blip é uma IA ao vivo", "lines": [{ "way": "like", "text": "Curta a live" }, { "way": "follow", "text": "Siga para não perder" }, { "way": "share", "text": "Compartilhe com amigos" }, { "way": "gift", "text": "Presentes mantêm a live" }] } }
+{ "v": 1, "t": "support", "card": { "title": "Blip é uma IA ao vivo", "lines": [{ "way": "like", "text": "Curta a live" }, { "way": "follow", "text": "Siga para não perder" }, { "way": "share", "text": "Compartilhe com amigos" }, { "way": "gift", "text": "Presentes pagam as contas da IA" }] } }
 ```
 
 How viewers can support the show ([ADR-0032](adr/0032-gifts-and-supporting-the-show.md)):
