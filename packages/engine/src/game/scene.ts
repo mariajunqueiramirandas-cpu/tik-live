@@ -11,11 +11,6 @@ import {
   easeOutBack,
   heldSeconds,
   ropePosition,
-  spinTurns,
-  stripOffsetAt,
-  stripPosition,
-  stripRepeats,
-  stripTarget,
   ellipsize,
   fitText,
   formatCount,
@@ -64,13 +59,7 @@ const WARN = "#FF5C6C";
 const OPTION_COLORS = ["#FF6B8B", "#4FC3FF", "#FFC84F", "#B98CFF"] as const;
 const TF_COLORS = ["#36E0B0", "#FF5C7A"] as const;
 const PODIUM = ["#FFD15C", "#CFD8F5", "#E8A06A"] as const;
-const LANE_COLORS = ["#FF6B8B", "#4FC3FF", "#FFC84F", "#B98CFF", "#4DFF9A"] as const;
-/** The wheel's colors by sector: blue, green, purple, gold. */
-const SECTOR_COLORS = ["#4FA3FF", "#3DDC84", "#B66CFF", "#FFD15C"] as const;
 const TEAM_COLORS = ["#FF5FA2", "#4FC3FF"] as const;
-const STRIP_TILE = 150;
-/** Enough tiles that the strip covers the board with one to spare as it wraps. */
-const STRIP_MIN_TILES = Math.ceil((W + 2 * STRIP_TILE) / STRIP_TILE);
 
 const PANEL = rgba("#0C0622", 0.82);
 const TRACK = rgba("#FFFFFF", 0.1);
@@ -81,7 +70,7 @@ const WARN_RGBA = rgba(WARN);
 // Groups animate together (entrance, dimming).
 const G_HEAD = 0;
 const G_MAIN = 1;
-const G_OPT = 2; // 2..6: one per option, lane, team, tile set, podium place
+const G_OPT = 2; // 2..6: one per option, team, tile set, podium place
 const OPT_GROUPS = 5;
 const G_FOOT = 7;
 const G_EXTRA = 8;
@@ -101,9 +90,8 @@ const B_MARK = 5; // the last guess: vals[6] along element `arg`
 const B_TIMER = 6; // width = time left
 const B_GROW = 7; // grows from the bottom with its group's entrance
 const B_TILE = 8; // letter tile `arg`: staggered pop and bob
-const B_SLIDE = 9; // moves right by vals[val] * span (a racer, the rope's knot)
-const B_STRIP = 10; // wheel tile `arg` on the scrolling strip, drawn at its tile's x + ox, at oy
-const B_SHAKE = 11; // shakes with the potato's heat
+const B_SLIDE = 9; // moves right by vals[val] * span (the rope's knot)
+const B_SHAKE = 10; // shakes with the potato's heat
 
 const F_TIMER = 1; // hidden once the round is revealed
 const F_PULSE = 2; // glow breathes
@@ -140,9 +128,6 @@ interface Element {
   /** B_SLIDE: the spring it follows and how far it travels at 1. */
   val: number;
   span: number;
-  /** B_STRIP: where it sits in its tile (x) and on the board (y); pieces sample the atlas at x, y. */
-  ox: number;
-  oy: number;
   /** This frame's top edge, after its binding (for B_FOLLOW). */
   top: number;
 }
@@ -241,14 +226,6 @@ export class GameLayer implements Layer {
   private podiumShown = -1;
   private scale = 1;
   private time = 0;
-  /** The wheel's strip: tile width, its whole length, the spin (local seconds) and this frame's offset. */
-  private stripTile = 1;
-  private stripTotal = 1;
-  private stripFrom = 0;
-  private stripTo = 0;
-  private spinStart = 0;
-  private spinEnd: number | null = null;
-  private stripOffset = 0;
   /** The potato: since when the holder has had it (local seconds), the second last shown, and this frame's shake. */
   private heldSince: number | null = null;
   private heldSecond = -1;
@@ -256,7 +233,7 @@ export class GameLayer implements Layer {
 
   private readonly vis = new Spring(0, SPRINGS.snappy);
   private readonly timerVis = new Spring(0, SPRINGS.gentle);
-  /** Bars 0-3 (racers 0-4, the rope 0, the heat 0), number window low (4) and high (5), last guess (6). */
+  /** Bars 0-3 (the rope 0, the heat 0), number window low (4) and high (5), last guess (6). */
   private readonly vals: Spring[] = [];
   private readonly dim: Spring[] = [];
   private readonly delay = new Float32Array(GROUPS);
@@ -272,7 +249,7 @@ export class GameLayer implements Layer {
     this.atlas = new TextSprite(ctx.gl);
     for (let i = 0; i < LABELS; i++) this.labels.push(new Label(ctx));
     for (let i = 0; i < MAX_ELEMENTS; i++) {
-      this.elements.push({ type: 0, x: 0, y: 0, w: 0, h: 0, group: 0, bind: 0, arg: 0, radius: 0, reach: 0, border: 3, flags: 0, fill: NONE, line: NONE, glow: NONE, min: 0, val: 0, span: 0, ox: 0, oy: 0, top: 0 });
+      this.elements.push({ type: 0, x: 0, y: 0, w: 0, h: 0, group: 0, bind: 0, arg: 0, radius: 0, reach: 0, border: 3, flags: 0, fill: NONE, line: NONE, glow: NONE, min: 0, val: 0, span: 0, top: 0 });
     }
     for (let i = 0; i < 7; i++) this.vals.push(new Spring(0, { stiffness: 90, damping: 14 }));
     for (let i = 0; i < GROUPS; i++) this.dim.push(new Spring(1, SPRINGS.gentle));
@@ -333,7 +310,6 @@ export class GameLayer implements Layer {
         (this.labels[L_TIMER] as Label).set(String(second), " s", 46, 800, warn ? WARN : INK, warn ? WARN : HAZE, null, 200, this.scale);
       }
     }
-    if (scene.kind === "wheel") this.stripOffset = this.spinEnd === null ? this.stripFrom : stripOffsetAt(t, this.stripFrom, this.stripTo, this.spinStart, this.spinEnd);
     if (scene.kind === "potato") {
       // It shakes harder as it heats up, and goes still once it's blown.
       this.shake = open ? 2 + 16 * Math.max(0, this.v(0)) ** 1.5 : 0;
@@ -433,19 +409,6 @@ export class GameLayer implements Layer {
         case B_SLIDE:
           x = e.x + Math.max(0, Math.min(1, this.v(e.val))) * e.span;
           break;
-        case B_STRIP: {
-          // Each tile is drawn once, wherever the strip has it now; it fades out before it pokes past the board.
-          const pos = stripPosition(e.arg, this.stripOffset, this.stripTile, this.stripTotal);
-          const edge = W / 2 - this.stripTile / 3 - Math.abs(pos);
-          if (edge <= 0) {
-            alpha = 0;
-            break;
-          }
-          alpha *= Math.min(1, edge / (this.stripTile * 0.8));
-          x = CX + pos - this.stripTile / 2 + e.ox;
-          y = e.oy;
-          break;
-        }
         case B_SHAKE:
           x += Math.sin(t * 31 + e.arg) * this.shake;
           y += Math.cos(t * 23 + e.arg * 1.7) * this.shake * 0.6;
@@ -539,7 +502,6 @@ export class GameLayer implements Layer {
       this.lastSecond = -1;
       this.key = "";
       this.podiumShown = -1;
-      this.spinEnd = null;
       this.heldSince = null;
       this.heldSecond = -1;
       this.vis.snap(1);
@@ -554,7 +516,6 @@ export class GameLayer implements Layer {
       this.deadline = scene.phase === "open" && scene.durationMs > 0 ? deadlineFor(this.deadline, now, scene.remainingMs) : null;
       if (scene.phase === "reveal") this.lastSecond = -1;
     }
-    if (scene.kind === "wheel") this.spin(scene, now);
     if (scene.kind === "potato") {
       const before = previous?.kind === "potato" ? previous.holder : null;
       if (scene.holder === null || scene.phase !== "open") this.heldSince = null;
@@ -576,28 +537,6 @@ export class GameLayer implements Layer {
       const first = this.vals[0] as Spring;
       first.snap(first.target);
     }
-  }
-
-  /** The strip's geometry and its spin: still while chat bets, then an ease-out that lands on `landing` when the spin runs out. */
-  private spin(scene: Extract<GameScene, { kind: "wheel" }>, now: number): void {
-    this.stripTile = STRIP_TILE;
-    this.stripTotal = STRIP_TILE * scene.strip.length * stripRepeats(scene.strip.length, STRIP_MIN_TILES);
-    this.stripFrom = STRIP_TILE / 2;
-    if (scene.stage === "bets" || scene.landing === null) {
-      this.spinEnd = null;
-      return;
-    }
-    this.stripTo = stripTarget(this.stripFrom, scene.landing, STRIP_TILE, this.stripTotal, spinTurns(scene.spinMs));
-    if (scene.stage === "finish") {
-      // Already stopped (or a stage that connected after the spin): straight to where it landed.
-      if (this.spinEnd === null || this.spinEnd > now) {
-        this.spinEnd = now;
-        this.spinStart = now;
-      }
-      return;
-    }
-    this.spinEnd = deadlineFor(this.spinEnd, now, scene.spinLeftMs);
-    this.spinStart = this.spinEnd - scene.spinMs / 1000;
   }
 
   /** Live values: labels and spring targets, no repaint of the board. */
@@ -667,47 +606,6 @@ export class GameLayer implements Layer {
       case "fastest":
         footer("", scene.phase === "open" ? "Digite igualzinho · quem for primeiro ganha" : "");
         break;
-      case "race": {
-        const timer = this.labels[L_TIMER] as Label;
-        const ticker = this.labels[L_SUB] as Label;
-        scene.racers.forEach((racer, i) => {
-          (this.vals[i] as Spring).target = racer.progress;
-          (this.labels[L_VALUE + i] as Label).set(formatCount(racer.bets), ` ${noun(racer.bets, "aposta")}`, 28, 800, INK, HAZE, null, 160, sc);
-        });
-        if (scene.stage === "bets") {
-          footer(formatCount(scene.bets), ` ${noun(scene.bets, "aposta")} · digite o número do corredor`);
-          ticker.set("O azarão paga mais", " · uma aposta por pessoa", 36, 700, this.accent, HAZE, null, W, sc);
-        } else if (scene.stage === "running") {
-          timer.set("Valendo!", "", 40, 800, this.accent, this.accent, null, 300, sc);
-          footer("", "Apostas encerradas · torça pelo seu!");
-          ticker.set(scene.event ?? "E lá vão eles!", "", 42, 800, INK, INK, this.accent, W, sc);
-        } else {
-          timer.set("Chegada!", "", 40, 800, this.accent, this.accent, null, 300, sc);
-          const winner = scene.winner === null ? undefined : scene.racers[scene.winner];
-          if (winner) ticker.set(`${winner.name} venceu!`, ` · pagou ×${winner.odds}`, 44, 800, GREEN, INK, null, W, sc);
-          else ticker.set("Fim da corrida", "", 44, 800, INK, INK, null, W, sc);
-          this.betWinners(footer, scene.winners, "Ninguém apostou nele");
-          for (let i = 0; i < scene.racers.length; i++) (this.dim[G_OPT + i] as Spring).target = i === scene.winner ? 1 : 0.38;
-        }
-        break;
-      }
-      case "wheel": {
-        const timer = this.labels[L_TIMER] as Label;
-        scene.sectors.forEach((sector, i) => {
-          (this.labels[L_VALUE + i] as Label).set(formatCount(sector.bets), ` ${noun(sector.bets, "aposta")}`, 32, 800, INK, HAZE, null, 220, sc);
-        });
-        if (scene.stage === "bets") footer(formatCount(scene.bets), ` ${noun(scene.bets, "aposta")} · digite o número da cor`);
-        else if (scene.stage === "running") {
-          timer.set("Girando!", "", 40, 800, this.accent, this.accent, null, 300, sc);
-          footer("", "Apostas encerradas · segura o coração…");
-        } else {
-          timer.set("Resultado", "", 40, 800, this.accent, this.accent, null, 300, sc);
-          const sector = scene.result === null ? undefined : scene.sectors[scene.result];
-          this.betWinners(footer, scene.winners, sector ? `Deu ${sector.label} · ninguém apostou nela` : "Ninguém acertou");
-          for (let i = 0; i < scene.sectors.length; i++) (this.dim[G_OPT + i] as Spring).target = i === scene.result ? 1 : 0.38;
-        }
-        break;
-      }
       case "tug": {
         (this.vals[0] as Spring).target = ropePosition(scene.rope);
         scene.teams.forEach((team, i) => {
@@ -778,13 +676,6 @@ export class GameLayer implements Layer {
     }
   }
 
-  /** The footer at a betting round's finish: who bet right, or `none`. */
-  private betWinners(footer: (strong: string, rest: string) => void, winners: readonly string[], none: string): void {
-    if (winners.length === 1) footer(winners[0] as string, " acertou!");
-    else if (winners.length) footer("Acertaram: ", this.winnerList(winners, "Acertaram: "));
-    else footer("", none);
-  }
-
   /** As many winners as fit on the footer, then "e mais 2". */
   private winnerList(names: readonly string[], lead = "Mais rápidos: "): string {
     const m = this.measure(34, 700);
@@ -836,12 +727,6 @@ export class GameLayer implements Layer {
         case "fastest":
           this.fastest(scene);
           break;
-        case "race":
-          this.race(scene);
-          break;
-        case "wheel":
-          this.wheel(scene);
-          break;
         case "tug":
           this.tug(scene);
           break;
@@ -884,8 +769,6 @@ export class GameLayer implements Layer {
     e.min = 0;
     e.val = 0;
     e.span = 0;
-    e.ox = 0;
-    e.oy = 0;
     e.top = y;
     return e;
   }
@@ -1332,118 +1215,6 @@ export class GameLayer implements Layer {
       this.single(scene.winner, 84, 800, CX, y, G_EXTRA, { glow: this.accent });
       if (scene.winnerMs !== null) this.single(formatSeconds(scene.winnerMs), 70, 800, CX, y + 112, G_EXTRA2, { color: this.accent });
     } else this.single("Ninguém digitou a tempo", 50, 700, CX, y + 20, G_EXTRA, { color: HAZE, weight: 700 });
-  }
-
-  /**
-   * The race (ADR-0038): a lane per racer with its number, name, multiplier
-   * and live bets, and a token that runs along the lane with its progress.
-   */
-  private race(scene: Extract<GameScene, { kind: "race" }>): void {
-    const n = scene.racers.length;
-    const finish = scene.stage === "finish";
-    // The ticker: a hint while chat bets, the race's moments, the winner.
-    this.label(L_SUB, CX, TOP + 26, 0.5, G_MAIN);
-    const gap = 12;
-    const top = TOP + 70;
-    const laneH = Math.min(112, Math.floor((FOOT_Y - 60 - top - gap * (n - 1)) / n));
-    const chip = 64;
-    const token = 46;
-    const trackX = L + 104;
-    const trackEnd = R - 206;
-    let y = top;
-    scene.racers.forEach((racer, i) => {
-      const g = G_OPT + i;
-      const color = LANE_COLORS[i] as string;
-      const won = finish && scene.winner === i;
-      const lane = this.box(L, y, W, laneH, 28, g, PANEL, won ? GREEN_RGBA : rgba(color, 0.5), won ? rgba(GREEN, 0.6) : NONE, 30);
-      if (won) lane.flags = F_PULSE;
-      this.box(L + 16, y + (laneH - chip) / 2, chip, chip, 20, g, rgba(won ? GREEN : color));
-      this.single(String(i + 1), 40, 800, L + 16 + chip / 2, y + laneH / 2 - 23, g, { color: DARK });
-      this.single(racer.name, 36, 760, trackX, y + 10, g, { align: 0, weight: 760, maxWidth: trackEnd - trackX - 24 });
-      const trackY = y + laneH - 30;
-      this.box(trackX, trackY - 4, trackEnd - trackX, 8, 4, g, TRACK);
-      const runner = this.box(trackX - token / 2, trackY - token / 2, token, token, token / 2, g, rgba(won ? GREEN : color), rgba("#FFFFFF", 0.9), rgba(won ? GREEN : color, 0.55), 18);
-      runner.bind = B_SLIDE;
-      runner.val = i;
-      runner.span = trackEnd - trackX;
-      this.single(`×${racer.odds}`, 46, 800, R - 22, y + 8, g, { align: 1, color: won ? GREEN : this.accent });
-      this.label(L_VALUE + i, R - 22, y + laneH - 28, 1, g);
-      y += laneH + gap;
-    });
-    // The finish line, across every lane, at the end of the tracks.
-    const linesTop = top + 6;
-    const linesH = y - gap - top - 12;
-    this.box(trackEnd - 3, linesTop, 6, linesH, 3, G_MAIN, rgba("#FFFFFF", 0.7), NONE, rgba("#FFFFFF", 0.35), 14);
-    this.box(trackEnd + 5, linesTop, 4, linesH, 2, G_MAIN, rgba("#120A2E", 0.9));
-  }
-
-  /**
-   * The wheel (ADR-0038): a strip of colored tiles under a pointer that
-   * spins and slows down onto the result, and the colors to bet on below.
-   * Each color's multiplier is painted once and every tile shows it as it
-   * scrolls by.
-   */
-  private wheel(scene: Extract<GameScene, { kind: "wheel" }>): void {
-    const finish = scene.stage === "finish";
-    const stripY = TOP + 30;
-    const tileH = 170;
-    this.box(L, stripY - 18, W, tileH + 36, 34, G_MAIN, PANEL, rgba(this.accent, 0.55), rgba(this.accent, 0.22), 30);
-    // One painted "×N" per sector, inside the strip's band where nothing else is painted.
-    const spots = scene.sectors.map((sector, k) => this.atlasText(`×${sector.odds}`, 58, 800, L + 120 + k * 220, stripY + tileH / 2 - 35, DARK));
-    const count = scene.strip.length * stripRepeats(scene.strip.length, STRIP_MIN_TILES);
-    for (let j = 0; j < count; j++) {
-      const sector = scene.strip[j % scene.strip.length] as number;
-      const color = SECTOR_COLORS[sector] as string;
-      const landed = finish && j === scene.landing;
-      const tile = this.box(0, stripY, STRIP_TILE - 14, tileH, 26, G_MAIN, rgba(color, 0.95), landed ? WHITE : rgba("#FFFFFF", 0.55), rgba(landed ? "#FFFFFF" : color, landed ? 0.8 : 0.3), landed ? 30 : 16);
-      tile.bind = B_STRIP;
-      tile.arg = j;
-      tile.ox = 7;
-      tile.oy = stripY;
-      tile.border = landed ? 6 : 3;
-      if (landed) tile.flags = F_PULSE;
-      else if (sector === 3) tile.flags = F_SHINE;
-      const spot = spots[sector];
-      if (!spot) continue;
-      const piece = this.add(PIECE, spot.x, spot.y, spot.w, spot.h, G_MAIN);
-      piece.bind = B_STRIP;
-      piece.arg = j;
-      piece.ox = (STRIP_TILE - spot.w) / 2;
-      piece.oy = stripY + (tileH - spot.h) / 2;
-    }
-    // The pointer, on top of the tiles.
-    this.box(CX - 5, stripY - 34, 10, tileH + 68, 5, G_EXTRA, WHITE, NONE, rgba("#FFFFFF", 0.75), 22);
-    this.box(CX - 24, stripY - 44, 48, 24, 12, G_EXTRA, WHITE, NONE, rgba("#FFFFFF", 0.6), 16);
-    this.box(CX - 24, stripY + tileH + 20, 48, 24, 12, G_EXTRA, WHITE, NONE, rgba("#FFFFFF", 0.6), 16);
-    // The colors to bet on.
-    const n = scene.sectors.length;
-    const rowH = 96;
-    const gap = 14;
-    let y = stripY + tileH + 64;
-    y += Math.max(0, (FOOT_Y - 50 - y - (n * rowH + (n - 1) * gap)) * 0.3);
-    scene.sectors.forEach((sector, i) => {
-      const g = G_OPT + i;
-      const color = SECTOR_COLORS[i] as string;
-      const won = finish && scene.result === i;
-      const row = this.box(L, y, W, rowH, 30, g, PANEL, won ? GREEN_RGBA : rgba(color, 0.55), won ? rgba(GREEN, 0.6) : NONE, 30);
-      if (won) row.flags = F_PULSE;
-      this.box(L + 16, y + (rowH - 64) / 2, 64, 64, 20, g, rgba(color));
-      this.single(String(i + 1), 40, 800, L + 48, y + rowH / 2 - 23, g, { color: DARK });
-      this.single(sector.label, 44, 760, L + 104, y + rowH / 2 - 26, g, { align: 0, weight: 760, maxWidth: 300 });
-      this.single(`×${sector.odds}`, 46, 800, L + 520, y + rowH / 2 - 27, g, { align: 1, color: won ? GREEN : color });
-      this.label(L_VALUE + i, R - 24, y + rowH / 2, 1, g);
-      y += rowH + gap;
-    });
-  }
-
-  /** Paints text into the atlas without showing it, for pieces that sample it elsewhere (the strip's tiles). */
-  private atlasText(text: string, size: number, weight: number, cx: number, top: number, color: string): { x: number; y: number; w: number; h: number } | null {
-    const before = this.count;
-    this.single(text, size, weight, cx, top, G_MAIN, { color, weight });
-    if (this.count === before) return null;
-    const e = this.elements[this.count - 1] as Element;
-    this.count -= 1;
-    return { x: e.x, y: e.y, w: e.w, h: e.h };
   }
 
   /**

@@ -14,14 +14,12 @@ import "./zod-pt-br";
  * - riddle: answer the riddle; the first right answer wins.
  * - fastest: type the word on screen; the fastest typer wins.
  *
- * Games of chance and parties (ADR-0038), made up in code:
- * - race: bet on a racer (type its number); the long shots pay the most.
- * - wheel: bet on a color (type its number); the strip spins and stops on one.
+ * Party games (ADR-0038), made up in code:
  * - tug: join a team (type 1 or 2); likes, "puxa" and gifts pull the rope.
  * - potato: type "pega" to grab the hot potato; points for every second you
  *   hold it, and whoever holds it when it blows up loses them all.
  */
-export const GAME_KINDS = ["trivia", "poll", "scramble", "number", "truefalse", "math", "riddle", "fastest", "race", "wheel", "tug", "potato"] as const;
+export const GAME_KINDS = ["trivia", "poll", "scramble", "number", "truefalse", "math", "riddle", "fastest", "tug", "potato"] as const;
 export type GameKind = (typeof GAME_KINDS)[number];
 
 export const GAME_LABELS: Record<GameKind, string> = {
@@ -33,15 +31,19 @@ export const GAME_LABELS: Record<GameKind, string> = {
   math: "Conta rápida",
   riddle: "Charadas",
   fastest: "Dedo mais rápido",
-  race: "Corrida maluca",
-  wheel: "Roleta da sorte",
   tug: "Cabo de guerra",
   potato: "Batata quente",
 };
 
 /** Games made up in code on the spot: no questions to write, nothing to moderate. */
-export const GENERATED_KINDS = ["number", "math", "race", "wheel", "tug", "potato"] as const satisfies readonly GameKind[];
+export const GENERATED_KINDS = ["number", "math", "tug", "potato"] as const satisfies readonly GameKind[];
 export type GeneratedKind = (typeof GENERATED_KINDS)[number];
+
+/**
+ * Games that were taken out (the betting games, the race and the wheel). A
+ * saved segment that still names one plays a random game instead.
+ */
+export const RETIRED_GAME_KINDS: readonly string[] = ["race", "wheel"];
 
 /** How a game is set up: by the creator in a segment, or from the studio. */
 export const gameConfigSchema = z.object({
@@ -55,7 +57,7 @@ export type GameConfig = z.infer<typeof gameConfigSchema>;
 
 /** A segment's game. "random" draws one of the kinds each time the segment comes around (each loop). */
 export const segmentGameSchema = gameConfigSchema.extend({
-  kind: z.enum([...GAME_KINDS, "random"] as const),
+  kind: z.preprocess((kind) => (typeof kind === "string" && RETIRED_GAME_KINDS.includes(kind) ? "random" : kind), z.enum([...GAME_KINDS, "random"] as const)),
 });
 export type SegmentGame = z.infer<typeof segmentGameSchema>;
 
@@ -86,14 +88,6 @@ const round = {
   /** Power-ups gifts unlocked for this round. */
   boosts: z.array(z.enum(BOOST_KINDS)).max(3).optional(),
 };
-
-/**
- * Where a betting round is (ADR-0038): chat is betting, the race is on (or
- * the strip spins), or it's over. The round's phase is "open" while chat
- * bets and "reveal" from the start.
- */
-export const BET_STAGES = ["bets", "running", "finish"] as const;
-export type BetStage = (typeof BET_STAGES)[number];
 
 /** What the stage draws for a game. Each kind has its own scene. */
 export const gameSceneSchema = z.discriminatedUnion("kind", [
@@ -183,68 +177,6 @@ export const gameSceneSchema = z.discriminatedUnion("kind", [
     winnerMs: z.number().int().min(0).nullable(),
   }),
   /**
-   * A race chat bets on: five racers, each with the multiplier it pays.
-   * Progress goes from 0 at the start to 1 at the finish line; the server
-   * sends it a few times a second while the race runs.
-   */
-  z.object({
-    kind: z.literal("race"),
-    ...round,
-    stage: z.enum(BET_STAGES),
-    racers: z
-      .array(
-        z.object({
-          name: z.string().max(20),
-          /** What a right bet pays: points are three times this. */
-          odds: z.number().int().min(2).max(50),
-          /** Bets on this racer so far. */
-          bets: z.number().int().min(0),
-          progress: z.number().min(0).max(1),
-        }),
-      )
-      .min(2)
-      .max(5),
-    bets: z.number().int().min(0),
-    /** The racer that won, at the finish. */
-    winner: z.number().int().min(0).max(4).nullable(),
-    /** Who bet on the winner, first bets first. */
-    winners: z.array(name).max(5),
-    /** The latest moment in the race ("Faísca assumiu a ponta!"), while it runs. */
-    event: z.string().max(60).nullable(),
-  }),
-  /**
-   * A strip of colored tiles that spins under a pointer (ADR-0038). Chat bets
-   * on a color; rarer colors pay more. From the spin on, `landing` is the
-   * tile it stops on and `spinLeftMs` how long the spin has left, relative
-   * to receipt, so the stage animates it on its own.
-   */
-  z.object({
-    kind: z.literal("wheel"),
-    ...round,
-    stage: z.enum(BET_STAGES),
-    sectors: z
-      .array(
-        z.object({
-          label: z.string().max(20),
-          /** What a right bet pays: points are four times this. */
-          odds: z.number().int().min(2).max(100),
-          bets: z.number().int().min(0),
-        }),
-      )
-      .min(2)
-      .max(4),
-    /** The strip's tiles, as sector indexes, in order (it repeats around). */
-    strip: z.array(z.number().int().min(0).max(3)).min(4).max(24),
-    /** The tile (index into `strip`) the spin stops on; null while chat bets. */
-    landing: z.number().int().min(0).max(23).nullable(),
-    spinMs: z.number().min(0),
-    spinLeftMs: z.number().min(0),
-    bets: z.number().int().min(0),
-    /** The sector it stopped on, at the finish. */
-    result: z.number().int().min(0).max(3).nullable(),
-    winners: z.array(name).max(5),
-  }),
-  /**
    * Tug of war (ADR-0038): two teams, a rope between them. `rope` goes from
    * -1 (team 1 pulled it all the way) to 1 (team 2).
    */
@@ -312,8 +244,8 @@ export type GameSource = (typeof GAME_SOURCES)[number];
 export interface GameStatus {
   kind: GameKind;
   topic: string | null;
-  /** "preparing": writing the questions; "running": a race or a spin is on (bets are closed); "results": showing the final scores. */
-  phase: "preparing" | "open" | "running" | "reveal" | "results";
+  /** "preparing": writing the questions; "results": showing the final scores. */
+  phase: "preparing" | "open" | "reveal" | "results";
   round: number;
   rounds: number;
   /** The current question or prompt, as shown on stage. */

@@ -125,8 +125,8 @@ describe("gift powers", () => {
   it("lets only the picker choose, from three games with a party game among them", () => {
     const options = pickOptions(() => 0.3);
     expect(new Set(options).size).toBe(3);
-    expect(options.some((kind) => ["race", "wheel", "tug", "potato"].includes(kind))).toBe(true);
-    const pick = new SoloPick("ana", "ana", ["race", "trivia", "potato"], "gift");
+    expect(options.some((kind) => ["tug", "potato"].includes(kind))).toBe(true);
+    const pick = new SoloPick("ana", "ana", ["tug", "trivia", "potato"], "gift");
     expect(pick.cast("bia", "1")).toBe(false);
     expect(pick.cast("ana", "oi")).toBe(false);
     expect(pick.cast("ana", "3")).toBe(true);

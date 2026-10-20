@@ -61,6 +61,14 @@ describe("schemas", () => {
     expect(() => channelUpdateSchema.parse({ persona: { ...PRESETS[0]!.persona, segments: [] } })).toThrow();
   });
 
+  it("turns a saved segment's retired betting game into a random one, and refuses it anywhere else", () => {
+    const base = PRESETS[0]!.persona;
+    const segment = { ...base.segments[0]!, game: { kind: "race", rounds: 3 } };
+    const persona = personaSchema.parse({ ...base, segments: [segment, ...base.segments.slice(1)] });
+    expect(persona.segments[0]?.game).toEqual({ kind: "random", rounds: 3 });
+    expect(parseMessage(studioClientMessageSchema, { v: 1, t: "command", id: "c1", command: { kind: "game_start", game: { kind: "wheel", rounds: 2 } } })).toBeUndefined();
+  });
+
   it("ships valid presets", () => {
     for (const preset of PRESETS) expect(() => personaSchema.parse(preset.persona)).not.toThrow();
     expect(new Set(PRESETS.map((p) => p.id)).size).toBe(PRESETS.length);

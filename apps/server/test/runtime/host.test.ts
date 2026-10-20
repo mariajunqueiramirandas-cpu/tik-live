@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "bun:test";
 import type { TurnContext } from "../../src/runtime/brain/conversation";
-import { ClaudeHost } from "../../src/runtime/brain/host";
+import { ClaudeHost, HostStalledError } from "../../src/runtime/brain/host";
 import { displayName, type TurnRequest } from "../../src/runtime/brain/prompt";
 import type { UsageReport } from "../../src/runtime/usage";
 import { chat, persona } from "./helpers";
@@ -112,6 +112,34 @@ describe("ClaudeHost", () => {
     const adaptive: Captured = {};
     await collect(new ClaudeHost({ client: fakeClient(["Hi."], adaptive), persona, safety, model: "claude-haiku-5-5", effort: "low" }));
     expect(adaptive.params).not.toHaveProperty("thinking");
+  });
+
+  it("gives up on a reply stream that stalls, so the show doesn't wait on it for good", async () => {
+    const client = {
+      beta: {
+        messages: {
+          stream(params: Record<string, unknown>, opts: { signal: AbortSignal }) {
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield { type: "message_start", message: { model: params.model, usage: { input_tokens: 1, output_tokens: 1 } } };
+                yield { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Oi gente! Hoje" } };
+                // Then nothing, until the request is aborted.
+                await new Promise((_, reject) => opts.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+              },
+              finalMessage: async () => ({}),
+            };
+          },
+        },
+      },
+    } as unknown as Anthropic;
+    const host = new ClaudeHost({ client, persona, safety, model: "claude-haiku-5-5", effort: "low", stallMs: 50 });
+    let error: unknown;
+    try {
+      await collect(host);
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toBeInstanceOf(HostStalledError);
   });
 
   it("never sends half an emoji, which the API refuses as a broken hex escape", async () => {
