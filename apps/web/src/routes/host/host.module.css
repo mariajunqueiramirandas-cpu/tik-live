@@ -5,6 +5,8 @@
     min-height: 100dvh;
     padding: var(--s-6) clamp(var(--s-4), 3vw, var(--s-10)) var(--s-12);
     gap: var(--s-5);
+    /* The host's own light falls across the top of its pages. */
+    background: radial-gradient(70% 280px at 12% -60px, color-mix(in srgb, var(--host-a) 9%, transparent), transparent 70%) no-repeat;
   }
   .header {
     display: flex;
@@ -19,15 +21,31 @@
     gap: var(--s-4);
     min-width: 0;
   }
+  .avatar {
+    display: grid;
+    flex: none;
+    border-radius: 50%;
+    filter: drop-shadow(0 0 18px color-mix(in srgb, var(--host-a) 40%, transparent));
+  }
+  .avatar[data-square] {
+    border-radius: 30%;
+  }
+  /* On air, the avatar wears a tally ring. */
+  .avatar[data-live] {
+    box-shadow:
+      0 0 0 3px var(--abyss),
+      0 0 0 5px var(--glow);
+  }
   .titles {
     display: grid;
-    gap: 4px;
+    gap: 6px;
     min-width: 0;
   }
   .name {
     font-size: var(--t-37);
     font-weight: 760;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.035em;
+    line-height: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -40,11 +58,19 @@
     color: var(--haze);
   }
   .uptime {
+    padding: 1px 8px;
+    border-radius: 6px;
+    background: var(--shelf);
+    box-shadow: inset 0 0 0 1px var(--hairline);
     color: var(--ink);
     font-weight: 650;
   }
+  .stat {
+    color: var(--ink);
+    font-weight: 700;
+  }
   .detail {
-    color: var(--haze);
+    color: var(--mist);
   }
   .actions {
     display: flex;
@@ -60,11 +86,12 @@
   .tab {
     position: relative;
     padding: var(--s-2) var(--s-3) var(--s-3);
-    color: var(--haze);
+    color: var(--mist);
     text-decoration: none;
-    font-weight: 650;
+    font-weight: 600;
     white-space: nowrap;
     border-radius: var(--r-control) var(--r-control) 0 0;
+    transition: color var(--dur-fast) var(--ease-out);
   }
   .tab:hover {
     color: var(--ink);
@@ -80,7 +107,7 @@
     bottom: -1px;
     height: 2px;
     border-radius: 2px;
-    background: var(--glow);
+    background: linear-gradient(90deg, var(--host-a), var(--host-b));
   }
   @media (max-width: 860px) {
     .host {

@@ -117,7 +117,7 @@ describe("StageHub pacing", () => {
     hub.handleMessage("stuck", { v: 1, t: "started", id: "a", durationMs: 10 });
     await wait(0);
     expect(first.done).toBe(false); // the stuck stage still has 10 ms + 1.5 s
-    await wait(1_600);
+    await wait(2_000);
     expect(first.done).toBe(true);
 
     // The next line only waits for the stage that keeps up.

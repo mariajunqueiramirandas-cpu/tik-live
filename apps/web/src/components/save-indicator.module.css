@@ -3,7 +3,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     font-weight: 650;
     color: var(--haze);
   }

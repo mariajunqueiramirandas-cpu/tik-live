@@ -6,7 +6,7 @@
   }
   .facts dt {
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .facts dd {
     margin: 0;

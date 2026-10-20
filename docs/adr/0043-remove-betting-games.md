@@ -1,4 +1,4 @@
-# ADR-0042: Take out the betting games
+# ADR-0043: Take out the betting games
 
 **Status:** Proposed
 **Date:** 2026-10-20

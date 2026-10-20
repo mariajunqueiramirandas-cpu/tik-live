@@ -39,7 +39,7 @@
   }
   .stats dt {
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .stats dd {
     margin: 0;
@@ -68,7 +68,7 @@
   }
   .when {
     color: var(--mist);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     padding-top: 2px;
   }
   .blockedLine {
@@ -96,7 +96,7 @@
   .table thead th {
     color: var(--haze);
     font-weight: 650;
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     border-bottom: 1px solid var(--hairline);
   }
   .table tbody tr + tr {
