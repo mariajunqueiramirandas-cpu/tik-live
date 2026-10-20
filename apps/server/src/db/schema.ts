@@ -1,4 +1,5 @@
 import type { ChannelSource, Persona, SafetySettings, VoiceSettings } from "@tik-live/shared";
+import type { SegmentScore } from "../runtime/segment-scores";
 import {
   bigserial,
   date,
@@ -89,6 +90,15 @@ export const hostMemory = pgTable("host_memory", {
     .primaryKey()
     .references(() => channel.id, { onDelete: "cascade" }),
   facts: jsonb("facts").$type<Array<{ topic: string; fact: string; at: number }>>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+});
+
+/** Which segments pull viewers, likes and gifts on a channel (ADR-0043), so the show leans toward them. */
+export const segmentScores = pgTable("segment_scores", {
+  channelId: uuid("channel_id")
+    .primaryKey()
+    .references(() => channel.id, { onDelete: "cascade" }),
+  scores: jsonb("scores").$type<SegmentScore[]>().notNull().default([]),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 

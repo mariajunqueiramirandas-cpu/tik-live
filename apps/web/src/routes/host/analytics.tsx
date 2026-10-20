@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { useSearchParams } from "react-router";
 import { LineChart } from "../../components/LineChart";
-import { count, dateTime, duration, time, usd } from "../../lib/format";
-import { useAudience, useSession, useSessions } from "../../lib/query";
-import type { Audience, SessionSummary } from "../../lib/types";
+import { count, dateTime, duration, lift, time, usd } from "../../lib/format";
+import { useAudience, useSegmentScores, useSession, useSessions } from "../../lib/query";
+import type { Audience, SegmentScore, SessionSummary } from "../../lib/types";
 import { Empty, Panel, Skeleton } from "../../ui/Display";
 import { cx } from "../../ui/cx";
 import p from "../page.module.css";
@@ -107,6 +107,67 @@ function People({ title, people, metric }: { title: string; people: Audience["su
   );
 }
 
+const KIND_LABELS: Record<SegmentScore["kind"], string> = { talk: "Conversa", game: "Jogo", segment: "Seu quadro" };
+
+function Lift({ value }: { value: number }) {
+  return <span className={value >= 0.15 ? s.up : value <= -0.15 ? s.down : s.dim}>{lift(value)}</span>;
+}
+
+/** Which segments pull viewers, likes and gifts (ADR-0043), best first: the show leans toward the top ones. */
+function Segments({ channelId, name }: { channelId: string; name: string }) {
+  const { data, isPending } = useSegmentScores(channelId);
+  return (
+    <section aria-labelledby="segments-heading" className={p.section}>
+      <div className={p.sectionHead}>
+        <h2 id="segments-heading">Quadros que mais rendem</h2>
+        <p>
+          Cada quadro comparado com o resto da mesma live. {name} dá mais tempo aos quadros que funcionam e, no roteiro automático, escolhe esses mais vezes.
+        </p>
+      </div>
+      {isPending ? (
+        <Skeleton height={160} />
+      ) : !data?.length ? (
+        <p className={s.dim}>Aparece depois de alguns quadros numa live de verdade no TikTok. O modo de treino não conta.</p>
+      ) : (
+        <div className={s.tableWrap}>
+          <table className={s.table}>
+            <thead>
+              <tr>
+                <th scope="col">Quadro</th>
+                <th scope="col">Vezes</th>
+                <th scope="col">Espectadores</th>
+                <th scope="col">Curtidas</th>
+                <th scope="col">Diamantes</th>
+                <th scope="col">Destaque</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((segment) => (
+                <tr key={segment.key}>
+                  <th scope="row">
+                    {segment.title} <span className={s.dim}>· {KIND_LABELS[segment.kind]}</span>
+                  </th>
+                  <td>{count(segment.plays)}</td>
+                  <td>
+                    <Lift value={segment.viewers} />
+                  </td>
+                  <td>
+                    <Lift value={segment.likes} />
+                  </td>
+                  <td>
+                    <Lift value={segment.diamonds} />
+                  </td>
+                  <td>{segment.focus >= 1.4 ? <span className={s.up}>Em alta</span> : segment.focus <= 0.7 ? <span className={s.down}>Em baixa</span> : <span className={s.dim}>Normal</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Analytics() {
   const { channel } = useHost();
   const sessions = useSessions(channel.id);
@@ -162,6 +223,8 @@ export default function Analytics() {
             </table>
           </div>
         </section>
+
+        <Segments channelId={channel.id} name={channel.persona.name} />
       </div>
 
       <Panel as="aside" className={s.audience} aria-labelledby="audience-heading">
