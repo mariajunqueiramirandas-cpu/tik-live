@@ -27,24 +27,15 @@ import {
   FUSE_MAX_MS,
   GRAB_COOLDOWN_MS,
   makePotato,
-  makeRace,
   makeTug,
-  makeWheel,
   POTATO_MAX_POINTS,
   PULL,
   PULL_LIKES_MAX,
-  RACE_MS,
-  RACE_POINTS,
-  raceLeader,
-  raceProgress,
   readGrab,
   readPick,
   readPull,
   ropePosition,
-  SPIN_MS,
   TUG_POINTS,
-  WHEEL_POINTS,
-  wheelResult,
 } from "./chance";
 import {
   avoidLine,
@@ -154,12 +145,6 @@ interface Round {
   removed: number[];
   /** A hint power-up showed the hint early. */
   hintEarly: boolean;
-  /** Race and wheel: when the race started (or the strip began to spin), and the race's latest moment (ADR-0038). */
-  ranAt: number;
-  leader: number;
-  event: string | null;
-  eventAt: number;
-  finalStretch: boolean;
   /** Tug of war: who's on which team, and each team's pulls. */
   pullers: Map<string, Puller>;
   pulls: [number, number];
@@ -197,9 +182,6 @@ const OPEN_MS: Record<GameKind, number> = {
   math: 30_000,
   riddle: 45_000,
   fastest: 20_000,
-  // Betting time; the race or the spin comes after.
-  race: 25_000,
-  wheel: 20_000,
   tug: 40_000,
   // The potato's fuse is drawn every round (this is the longest).
   potato: FUSE_MAX_MS,
@@ -217,14 +199,10 @@ const HOW_TO_ANSWER: Record<GameKind, string> = {
   math: "type the result",
   riddle: "type the answer",
   fastest: "type the word on screen as fast as they can",
-  race: "bet by typing the number of a racer (1 to 5); long shots pay the most",
-  wheel: "bet by typing the number of a color (1 to 4); the rarer the color, the more it pays",
   tug: "join a team by typing 1 or 2, then pull the rope by tapping likes, typing PUXA, or sending gifts",
   potato: "type PEGA to grab the hot potato: every second they hold it is a point, but whoever holds it when it blows up loses all of theirs",
 };
 
-/** Games with a race or a spin between the bets and the result. */
-const RUNS: ReadonlySet<GameKind> = new Set(["race", "wheel"]);
 const GENERATED: ReadonlySet<GameKind> = new Set(GENERATED_KINDS);
 
 const POINTS = { correct: 10, fastestBonus: 5, truefalse: 5, solo: 15, number: 20, fastest: 10 };
@@ -257,8 +235,6 @@ const BOOST_NOTES: Record<BoostKind, string> = {
 };
 /** A reveal or results cue the host hasn't got to in this long is old news. */
 const CUE_TTL_MS = 40_000;
-/** A race's lead changes make news at most this often. */
-const RACE_EVENT_MS = 1_500;
 /** The potato's board goes out at least this often, so the heat keeps climbing on stage. */
 const HEAT_EVERY_MS = 1_000;
 
@@ -442,18 +418,6 @@ export class GameMaster {
         this.dirty = true;
         return false;
       }
-      case "race":
-      case "wheel": {
-        const labels = content.kind === "race" ? content.racers.map((racer) => racer.name) : content.sectors.map((sector) => sector.label);
-        const choice = readPick(event.text, labels);
-        if (choice === undefined) return false;
-        // One bet each: the first one counts.
-        if (!round.answers.has(viewer.id)) {
-          round.answers.set(viewer.id, { value: choice, at: now, name });
-          this.dirty = true;
-        }
-        return true;
-      }
       case "tug": {
         const member = round.pullers.get(viewer.id);
         const team = readPick(event.text, content.teams);
@@ -552,12 +516,8 @@ export class GameMaster {
         if (!round) break;
         // The potato blows up when it blows up: the fuse runs on the server's clock, not the viewers'.
         if (now - round.openedAt >= round.durationMs + (round.content.kind === "potato" ? 0 : (this.options.streamDelayMs ?? 0))) {
-          if (RUNS.has(round.content.kind)) this.run(game, now);
-          else this.reveal(game, now);
+          this.reveal(game, now);
         } else if (round.content.kind === "potato" && now - round.heatAt >= HEAT_EVERY_MS) this.dirty = true;
-        break;
-      case "running":
-        if (round) this.running(game, round, now);
         break;
       case "reveal": {
         // The next round waits until the host has announced this one's answer.
@@ -627,11 +587,6 @@ export class GameMaster {
             : `Time is up on screen; the last answers are still coming in (${answers}). Don't reveal or hint at the answer yet.`,
         );
     }
-    if (round && game.phase === "running") {
-      lines.push(`On screen: ${promptOf(round)}`);
-      lines.push(liveState(round, this.now()) ?? "It's running.");
-      lines.push("Bets are closed. Nobody knows how it ends yet: don't guess the result.");
-    }
     if (round && game.phase === "reveal") lines.push(`Just revealed: ${promptOf(round)} Result: ${resultOf(round) ?? "(a vote)"}.`);
     if (game.phase === "results") lines.push("The game just ended.");
     const board = this.leaderboard(game).slice(0, 3);
@@ -651,8 +606,6 @@ export class GameMaster {
         return `You're setting up a round of ${label}. Tease it in a line or two and tell chat to get ready.`;
       case "open":
         return `A ${label} round is open. Hype it in one or two short lines, say how much time is left if it's getting close, and remind chat to ${HOW_TO_ANSWER[game.config.kind]}. Never hint at the answer.`;
-      case "running":
-        return `The ${label} is running: build the suspense in one short line, without guessing how it ends.`;
       default:
         return `The ${label} game is between rounds. Banter about it briefly: who's leading, who almost had it.`;
     }
@@ -757,11 +710,6 @@ export class GameMaster {
       boosts: [],
       removed: [],
       hintEarly: false,
-      ranAt: -1,
-      leader: -1,
-      event: null,
-      eventAt: -Infinity,
-      finalStretch: false,
       pullers: new Map(),
       pulls: [0, 0],
       holder: null,
@@ -800,90 +748,11 @@ export class GameMaster {
         return makeNumber(this.random);
       case "math":
         return makeMath(round, this.random);
-      case "race":
-        return makeRace(this.random);
-      case "wheel":
-        return makeWheel(this.random);
       case "tug":
         return makeTug(this.random, (pair) => this.wasPlayed(pair));
       case "potato":
         return makePotato(this.random);
     }
-  }
-
-  /** Bets are in: the race starts (or the strip spins). The result comes when it's over. */
-  private run(game: ActiveGame, now: number): void {
-    const round = game.round;
-    if (!round) return;
-    game.phase = "running";
-    game.phaseAt = now;
-    round.ranAt = now;
-    const content = round.content;
-    const label = GAME_LABELS[content.kind];
-    const bets = round.answers.size;
-    const favorite = this.favorite(round);
-    this.publish();
-    this.sound("start");
-    // The question nobody read out is old news: the race is on.
-    this.cues = this.cues.filter((cue) => !(cue.round === game.index && cue.phase === "open"));
-    if (content.kind === "race") {
-      this.cues.push({
-        note: `Bets are closed (${bets} bet${bets === 1 ? "" : "s"}${favorite ? `, most on ${favorite}` : ""}) and the race is on: about ${Math.round(RACE_MS / 1000)} seconds. Narrate it like a frantic horse-racing caster in two short, punchy lines ("E LARGARAM!"). You don't know who wins: don't guess.`,
-        line: "E largaram! Quem vai levar essa?",
-        history: `${label} round ${game.index + 1}: bets closed (${bets}), the race started.`,
-        round: game.index,
-        phase: "running",
-        at: now,
-      });
-    } else {
-      this.cues.push({
-        note: `Bets are closed (${bets} bet${bets === 1 ? "" : "s"}${favorite ? `, most on ${favorite}` : ""}) and the wheel is spinning. Build the suspense in one short line. You don't know where it stops: don't guess.`,
-        line: "Girando, girando... onde será que para?",
-        history: `${label} round ${game.index + 1}: bets closed (${bets}), the wheel is spinning.`,
-        round: game.index,
-        phase: "running",
-        at: now,
-      });
-    }
-    this.options.onChange?.();
-  }
-
-  /** A race or a spin under way: the lead changes hands, and the result comes once it's over. */
-  private running(game: ActiveGame, round: Round, now: number): void {
-    const content = round.content;
-    const elapsed = now - round.ranAt;
-    if (content.kind === "wheel") {
-      if (elapsed >= SPIN_MS) this.reveal(game, now);
-      return;
-    }
-    if (content.kind !== "race") return;
-    const finish = content.splits[content.winner]?.at(-1) ?? RACE_MS;
-    if (elapsed >= finish) {
-      this.reveal(game, now);
-      return;
-    }
-    this.dirty = true;
-    const leader = raceLeader(content, elapsed);
-    const lead = raceProgress(content.splits[leader] ?? [], elapsed);
-    if (!round.finalStretch && lead >= 0.8) {
-      round.finalStretch = true;
-      round.event = `Reta final! ${content.racers[leader]?.name} na frente!`;
-      round.eventAt = now;
-    } else if (leader !== round.leader && now - round.eventAt >= RACE_EVENT_MS) {
-      round.event = round.leader === -1 ? `${content.racers[leader]?.name} larga na frente!` : `${content.racers[leader]?.name} assumiu a ponta!`;
-      round.eventAt = now;
-    }
-    round.leader = leader;
-  }
-
-  /** The option most bets went to, if any. */
-  private favorite(round: Round): string | undefined {
-    const content = round.content;
-    if (content.kind !== "race" && content.kind !== "wheel") return undefined;
-    const labels = content.kind === "race" ? content.racers.map((racer) => racer.name) : content.sectors.map((sector) => sector.label);
-    const tally = this.tally(round, labels.length);
-    const top = Math.max(...tally);
-    return top > 0 ? labels[tally.indexOf(top)] : undefined;
   }
 
   /** Adds pulls for a tug of war player's team. */
@@ -947,22 +816,6 @@ export class GameMaster {
         summary = total ? `Votes are in. ${results.join("; ")}.` : "Nobody voted.";
         line = total ? `Votação encerrada, e ${content.options[top]} venceu!` : "Ninguém votou? Sério?";
         won = total > 0;
-        break;
-      }
-      case "race":
-      case "wheel": {
-        const result = content.kind === "race" ? content.winner : wheelResult(content);
-        const option = content.kind === "race" ? content.racers[result] : content.sectors[result];
-        const name = content.kind === "race" ? content.racers[result]?.name : content.sectors[result]?.label;
-        const odds = option?.odds ?? 2;
-        const each = (content.kind === "race" ? RACE_POINTS : WHEEL_POINTS) * odds;
-        const right = [...round.answers.entries()].filter(([, answer]) => answer.value === result).sort((a, b) => a[1].at - b[1].at);
-        right.forEach(([id, answer]) => this.award(game, id, answer.name, multiplier(round) * each));
-        const total = round.answers.size;
-        won = right.length > 0;
-        const what = content.kind === "race" ? `${name} won the race` : `The wheel stopped on ${name}`;
-        summary = `${what} (it paid ×${odds}, ${multiplier(round) * each} points). ${won ? `${right.length} of ${total} bet on it, ${right[0]?.[1].name} first.` : total ? `Nobody of ${total} bet on it.` : "Nobody bet."}`;
-        line = content.kind === "race" ? `${name} venceu a corrida!${won ? ` ${right[0]?.[1].name} apostou certo!` : ""}` : `Parou no ${name}!${won ? ` ${right[0]?.[1].name} acertou!` : ""}`;
         break;
       }
       case "tug": {
@@ -1030,10 +883,9 @@ export class GameMaster {
     }
     // A power-up's thank-you is old news once the answer is out.
     this.cues = this.cues.filter((cue) => !(cue.boost && cue.round === game.index));
-    // A round won before the host read it out: skip the question, go straight to the answer. A race already over needs no commentary.
+    // A round won before the host read it out: skip the question, go straight to the answer.
     const unread = this.cues.findIndex((cue) => cue.phase === "open" && cue.round === game.index && !cue.boost);
     if (unread !== -1) this.cues.splice(unread, 1);
-    this.cues = this.cues.filter((cue) => !(cue.phase === "running" && cue.round === game.index));
     const early = unread !== -1 ? "The round ended before you could read it out, so don't read the question now. " : "";
     const cheer =
       content.kind === "potato"
@@ -1091,12 +943,12 @@ export class GameMaster {
     this.options.onChange?.();
   }
 
-  /** An open round's cue goes stale once the round closes, a race's once it's over; the others after a while. */
+  /** An open round's cue goes stale once the round closes; the others after a while. */
   private dropStaleCues(): void {
     const game = this.game;
     const now = this.now();
     this.cues = this.cues.filter((cue) =>
-      cue.phase === "open" || cue.phase === "running" ? game?.phase === cue.phase && game.index === cue.round : now - cue.at < CUE_TTL_MS,
+      cue.phase === "open" ? game?.phase === cue.phase && game.index === cue.round : now - cue.at < CUE_TTL_MS,
     );
   }
 
@@ -1183,18 +1035,15 @@ export class GameMaster {
     const round = game.round;
     if (!round || game.phase === "preparing") return null;
     const revealed = game.phase === "reveal";
-    // Bets are closed once a race or a spin starts: on stage that's the reveal.
-    const closed = revealed || game.phase === "running";
     const secret = round.content.kind === "potato";
     const base = {
       round: game.index + 1,
       rounds: game.config.rounds,
-      phase: closed ? ("reveal" as const) : ("open" as const),
-      remainingMs: closed || secret ? 0 : Math.max(0, round.openedAt + round.durationMs - now),
+      phase: revealed ? ("reveal" as const) : ("open" as const),
+      remainingMs: revealed || secret ? 0 : Math.max(0, round.openedAt + round.durationMs - now),
       durationMs: secret ? 0 : round.durationMs,
       ...(round.boosts.length ? { boosts: [...round.boosts] } : {}),
     };
-    const stage = revealed ? ("finish" as const) : game.phase === "running" ? ("running" as const) : ("bets" as const);
     const hintShown = revealed || round.hintEarly || now - round.openedAt >= round.durationMs * HINT_AT;
     const content = round.content;
     const winners = () =>
@@ -1267,42 +1116,6 @@ export class GameMaster {
         };
       case "fastest":
         return { kind: "fastest", ...base, word: content.word.toUpperCase(), winner: round.winner?.name ?? null, winnerMs: round.winner?.ms ?? null };
-      case "race": {
-        const tally = this.tally(round, content.racers.length);
-        // At the finish the race stands still where the winner crossed the line.
-        const elapsed = stage === "bets" ? 0 : Math.min(now - round.ranAt, revealed ? (content.splits[content.winner]?.at(-1) ?? RACE_MS) : Infinity);
-        return {
-          kind: "race",
-          ...base,
-          stage,
-          racers: content.racers.map((racer, i) => ({
-            name: racer.name,
-            odds: racer.odds,
-            bets: tally[i] ?? 0,
-            progress: raceProgress(content.splits[i] ?? [], elapsed),
-          })),
-          bets: round.answers.size,
-          winner: revealed ? content.winner : null,
-          winners: revealed ? this.rightBets(round, content.winner) : [],
-          event: stage === "running" ? round.event : null,
-        };
-      }
-      case "wheel": {
-        const tally = this.tally(round, content.sectors.length);
-        return {
-          kind: "wheel",
-          ...base,
-          stage,
-          sectors: content.sectors.map((sector, i) => ({ label: sector.label, odds: sector.odds, bets: tally[i] ?? 0 })),
-          strip: [...content.strip],
-          landing: stage === "bets" ? null : content.landing,
-          spinMs: SPIN_MS,
-          spinLeftMs: stage === "running" ? Math.max(0, round.ranAt + SPIN_MS - now) : 0,
-          bets: round.answers.size,
-          result: revealed ? wheelResult(content) : null,
-          winners: revealed ? this.rightBets(round, wheelResult(content)) : [],
-        };
-      }
       case "tug": {
         const [a, b] = round.pulls;
         const members = [0, 0];
@@ -1338,15 +1151,6 @@ export class GameMaster {
     }
   }
 
-  /** Who bet on the result, first bets first. */
-  private rightBets(round: Round, result: number): string[] {
-    return [...round.answers.values()]
-      .filter((answer) => answer.value === result)
-      .sort((a, b) => a.at - b.at)
-      .slice(0, 5)
-      .map((answer) => answer.name);
-  }
-
   private sound(sound: Sound): void {
     if (this.options.sounds()) this.options.stage.sfx(sound);
   }
@@ -1365,7 +1169,7 @@ function isGenerated(kind: GameKind): kind is GeneratedKind {
   return GENERATED.has(kind);
 }
 
-/** How many viewers took part in a round so far: answers and guesses, bets, team members, grabs. */
+/** How many viewers took part in a round so far: answers and guesses, team members, grabs. */
 function entries(round: Round): number {
   switch (round.content.kind) {
     case "tug":
@@ -1381,11 +1185,6 @@ function entries(round: Round): number {
 function liveState(round: Round, now: number): string | undefined {
   const content = round.content;
   switch (content.kind) {
-    case "race":
-      if (round.ranAt < 0) return `${round.answers.size} bets so far.`;
-      return round.leader >= 0 ? `${content.racers[round.leader]?.name} is in front right now.` : "They just started.";
-    case "wheel":
-      return round.ranAt < 0 ? `${round.answers.size} bets so far.` : "The strip is spinning.";
     case "tug": {
       const [a, b] = round.pulls;
       return `Team ${content.teams[0]} ${a} pulls, team ${content.teams[1]} ${b} pulls (${round.pullers.size} players).`;
@@ -1433,10 +1232,6 @@ function promptOf(round: Round): string {
       return `Charada: "${content.riddle}"`;
     case "fastest":
       return `Digite primeiro: ${content.word.toUpperCase()}`;
-    case "race":
-      return `Corrida maluca, apostas: ${content.racers.map((racer, i) => `${i + 1}) ${racer.name} paga ×${racer.odds}`).join("  ")}`;
-    case "wheel":
-      return `Roleta da sorte, apostas: ${content.sectors.map((sector, i) => `${i + 1}) ${sector.label} paga ×${sector.odds}`).join("  ")}`;
     case "tug":
       return `Cabo de guerra: 1) Time ${content.teams[0]} contra 2) Time ${content.teams[1]}`;
     case "potato":
@@ -1463,10 +1258,6 @@ function spokenPrompt(round: Round): string {
       return content.riddle;
     case "fastest":
       return "Digite a palavra da tela, rápido!";
-    case "race":
-      return `Apostem no número do cavalo! ${content.racers.map((racer, i) => `${i + 1}, ${racer.name}.`).join(" ")}`;
-    case "wheel":
-      return "Apostem na cor! Um azul, dois verde, três roxo, quatro ouro. O ouro paga vinte vezes!";
     case "tug":
       return `Digite um pro time ${content.teams[0]} ou dois pro time ${content.teams[1]}, e curtam pra puxar a corda!`;
     case "potato":
@@ -1492,10 +1283,6 @@ function openInstruction(content: RoundContent): string {
       return "Read the riddle out loud, slowly, and tell chat to type the answer. Don't hint at it.";
     case "fastest":
       return "Shout that the word is on screen and the fastest typer wins. You may read the word out.";
-    case "race":
-      return "Read the five racers and what each pays (the ×), then tell chat to bet by typing the racer's number, one bet each. Hype the long shots: they pay the most.";
-    case "wheel":
-      return "Say the four colors and what each pays, then tell chat to bet by typing the color's number, one bet each. Gold is the rarest and pays ×20.";
     case "tug":
       return "Announce the two teams with drama, tell chat to type 1 or 2 to join one, and that every like, every PUXA in chat and every gift pulls the rope for their team.";
     case "potato":
@@ -1522,10 +1309,6 @@ function answerOf(content: RoundContent): string | null {
     case "riddle":
       return content.answers[0] ?? "";
     // For the creator in the studio: how the round will end (the host never sees it before the reveal).
-    case "race":
-      return content.racers[content.winner]?.name ?? null;
-    case "wheel":
-      return content.sectors[wheelResult(content)]?.label ?? null;
     case "tug":
       return null;
     case "potato":

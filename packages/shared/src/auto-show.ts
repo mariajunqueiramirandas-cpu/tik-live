@@ -152,8 +152,6 @@ const GAME_TITLES: Record<GameKind, string> = {
   math: "Conta rápida",
   riddle: "Charadas da live",
   fastest: "Dedo mais rápido",
-  race: "Corrida maluca",
-  wheel: "Roleta da sorte",
   tug: "Cabo de guerra",
   potato: "Batata quente",
 };

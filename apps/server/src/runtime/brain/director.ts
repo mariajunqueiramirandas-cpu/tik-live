@@ -16,6 +16,7 @@ import {
   type LeaderRow,
   type LiveEvent,
   type Persona,
+  RETIRED_GAME_KINDS,
   type PerksCard,
   runOfShow,
   type Segment,
@@ -207,7 +208,7 @@ const HOOKS: ReadonlyArray<{ banner: string; offer: string }> = [
   { banner: "TEM JOGO VALENDO PÓDIO · FICA AÍ", offer: "stick around: games are coming, worth points and a spot on the podium" },
   { banner: "DIGA DE ONDE VOCÊ É", offer: "say where they're watching from, and you'll say something fun about the place" },
   { banner: "TEM SORTEIO GRÁTIS NA LIVE", offer: "stick around: there are free raffles during the live (typing EU enters), and the winner picks a game" },
-  { banner: "APOSTA, CORRIDA, BATATA QUENTE", offer: "stay for the games: horse-race bets, a hot potato, a tug of war, all worth points and a spot on the podium" },
+  { banner: "CABO DE GUERRA, BATATA QUENTE", offer: "stay for the games: a hot potato, a tug of war, a quiz, all worth points and a spot on the podium" },
   { banner: "A IA RESPONDE TUDO · SEM ENROLAR", offer: "ask you anything at all, and you'll give your honest, spicy opinion, live" },
 ];
 /** Only on channels that ask for gifts actively: the gift powers, as a reason to stay. */
@@ -1087,7 +1088,7 @@ export class Director {
 
     // A gift's anthem, once no round is waiting on answers (music never plays over one).
     const round = games?.status()?.phase;
-    if (this.anthems.length && round !== "open" && round !== "running") {
+    if (this.anthems.length && round !== "open") {
       const name = this.anthems.shift() as string;
       this.remember({ at: now, kind: "show", text: `${name}'s anthem, unlocked with a gift.` });
       return { ...base, kind: "perk", items: [], note: this.anthemNote(name), line: `Esse é o hino de ${name}! ${name}, ${name}, a estrela da live!` };
@@ -1740,7 +1741,9 @@ export class Director {
     if (index === segments.length - 1 && this.finalGame) return this.finalGame;
     const game = segments[index]?.game;
     if (!game) return undefined;
-    return { ...game, kind: game.kind === "random" ? this.drawGame(index) : game.kind };
+    // A game that was taken out (RETIRED_GAME_KINDS) may still be in a segment saved before: play a random one.
+    const kind = game.kind === "random" || RETIRED_GAME_KINDS.includes(game.kind) ? this.drawGame(index) : game.kind;
+    return { ...game, kind };
   }
 
   /** Draws the kind for a "random" segment once, and keeps it until the show moves on. */

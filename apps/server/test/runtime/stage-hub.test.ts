@@ -206,7 +206,7 @@ describe("StageHub pacing", () => {
     hub.crown("caio");
     hub.perk("duda", "Fura-fila");
     hub.raffleWinner("lu");
-    hub.vote({ title: "Próximo jogo", options: ["Corrida maluca", "Roleta da sorte"], tally: [0, 0], by: "mari" });
+    hub.vote({ title: "Próximo jogo", options: ["Cabo de guerra", "Batata quente"], tally: [0, 0], by: "mari" });
     const challenge = { kind: "likes" as const, title: "DESAFIO DAS CURTIDAS", detail: "toque na tela", value: 10, target: 500, remainingMs: 45_000, durationMs: 45_000, result: null, winner: null };
     hub.challenge(challenge);
     expect(obs.sent.filter((m) => m.t === "alert")).toEqual([

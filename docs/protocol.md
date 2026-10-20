@@ -178,7 +178,7 @@ A chat minigame's scene ([ADR-0023](adr/0023-chat-minigames.md)), or
 `"scene": null` to return to the show's normal stage. Each game kind has its
 own scene (`gameSceneSchema` in `packages/shared/src/game.ts`): `trivia`,
 `poll`, `scramble`, `number`, `truefalse`, `math`, `riddle`, `fastest`, the
-party games `race`, `wheel`, `tug` and `potato`
+party games `tug` and `potato`
 ([ADR-0038](adr/0038-games-of-chance-and-party-games.md)), `scoreboard` at
 the end of a game, and `podium` at the end of a loop of the
 run of show ([ADR-0028](adr/0028-up-next-likes-and-loop-ranking.md)): the
@@ -192,13 +192,7 @@ unlocked, see [`boost`](#boost)), and a quiz may carry `removed` (options a
 answers are never in the scene before `phase` is `reveal`. A stage that
 connects mid-game gets the current scene right after `hello`.
 
-The party games: in `race` and `wheel`, `stage` is `bets` while chat bets
-(`phase` `open`), then `running` while the race runs or the strip spins and
-`finish` at the result (both `phase` `reveal`). A race's `racers[].progress`
-(0 to 1) comes a few times a second while it runs. A wheel's `landing` (the
-`strip` tile it stops on) and `spinLeftMs` (relative to receipt) arrive
-with the first `running` scene, so the stage animates the spin on its own
-and lands on that tile. In `tug`, `rope` goes from -1 (team 1 pulled it all
+The party games: in `tug`, `rope` goes from -1 (team 1 pulled it all
 the way) to 1 (team 2). In `potato`, `durationMs` is 0: the fuse is secret,
 so the board shows no timer, only `heat` (time so far over the longest fuse)
 and how long the `holder` has had it (`heldMs`, counted up on stage).

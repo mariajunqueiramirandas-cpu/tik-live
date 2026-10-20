@@ -83,8 +83,8 @@ describe("Director: the vote on the last segment's game", () => {
     // Segment A (5 min) is second-to-last of two: the vote opens with 3 minutes to go.
     await step(60_000);
     const status = director.voteStatus();
-    expect(status?.options.map((o) => o.label)).toEqual(["Quiz", "Corrida maluca", "Charadas"]);
-    expect(votes.at(-1)).toEqual({ title: "Jogo do quadro final", options: ["Quiz", "Corrida maluca", "Charadas"], tally: [0, 0, 0] });
+    expect(status?.options.map((o) => o.label)).toEqual(["Quiz", "Charadas", "Batata quente"]);
+    expect(votes.at(-1)).toEqual({ title: "Jogo do quadro final", options: ["Quiz", "Charadas", "Batata quente"], tally: [0, 0, 0] });
     expect(host.turns.at(-1)?.kind).toBe("game");
     expect(director.upNext().at(0)?.title).toBe("Segment B · o chat escolhe");
 
@@ -101,7 +101,7 @@ describe("Director: the vote on the last segment's game", () => {
     await step(1_000);
     expect(votes.at(-1)).toBeNull();
     await step(4_000);
-    expect(games.status()?.kind).toBe("riddle");
+    expect(games.status()?.kind).toBe("potato");
   });
 
   it("stays off when the creator turns it off", async () => {
