@@ -41,6 +41,8 @@ export interface RuntimeManagerOptions {
 const BOOT_BATCH = 5;
 const PATCH_MS = 250;
 const MINUTE_MS = 60_000;
+/** How often stages that went silent are looked for. */
+const SWEEP_MS = 5_000;
 
 /**
  * Runs every live channel inside this process and keeps actual state equal
@@ -53,10 +55,14 @@ export class RuntimeManager {
   private accepting = true;
   private readonly patchTimer: ReturnType<typeof setInterval>;
   private readonly minuteTimer: ReturnType<typeof setInterval>;
+  private readonly sweepTimer: ReturnType<typeof setInterval>;
 
   constructor(private readonly options: RuntimeManagerOptions) {
     this.patchTimer = setInterval(() => this.publishPatches(), PATCH_MS);
     this.minuteTimer = setInterval(() => void this.tickMinute(), MINUTE_MS);
+    this.sweepTimer = setInterval(() => {
+      for (const slot of this.slots.values()) slot.stage.sweep();
+    }, SWEEP_MS);
   }
 
   private get log() {
@@ -221,6 +227,7 @@ export class RuntimeManager {
     this.accepting = false;
     clearInterval(this.patchTimer);
     clearInterval(this.minuteTimer);
+    clearInterval(this.sweepTimer);
     // Cloud broadcasts keep running through an app restart: the stage page
     // holds its last frame and reconnects, and the next boot resyncs.
     this.options.broadcasts?.close();

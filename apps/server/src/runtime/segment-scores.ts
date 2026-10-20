@@ -1,7 +1,7 @@
 import { FOCUS_MAX, FOCUS_MIN } from "@tik-live/shared";
 
 /**
- * Which segments work on a channel (ADR-0043): how many viewers, likes and
+ * Which segments work on a channel (ADR-0044): how many viewers, likes and
  * diamonds each one pulls compared with the rest of the same stream, kept
  * across streams so the show can lean toward what the room responds to.
  *

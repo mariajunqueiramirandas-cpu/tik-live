@@ -17,6 +17,7 @@ import {
   type LeaderRow,
   type LiveEvent,
   type Persona,
+  RETIRED_GAME_KINDS,
   type PerksCard,
   runOfShow,
   type Segment,
@@ -147,7 +148,7 @@ export interface DirectorOptions {
   giftAsks?: () => GiftAsks;
   /** Varies the automatic run of show between streams (ADR-0035); random when unset. */
   showSeed?: number;
-  /** Which segments pull viewers, likes and gifts on this channel (ADR-0043): learned from, and leaned toward. */
+  /** Which segments pull viewers, likes and gifts on this channel (ADR-0044): learned from, and leaned toward. */
   segmentScores?: SegmentScores;
   /** Gift powers are on (the channel's safety setting, ADR-0039); on when unset. */
   giftPerks?: () => boolean;
@@ -175,7 +176,7 @@ const REACT_SUPPORT = 6;
  */
 const CHAT_STREAK_TURNS = 4;
 /**
- * Live focus (ADR-0043): a segment doing this much better than the rest of
+ * Live focus (ADR-0044): a segment doing this much better than the rest of
  * the stream (log2 lift: about +50%) runs longer; an automatic one doing
  * this much worse (about -40%) wraps up early. Judged once a segment has
  * run this share of its time (and at least JUDGE_MIN_MS).
@@ -227,7 +228,7 @@ const HOOKS: ReadonlyArray<{ banner: string; offer: string }> = [
   { banner: "TEM JOGO VALENDO PÓDIO · FICA AÍ", offer: "stick around: games are coming, worth points and a spot on the podium" },
   { banner: "DIGA DE ONDE VOCÊ É", offer: "say where they're watching from, and you'll say something fun about the place" },
   { banner: "TEM SORTEIO GRÁTIS NA LIVE", offer: "stick around: there are free raffles during the live (typing EU enters), and the winner picks a game" },
-  { banner: "APOSTA, CORRIDA, BATATA QUENTE", offer: "stay for the games: horse-race bets, a hot potato, a tug of war, all worth points and a spot on the podium" },
+  { banner: "CABO DE GUERRA, BATATA QUENTE", offer: "stay for the games: a hot potato, a tug of war, a quiz, all worth points and a spot on the podium" },
   { banner: "A IA RESPONDE TUDO · SEM ENROLAR", offer: "ask you anything at all, and you'll give your honest, spicy opinion, live" },
 ];
 /** Only on channels that ask for gifts actively: the gift powers, as a reason to stay. */
@@ -448,10 +449,10 @@ export class Director {
   /** The kind drawn for each "random" segment, kept until the show moves on so the preview and the game agree. */
   private readonly segmentDraws = new Map<number, GameKind>();
   private segmentStartedAt: number;
-  /** Time added to (or, cut early, taken from) the segment on air because of how it's doing (ADR-0043). */
+  /** Time added to (or, cut early, taken from) the segment on air because of how it's doing (ADR-0044). */
   private segmentExtraMs = 0;
   private segmentJudged = false;
-  /** How the stream and the segment on air are doing: viewers, likes, diamonds (ADR-0043). */
+  /** How the stream and the segment on air are doing: viewers, likes, diamonds (ADR-0044). */
   private readonly meter = new SegmentMeter();
   /** The automatic run of show leans toward what works on the channel. */
   private readonly focus: ShowFocus = (key) => this.options.segmentScores?.weight(key) ?? 1;
@@ -1123,7 +1124,7 @@ export class Director {
 
     // A gift's anthem, once no round is waiting on answers (music never plays over one).
     const round = games?.status()?.phase;
-    if (this.anthems.length && round !== "open" && round !== "running") {
+    if (this.anthems.length && round !== "open") {
       const name = this.anthems.shift() as string;
       this.remember({ at: now, kind: "show", text: `${name}'s anthem, unlocked with a gift.` });
       return { ...base, kind: "perk", items: [], note: this.anthemNote(name), line: `Esse é o hino de ${name}! ${name}, ${name}, a estrela da live!` };
@@ -1773,7 +1774,7 @@ export class Director {
     return true;
   }
 
-  /** When the segment on air ends: its minutes, plus or minus what live focus changed (ADR-0043). */
+  /** When the segment on air ends: its minutes, plus or minus what live focus changed (ADR-0044). */
   private segmentEndsAt(): number {
     return this.segmentStartedAt + this.segment().minutes * 60_000 + this.segmentExtraMs;
   }
@@ -1790,7 +1791,7 @@ export class Director {
     return segment ? segmentKey(segment, this.segmentGame(index)?.kind) : undefined;
   }
 
-  /** The segment at `index` just ended: folds what it did into the channel's record (ADR-0043). */
+  /** The segment at `index` just ended: folds what it did into the channel's record (ADR-0044). */
   private learn(now: number, index: number): void {
     const ended = this.meter.endSegment(now);
     const scores = this.options.segmentScores;
@@ -1808,7 +1809,7 @@ export class Director {
   }
 
   /**
-   * Live focus (ADR-0043): once a segment has run most of its time, one that
+   * Live focus (ADR-0044): once a segment has run most of its time, one that
    * pulls clearly more than the rest of the stream gets more time, and an
    * automatic one that's losing the room wraps up early. A creator's own
    * segments are only ever extended: their run of show is theirs.
@@ -1848,7 +1849,9 @@ export class Director {
     if (index === segments.length - 1 && this.finalGame) return this.finalGame;
     const game = segments[index]?.game;
     if (!game) return undefined;
-    return { ...game, kind: game.kind === "random" ? this.drawGame(index) : game.kind };
+    // A game that was taken out (RETIRED_GAME_KINDS) may still be in a segment saved before: play a random one.
+    const kind = game.kind === "random" || RETIRED_GAME_KINDS.includes(game.kind) ? this.drawGame(index) : game.kind;
+    return { ...game, kind };
   }
 
   /** Draws the kind for a "random" segment once, and keeps it until the show moves on. */

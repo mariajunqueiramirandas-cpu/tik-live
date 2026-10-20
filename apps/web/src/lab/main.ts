@@ -138,7 +138,7 @@ const lab = {
   boss: (name: string | null = "mari.souza", leftMs = 300_000) => engine.apply({ t: "boss", boss: name ? { name, leftMs } : null }),
   /** One viewer picks the next game (or with false, the card goes back to the rankings). */
   pick: (on = true) =>
-    engine.apply({ t: "vote", vote: on ? { title: "Próximo jogo", options: ["Corrida maluca", "Roleta da sorte", "Batata quente"], tally: [0, 0, 0], by: "mari.souza" } : null }),
+    engine.apply({ t: "vote", vote: on ? { title: "Próximo jogo", options: ["Cabo de guerra", "Quiz", "Batata quente"], tally: [0, 0, 0], by: "mari.souza" } : null }),
   /** Shows a sample challenge by name (see CHALLENGES), or takes it down with null. */
   challenge: (name: string | null = "likes") => engine.apply({ t: "challenge", challenge: name ? (CHALLENGES[name] ?? null) : null }),
   /** The alerts for a new top gifter, a gift power and a raffle winner. */

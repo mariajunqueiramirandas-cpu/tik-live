@@ -1,6 +1,6 @@
 # ADR-0038: Games of chance and party games
 
-**Status:** Proposed
+**Status:** Proposed (the race and the wheel taken out by ADR-0043)
 **Date:** 2026-10-18
 **Deciders:** Project owner
 **Amends:** ADR-0023 (the game kinds), ADR-0029 (gifts in a team battle)

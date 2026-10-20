@@ -4,19 +4,11 @@ import {
   FUSE_MAX_MS,
   FUSE_MIN_MS,
   makePotato,
-  makeRace,
   makeTug,
-  makeWheel,
-  RACE_MS,
-  raceLeader,
-  raceOdds,
-  raceProgress,
   readGrab,
   readPick,
   readPull,
   ropePosition,
-  SPIN_MS,
-  wheelResult,
 } from "../../src/runtime/games/chance";
 import { GameMaster } from "../../src/runtime/games/master";
 import { LoopRanking } from "../../src/runtime/games/ranking";
@@ -67,16 +59,16 @@ function setup(seed = 7, streamDelayMs = 0) {
   return { clock, games, scenes, fx, ranking, last };
 }
 
-describe("reading bets, grabs and pulls", () => {
+describe("reading picks, grabs and pulls", () => {
   it("reads a pick by number or name, and leaves chat alone", () => {
-    const racers = ["Relâmpago", "Pé de Pano", "Faísca", "Trovão", "Pipoca"];
-    expect(readPick("3", racers)).toBe(2);
-    expect(readPick("#2", racers)).toBe(1);
-    expect(readPick("aposto no 5", racers)).toBe(4);
-    expect(readPick("relampago", racers)).toBe(0);
-    expect(readPick("Pé de pano!", racers)).toBe(1);
-    expect(readPick("9", racers)).toBeUndefined();
-    expect(readPick("eu acho que o 3 ganha fácil hein", racers)).toBeUndefined();
+    const options = ["Pão de queijo", "Pão de batata", "Café", "Chá", "Açaí"];
+    expect(readPick("3", options)).toBe(2);
+    expect(readPick("#2", options)).toBe(1);
+    expect(readPick("voto no 5", options)).toBe(4);
+    expect(readPick("acai", options)).toBe(4);
+    expect(readPick("Pão de queijo!", options)).toBe(0);
+    expect(readPick("9", options)).toBeUndefined();
+    expect(readPick("eu acho que o 3 ganha fácil hein", options)).toBeUndefined();
     expect(readPick("time 2", ["Coxinha", "Pastel"])).toBe(1);
     expect(readPick("time coxinha", ["Coxinha", "Pastel"])).toBe(0);
     expect(readPick("oi gente", ["Coxinha", "Pastel"])).toBeUndefined();
@@ -98,43 +90,6 @@ describe("reading bets, grabs and pulls", () => {
 });
 
 describe("making rounds", () => {
-  it("draws races with odds that follow the chances, a winner that crosses first, and lead changes", () => {
-    expect(raceOdds(0.32)).toBe(3);
-    expect(raceOdds(0.1)).toBe(10);
-    const random = seeded(11);
-    const wins = new Array<number>(5).fill(0);
-    let leadChanges = 0;
-    for (let n = 0; n < 400; n++) {
-      const race = makeRace(random);
-      expect(race.racers).toHaveLength(5);
-      expect(new Set(race.racers.map((r) => r.name)).size).toBe(5);
-      const finish = race.splits.map((splits) => splits.at(-1) as number);
-      expect(finish[race.winner]).toBe(RACE_MS);
-      for (const [i, at] of finish.entries()) if (i !== race.winner) expect(at).toBeGreaterThan(RACE_MS);
-      expect(raceProgress(race.splits[race.winner] as number[], RACE_MS)).toBe(1);
-      expect(raceLeader(race, RACE_MS - 1)).toBe(race.winner);
-      // Odds in the long run: the ×3 favorite wins about three times as often as the ×10 long shot.
-      const odds = race.racers[race.winner]?.odds as number;
-      wins[odds === 3 ? 0 : odds === 4 ? 1 : odds === 5 ? 2 : odds === 7 ? 3 : 4]! += 1;
-      let leader = -1;
-      for (let t = 500; t < RACE_MS; t += 500) {
-        const now = raceLeader(race, t);
-        if (leader !== -1 && now !== leader) leadChanges++;
-        leader = now;
-      }
-    }
-    expect(wins[0]).toBeGreaterThan(wins[4] as number);
-    expect(leadChanges).toBeGreaterThan(400);
-  });
-
-  it("spins a wheel whose odds are the strip's own", () => {
-    const wheel = makeWheel(seeded(5));
-    expect(wheel.strip).toHaveLength(20);
-    expect(wheel.strip.filter((sector) => sector === 3)).toHaveLength(1);
-    expect(wheel.sectors.map((s) => s.odds)).toEqual([2, 3, 5, 20]);
-    expect(wheelResult(wheel)).toBe(wheel.strip[wheel.landing] as number);
-  });
-
   it("draws teams and fuses, and moves the rope with the pulls", () => {
     const tug = makeTug(seeded(2));
     expect(tug.teams).toHaveLength(2);
@@ -149,56 +104,8 @@ describe("making rounds", () => {
 });
 
 describe("party games in the GameMaster", () => {
-  it("runs a race: bets, the race on stage, payouts by the odds, into the loop ranking", () => {
-    const { clock, games, last, ranking, fx } = setup();
-    games.start({ kind: "race", rounds: 1 }, "studio");
-    games.tick(true);
-    const open = last("race");
-    expect(open.stage).toBe("bets");
-    expect(open.winner).toBeNull();
-    expect(games.takeCue()?.note).toContain("Corrida maluca");
-    expect(games.hostContext()).not.toMatch(/win|result/i); // the host never learns who's going to win
-
-    const winner = open.racers.findIndex((racer) => racer.name === games.status()?.answer);
-    const loser = (winner + 1) % 5;
-    expect(games.handleChat(say("ana", String(winner + 1)))).toBe(true);
-    expect(games.handleChat(say("bia", String(loser + 1)))).toBe(true);
-    expect(games.handleChat(say("ana", String(loser + 1)))).toBe(true); // one bet each: the first counts
-    expect(games.handleChat(say("caio", "que corrida"))).toBe(false);
-    games.tick(false);
-    clock.advance(300);
-    games.tick(false);
-    expect(last("race").racers[winner]?.bets).toBe(1);
-
-    clock.advance(25_000);
-    games.tick(false);
-    expect(games.status()?.phase).toBe("running");
-    expect(last("race").stage).toBe("running");
-    expect(games.takeCue()?.note).toContain("the race is on");
-    expect(games.handleChat(say("late", "1"))).toBe(false); // bets are closed
-    for (let t = 0; t < RACE_MS - 300; t += 250) {
-      clock.advance(250);
-      games.tick(false);
-    }
-    const running = last("race");
-    expect(running.stage).toBe("running");
-    expect(running.racers.some((racer) => racer.progress > 0.5)).toBe(true);
-    expect(running.event).not.toBeNull();
-    clock.advance(500);
-    games.tick(false);
-    const finish = last("race");
-    expect(finish.stage).toBe("finish");
-    expect(finish.winner).toBe(winner);
-    expect(finish.racers[winner]?.progress).toBe(1);
-    expect(finish.winners).toEqual(["ana"]);
-    expect(fx).toContain("confetti");
-    const odds = open.racers[winner]?.odds as number;
-    expect(ranking.status().rows).toEqual([{ name: "ana", points: 3 * odds }]);
-    expect(games.takeCue()?.note).toContain("won the race");
-  });
-
   it("plays every round of a generated game, not just the first", () => {
-    for (const kind of ["race", "wheel", "tug", "potato"] as const) {
+    for (const kind of ["tug", "potato"] as const) {
       const { clock, games } = setup();
       games.start({ kind, rounds: 3 }, "studio");
       for (let t = 0; t < 180_000 && (games.status()?.round ?? 0) < 2; t += 250) {
@@ -208,31 +115,6 @@ describe("party games in the GameMaster", () => {
       }
       expect(games.status()?.round).toBe(2);
     }
-  });
-
-  it("spins the wheel after the bets and pays the color it stops on", () => {
-    const { clock, games, last, ranking } = setup(9);
-    games.start({ kind: "wheel", rounds: 1 }, "studio");
-    games.tick(true);
-    const result = last("wheel").sectors.findIndex((sector) => sector.label === games.status()?.answer);
-    expect(games.handleChat(say("ana", String(result + 1)))).toBe(true);
-    expect(games.handleChat(say("bia", "ouro"))).toBe(true);
-    clock.advance(20_000);
-    games.tick(false);
-    const spinning = last("wheel");
-    expect(spinning.stage).toBe("running");
-    expect(spinning.landing).not.toBeNull();
-    expect(spinning.result).toBeNull();
-    expect(spinning.spinLeftMs).toBe(SPIN_MS);
-    clock.advance(SPIN_MS);
-    games.tick(false);
-    const done = last("wheel");
-    expect(done.stage).toBe("finish");
-    expect(done.result).toBe(result);
-    const odds = done.sectors[result]?.odds as number;
-    const rows = ranking.status().rows;
-    expect(rows.find((row) => row.name === "ana")?.points).toBe(4 * odds);
-    if (result !== 3) expect(rows.some((row) => row.name === "bia")).toBe(false);
   });
 
   it("pulls the rope with likes, PUXA and gifts, and scores the winning team", () => {
@@ -309,21 +191,21 @@ describe("party games in the GameMaster", () => {
     expect(games.handleGift(gift("ana", 100))).toEqual(["double"]); // no extra time on a secret fuse, no hint
     expect(last("potato").boosts).toEqual(["double"]);
     games.stop();
-    games.start({ kind: "race", rounds: 1 }, "studio");
+    games.start({ kind: "tug", rounds: 1 }, "studio");
     games.tick(true);
     expect(games.handleGift(gift("ana", 100))).toEqual(["time", "double"]);
   });
 
-  it("takes bets during the stream delay, then runs the race", () => {
+  it("keeps a tug of war open through the stream delay, so late pulls still count", () => {
     const { clock, games } = setup(7, 5_000);
-    games.start({ kind: "race", rounds: 1 }, "studio");
+    games.start({ kind: "tug", rounds: 1 }, "studio");
     games.tick(true);
-    clock.advance(26_000);
+    clock.advance(41_000);
     games.tick(false);
     expect(games.status()?.phase).toBe("open");
     expect(games.handleChat(say("ana", "2"))).toBe(true);
     clock.advance(5_000);
     games.tick(false);
-    expect(games.status()?.phase).toBe("running");
+    expect(games.status()?.phase).toBe("reveal");
   });
 });

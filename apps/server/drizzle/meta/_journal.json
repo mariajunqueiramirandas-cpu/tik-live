@@ -26,8 +26,15 @@
     {
       "idx": 3,
       "version": "7",
-      "when": 1792536641827,
-      "tag": "0003_segment_scores",
+      "when": 1792534223530,
+      "tag": "0003_retire_betting_games",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792537858690,
+      "tag": "0004_segment_scores",
       "breakpoints": true
     }
   ]

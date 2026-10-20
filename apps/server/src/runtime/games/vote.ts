@@ -2,7 +2,7 @@ import { GAME_LABELS, type GameKind } from "@tik-live/shared";
 import { normalize } from "./answers";
 
 /** Games chat can pick for the loop's last segment (a poll has no winners, so it's not one). */
-export const VOTABLE: readonly GameKind[] = ["trivia", "race", "riddle", "potato", "fastest", "wheel", "scramble", "tug", "truefalse", "math", "number"];
+export const VOTABLE: readonly GameKind[] = ["trivia", "riddle", "potato", "fastest", "scramble", "tug", "truefalse", "math", "number"];
 export const VOTE_OPTIONS = 3;
 
 /** "2", "#2", "2!", or the option's name ("charadas"); undefined for anything else. */
@@ -70,7 +70,7 @@ export class FinalVote {
 }
 
 /** Party games: a viewer's own pick always offers one of them (ADR-0039). */
-const PARTY: readonly GameKind[] = ["race", "wheel", "tug", "potato"];
+const PARTY: readonly GameKind[] = ["tug", "potato"];
 
 /** Three different games for a viewer to pick from, one of them a party game, never the one that just played. */
 export function pickOptions(random: () => number, exclude?: GameKind): GameKind[] {

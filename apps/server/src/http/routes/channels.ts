@@ -270,7 +270,7 @@ export function channelRoutes(deps: AppDeps) {
     })
     .get("/:id/segments", valid("param", idParam), async (c) => {
       const row = await owned(c.get("user").id, c.req.valid("param").id);
-      // Best first, as the show leans on them (ADR-0043). Lifts are log2: +1 is twice the stream's average.
+      // Best first, as the show leans on them (ADR-0044). Lifts are log2: +1 is twice the stream's average.
       const scores = new SegmentScores(await loadSegmentScores(deps.db, row.id));
       return c.json({
         segments: scores.ranked().map((s) => ({

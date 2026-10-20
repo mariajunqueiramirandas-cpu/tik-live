@@ -459,7 +459,7 @@ export default function Character() {
             />
             {persona.autoShow ? (
               <p className={s.note}>
-                Cada volta tem seis quadros: papo, opinião polêmica, pergunta sem filtro, tribunal do chat, red flag ou green flag, rankings e outros, intercalados com minijogos (quiz, corrida de apostas, roleta, cabo de guerra, batata quente…), e termina com um jogo e o pódio. Você continua podendo trocar de quadro pelo estúdio.
+                Cada volta tem seis quadros: papo, opinião polêmica, pergunta sem filtro, tribunal do chat, red flag ou green flag, rankings e outros, intercalados com minijogos (quiz, charadas, cabo de guerra, batata quente…), e termina com um jogo e o pódio. Você continua podendo trocar de quadro pelo estúdio.
               </p>
             ) : (
               <>

@@ -228,7 +228,7 @@ export class ChannelRuntime {
     this.recorder = new StreamRecorder(ctx.db, channel.id, channel.source, this.log, this.now);
     this.source = this.options.makeSource?.(channel) ?? this.defaultSource(channel);
     const simulated = this.source.name === "simulator";
-    // Which segments work on this channel (ADR-0043). A simulated audience reacts at random, so
+    // Which segments work on this channel (ADR-0044). A simulated audience reacts at random, so
     // practice mode learns within the session but never writes over what real streams taught.
     const scores = simulated
       ? []

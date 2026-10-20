@@ -8,7 +8,7 @@ import type { Persona, Segment } from "./persona";
  * game so the loop closes on its podium (and chat can vote on it). Every
  * loop is planned again, so a long stream doesn't repeat the same order.
  *
- * With a `focus` (ADR-0043), the draw leans toward the formats and games
+ * With a `focus` (ADR-0044), the draw leans toward the formats and games
  * that pull the most viewers, likes and gifts on the channel, and gives them
  * more time; the rest still come up, less often and shorter.
  */
@@ -109,7 +109,7 @@ export function seededRandom(seed: number): () => number {
 }
 
 /**
- * How much the show leans toward a segment (ADR-0043), by `segmentKey`:
+ * How much the show leans toward a segment (ADR-0044), by `segmentKey`:
  * 1 is neutral, above 1 it comes up sooner and runs longer, below 1 later
  * and shorter.
  */
@@ -120,7 +120,7 @@ export const FOCUS_MIN = 0.25;
 export const FOCUS_MAX = 4;
 
 /**
- * What a segment is, for learning which ones work (ADR-0043): an automatic
+ * What a segment is, for learning which ones work (ADR-0044): an automatic
  * talk format by its title, an automatic game by its kind, a creator's
  * segment by its id (its title and game can change, it's still their segment).
  */
@@ -205,8 +205,6 @@ const GAME_TITLES: Record<GameKind, string> = {
   math: "Conta rápida",
   riddle: "Charadas da live",
   fastest: "Dedo mais rápido",
-  race: "Corrida maluca",
-  wheel: "Roleta da sorte",
   tug: "Cabo de guerra",
   potato: "Batata quente",
 };

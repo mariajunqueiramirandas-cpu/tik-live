@@ -113,7 +113,7 @@ function Lift({ value }: { value: number }) {
   return <span className={value >= 0.15 ? s.up : value <= -0.15 ? s.down : s.dim}>{lift(value)}</span>;
 }
 
-/** Which segments pull viewers, likes and gifts (ADR-0043), best first: the show leans toward the top ones. */
+/** Which segments pull viewers, likes and gifts (ADR-0044), best first: the show leans toward the top ones. */
 function Segments({ channelId, name }: { channelId: string; name: string }) {
   const { data, isPending } = useSegmentScores(channelId);
   return (

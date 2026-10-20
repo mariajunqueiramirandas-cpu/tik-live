@@ -11,10 +11,13 @@ class FakePeer implements Peer {
   send(data: string): void {
     this.sent.push(JSON.parse(data) as { t: string });
   }
+  closedWith: number | undefined;
   bufferedAmount(): number {
     return 0;
   }
-  close(): void {}
+  close(code?: number): void {
+    this.closedWith = code;
+  }
 }
 
 const cue = (id: string, durationMs = 2_000): SpeechCue => ({ id, text: `line ${id}`, emotion: "neutral", audio: null, durationMs });
@@ -91,6 +94,67 @@ describe("StageHub pacing", () => {
     after();
   });
 
+  it("doesn't wait for an on-air stage that has gone quiet (a frozen page still answering pings)", async () => {
+    const { hub, clock, attach, tracked, after } = setup();
+    attach("obs", "program");
+    attach("frozen", "program");
+    clock.advance(31_000);
+    hub.handleMessage("obs", { v: 1, t: "telemetry", fps: 60, frameP95: 4, quality: 0 });
+    const line = tracked(hub.play(cue("a"), new AbortController().signal));
+    hub.handleMessage("obs", { v: 1, t: "spoken", id: "a" });
+    await wait(0);
+    expect(line.done).toBe(true);
+    after();
+  });
+
+  it("stops pacing by a stage that let a line run out, until it reports a line again", async () => {
+    const { hub, attach, tracked, after } = setup();
+    attach("obs", "program");
+    attach("stuck", "program");
+    const first = tracked(hub.play(cue("a", 10), new AbortController().signal));
+    hub.handleMessage("obs", { v: 1, t: "started", id: "a", durationMs: 10 });
+    hub.handleMessage("obs", { v: 1, t: "spoken", id: "a" });
+    hub.handleMessage("stuck", { v: 1, t: "started", id: "a", durationMs: 10 });
+    await wait(0);
+    expect(first.done).toBe(false); // the stuck stage still has 10 ms + 1.5 s
+    await wait(2_000);
+    expect(first.done).toBe(true);
+
+    // The next line only waits for the stage that keeps up.
+    const second = tracked(hub.play(cue("b"), new AbortController().signal));
+    hub.handleMessage("obs", { v: 1, t: "spoken", id: "b" });
+    await wait(0);
+    expect(second.done).toBe(true);
+
+    // Once it reports again, it paces the show again.
+    hub.handleMessage("stuck", { v: 1, t: "spoken", id: "b" });
+    const third = tracked(hub.play(cue("c"), new AbortController().signal));
+    hub.handleMessage("obs", { v: 1, t: "spoken", id: "c" });
+    await wait(0);
+    expect(third.done).toBe(false);
+    hub.handleMessage("stuck", { v: 1, t: "spoken", id: "c" });
+    await wait(0);
+    expect(third.done).toBe(true);
+    after();
+  });
+
+  it("disconnects on-air stages silent for a minute, never previews", () => {
+    const { hub, clock, attach, after } = setup();
+    const obs = attach("obs", "program");
+    const frozen = attach("frozen", "program");
+    const studio = attach("studio", "preview");
+    clock.advance(59_000);
+    hub.handleMessage("obs", { v: 1, t: "telemetry", fps: 60, frameP95: 4, quality: 0 });
+    expect(hub.sweep()).toBe(0);
+    clock.advance(2_000);
+    expect(hub.sweep()).toBe(1);
+    expect(frozen.closedWith).toBe(4000);
+    expect(obs.closedWith).toBeUndefined();
+    expect(studio.closedWith).toBeUndefined();
+    expect(hub.counts()).toEqual({ program: 1, preview: 1, broadcast: 0 });
+    after();
+  });
+
   it("coalesces a burst of stats into a few messages", async () => {
     const { hub, attach, clock, after } = setup();
     const obs = attach("obs", "program");
@@ -142,7 +206,7 @@ describe("StageHub pacing", () => {
     hub.crown("caio");
     hub.perk("duda", "Fura-fila");
     hub.raffleWinner("lu");
-    hub.vote({ title: "Próximo jogo", options: ["Corrida maluca", "Roleta da sorte"], tally: [0, 0], by: "mari" });
+    hub.vote({ title: "Próximo jogo", options: ["Cabo de guerra", "Batata quente"], tally: [0, 0], by: "mari" });
     const challenge = { kind: "likes" as const, title: "DESAFIO DAS CURTIDAS", detail: "toque na tela", value: 10, target: 500, remainingMs: 45_000, durationMs: 45_000, result: null, winner: null };
     hub.challenge(challenge);
     expect(obs.sent.filter((m) => m.t === "alert")).toEqual([

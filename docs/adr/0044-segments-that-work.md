@@ -1,4 +1,4 @@
-# ADR-0043: The show leans toward the segments that work
+# ADR-0044: The show leans toward the segments that work
 
 **Status:** Proposed
 **Date:** 2026-10-20

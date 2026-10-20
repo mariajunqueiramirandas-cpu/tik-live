@@ -59,10 +59,9 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   true or false, quick math, riddles and fastest finger. Viewers answer in
   chat, the game keeps score, and each game has its own scene on stage
   ([ADR-0023](docs/adr/0023-chat-minigames.md)). Plus party games of luck
-  ([ADR-0038](docs/adr/0038-games-of-chance-and-party-games.md)): a horse
-  race chat bets on, a spinning wheel, a tug of war pulled by likes, and a
-  hot potato that blows up on whoever holds it. Bets are free and pay
-  points. Run them from a segment or
+  ([ADR-0038](docs/adr/0038-games-of-chance-and-party-games.md)): a tug of
+  war pulled by likes, and a hot potato that blows up on whoever holds it.
+  Run them from a segment or
   start one from the studio. Every game's points add up over a loop of the
   run of show, and when the last segment ends the top three are revealed on
   a podium, one place at a time, before the ranking starts over.

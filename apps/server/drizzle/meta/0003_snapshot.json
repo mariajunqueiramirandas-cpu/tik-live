@@ -1,5 +1,5 @@
 {
-  "id": "cde5310b-9465-478a-85d1-bed608600b63",
+  "id": "4785fa1e-440d-4c24-8977-f3da8928a3db",
   "prevId": "2194abe4-d379-485a-ad99-344b68c35533",
   "version": "7",
   "dialect": "postgresql",
@@ -46,10 +46,10 @@
       "uniqueConstraints": {
         "app_user_external_id_unique": {
           "name": "app_user_external_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "external_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -123,9 +123,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -278,9 +278,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "channel_desired_state_idx": {
           "name": "channel_desired_state_idx",
@@ -293,34 +293,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "channel_owner_id_app_user_id_fk": {
           "name": "channel_owner_id_app_user_id_fk",
           "tableFrom": "channel",
-          "tableTo": "app_user",
           "columnsFrom": [
             "owner_id"
           ],
+          "tableTo": "app_user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "channel_stage_key_lookup_unique": {
           "name": "channel_stage_key_lookup_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "stage_key_lookup"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -356,61 +356,15 @@
         "host_memory_channel_id_channel_id_fk": {
           "name": "host_memory_channel_id_channel_id_fk",
           "tableFrom": "host_memory",
-          "tableTo": "channel",
           "columnsFrom": [
             "channel_id"
           ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.segment_scores": {
-      "name": "segment_scores",
-      "schema": "",
-      "columns": {
-        "channel_id": {
-          "name": "channel_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "scores": {
-          "name": "scores",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "segment_scores_channel_id_channel_id_fk": {
-          "name": "segment_scores_channel_id_channel_id_fk",
-          "tableFrom": "segment_scores",
           "tableTo": "channel",
-          "columnsFrom": [
-            "channel_id"
-          ],
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -469,15 +423,15 @@
         "session_sample_session_id_stream_session_id_fk": {
           "name": "session_sample_session_id_stream_session_id_fk",
           "tableFrom": "session_sample",
-          "tableTo": "stream_session",
           "columnsFrom": [
             "session_id"
           ],
+          "tableTo": "stream_session",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -664,24 +618,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "stream_session_channel_id_channel_id_fk": {
           "name": "stream_session_channel_id_channel_id_fk",
           "tableFrom": "stream_session",
-          "tableTo": "channel",
           "columnsFrom": [
             "channel_id"
           ],
+          "tableTo": "channel",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -774,25 +728,25 @@
         "subscription_user_id_app_user_id_fk": {
           "name": "subscription_user_id_app_user_id_fk",
           "tableFrom": "subscription",
-          "tableTo": "app_user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "app_user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "subscription_provider_subscription_id_unique": {
           "name": "subscription_provider_subscription_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "provider_subscription_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -897,15 +851,15 @@
         "usage_daily_user_id_app_user_id_fk": {
           "name": "usage_daily_user_id_app_user_id_fk",
           "tableFrom": "usage_daily",
-          "tableTo": "app_user",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "app_user",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -1000,9 +954,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "utterance_channel_at_idx": {
           "name": "utterance_channel_at_idx",
@@ -1021,24 +975,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "utterance_session_id_stream_session_id_fk": {
           "name": "utterance_session_id_stream_session_id_fk",
           "tableFrom": "utterance",
-          "tableTo": "stream_session",
           "columnsFrom": [
             "session_id"
           ],
+          "tableTo": "stream_session",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1162,9 +1116,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "viewer_last_seen_idx": {
           "name": "viewer_last_seen_idx",
@@ -1183,24 +1137,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "viewer_channel_id_channel_id_fk": {
           "name": "viewer_channel_id_channel_id_fk",
           "tableFrom": "viewer",
-          "tableTo": "channel",
           "columnsFrom": [
             "channel_id"
           ],
+          "tableTo": "channel",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -1220,10 +1174,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

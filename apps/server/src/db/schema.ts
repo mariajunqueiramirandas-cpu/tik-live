@@ -93,7 +93,7 @@ export const hostMemory = pgTable("host_memory", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
-/** Which segments pull viewers, likes and gifts on a channel (ADR-0043), so the show leans toward them. */
+/** Which segments pull viewers, likes and gifts on a channel (ADR-0044), so the show leans toward them. */
 export const segmentScores = pgTable("segment_scores", {
   channelId: uuid("channel_id")
     .primaryKey()

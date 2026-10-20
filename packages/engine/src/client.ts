@@ -30,6 +30,9 @@ export interface StageConnectionOptions {
   random?: () => number;
   setTimeout?: (fn: () => void, ms: number) => unknown;
   clearTimeout?: (handle: unknown) => void;
+  setInterval?: (fn: () => void, ms: number) => unknown;
+  clearInterval?: (handle: unknown) => void;
+  now?: () => number;
   /**
    * Reloads the page when the server asks: `forced` when the owner asked for
    * it from the dashboard, otherwise a new deploy or protocol change.
@@ -48,6 +51,14 @@ export const CLOSE_GONE = 4004;
 const MIN_DELAY_MS = 500;
 const MAX_DELAY_MS = 10_000;
 const RELOAD_GUARD_KEY = "lantern.stage.reloadedAt";
+/**
+ * A live page tells the server it's there this often, from a timer rather
+ * than the frame loop, so the server can tell a working stage from a frozen
+ * one (whose browser still answers pings) and stop pacing the show by it.
+ */
+export const HEARTBEAT_MS = 5_000;
+/** A heartbeat this late means the page was frozen or throttled: the lines it has waiting are long gone. */
+export const ASLEEP_MS = 15_000;
 
 /** `wss://host/ws/stage/<key>?role=program` from the page's own location. */
 export function stageSocketUrl(location: { protocol: string; host: string }, stageKey: string, role: StageRole): string {
@@ -67,6 +78,9 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
   const random = options.random ?? Math.random;
   const schedule = options.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
   const cancel = options.clearTimeout ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+  const every = options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
+  const cancelEvery = options.clearInterval ?? ((handle) => clearInterval(handle as ReturnType<typeof setInterval>));
+  const now = options.now ?? Date.now;
   const reload = options.reload ?? defaultReload;
 
   let socket: WebSocket | null = null;
@@ -75,6 +89,8 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
   let timer: unknown = null;
   let holding = false;
   let stopped = false;
+  let heartbeat: unknown = null;
+  let beatAt = 0;
 
   const setState = (next: StageConnectionState) => {
     if (next === state) return;
@@ -95,6 +111,20 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
       ...(t.renderer ? { renderer: t.renderer.slice(0, 200) } : {}),
       ...(t.error ? { error: t.error.slice(0, 500) } : {}),
     });
+  };
+
+  const beat = () => {
+    const at = now();
+    // Woke up from a freeze: the server moved on long ago, so drop the stale
+    // lines instead of playing them out of sync with the show.
+    if (at - beatAt > ASLEEP_MS) engine.apply({ t: "stop" });
+    beatAt = at;
+    sendTelemetry(engine.telemetry());
+  };
+
+  const stopHeartbeat = () => {
+    if (heartbeat !== null) cancelEvery(heartbeat);
+    heartbeat = null;
   };
 
   const offStarted = engine.on("started", (id, durationMs) => send({ t: "started", id, durationMs }));
@@ -147,11 +177,15 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
         caps: { webgl2: engine.failed !== "webgl2-unavailable", audio: engine.audio.state !== "unavailable" },
       });
       sendTelemetry(engine.telemetry());
+      stopHeartbeat();
+      beatAt = now();
+      heartbeat = every(beat, HEARTBEAT_MS);
     };
     ws.onmessage = (event) => handle(event.data);
     ws.onclose = (event) => {
       if (socket !== ws) return;
       socket = null;
+      stopHeartbeat();
       if (stopped) return;
       if (event.code === CLOSE_REVOKED) return setState("revoked");
       if (event.code === CLOSE_GONE) return setState("gone");
@@ -180,6 +214,7 @@ export function connectStage(options: StageConnectionOptions): StageConnection {
     close() {
       stopped = true;
       if (timer !== null) cancel(timer);
+      stopHeartbeat();
       offStarted();
       offSpoken();
       offTelemetry();

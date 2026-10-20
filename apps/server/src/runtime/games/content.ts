@@ -11,21 +11,6 @@ export type RoundContent =
   | { kind: "math"; expression: string; answer: number }
   | { kind: "riddle"; riddle: string; answers: string[]; hint: string }
   | { kind: "fastest"; word: string }
-  | {
-      kind: "race";
-      racers: Array<{ name: string; odds: number }>;
-      winner: number;
-      /** Per racer, when (ms from the start) it passes each checkpoint; the last one is the finish line. */
-      splits: number[][];
-    }
-  | {
-      kind: "wheel";
-      sectors: Array<{ label: string; odds: number }>;
-      /** The tiles in order, as sector indexes. */
-      strip: number[];
-      /** The tile it stops on; its sector is the result. */
-      landing: number;
-    }
   | { kind: "tug"; teams: [string, string] }
   | { kind: "potato"; fuseMs: number };
 
@@ -296,10 +281,6 @@ export function contentKey(content: RoundContent): string {
       return `number:${content.secret}`;
     case "math":
       return `math:${content.expression}`;
-    case "race":
-      return `race:${content.racers.map((racer) => racer.name).join("|")}`;
-    case "wheel":
-      return `wheel:${content.strip.join("")}:${content.landing}`;
     case "tug":
       return `tug:${content.teams.join("|")}`;
     case "potato":
@@ -325,10 +306,6 @@ export function avoidLine(content: RoundContent): string {
       return String(content.secret);
     case "math":
       return content.expression;
-    case "race":
-      return content.racers.map((racer) => racer.name).join(", ");
-    case "wheel":
-      return content.sectors.map((sector) => sector.label).join(", ");
     case "tug":
       return content.teams.join(" x ");
     case "potato":
