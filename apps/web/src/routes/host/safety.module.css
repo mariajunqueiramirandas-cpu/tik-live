@@ -39,7 +39,7 @@
   }
   .when {
     color: var(--mist);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .text {
     color: var(--haze);
@@ -47,7 +47,7 @@
   }
   .reason {
     color: var(--alarm);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     font-weight: 650;
   }
   @media (max-width: 1000px) {

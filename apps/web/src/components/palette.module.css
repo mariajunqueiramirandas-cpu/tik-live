@@ -3,7 +3,7 @@
     position: fixed;
     inset: 0;
     z-index: 80;
-    background: rgb(5 2 18 / 0.6);
+    background: rgb(4 3 9 / 0.6);
   }
   .palette {
     position: fixed;
@@ -14,9 +14,7 @@
     width: min(560px, calc(100vw - 24px));
     border-radius: var(--r-panel);
     background: var(--shelf);
-    box-shadow:
-      inset 0 0 0 1px var(--hairline-strong),
-      0 24px 64px rgb(5 2 18 / 0.6);
+    box-shadow: var(--float);
     overflow: hidden;
   }
   .palette[data-state="open"] {
@@ -69,7 +67,7 @@
   .hint {
     margin-left: auto;
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .empty {
     padding: var(--s-4);

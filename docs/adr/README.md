@@ -16,7 +16,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0008](0008-realtime-protocol.md) | Realtime protocol | Proposed |
 | [0009](0009-stage-engine.md) | WebGL2 stage engine | Proposed |
 | [0010](0010-frontend-stack.md) | Frontend stack | Proposed |
-| [0011](0011-design-direction.md) | Design direction | Proposed |
+| [0011](0011-design-direction.md) | Design direction | Proposed (palette, UI type and studio monitor amended by 0042) |
 | [0012](0012-ai-and-voice-pipeline.md) | AI and voice pipeline | Proposed (voice amended by 0021 and 0030, pacing by 0022 and 0031, prompt by 0025 and 0040, models and context by 0026) |
 | [0013](0013-billing-and-plans.md) | Billing and plans | Proposed |
 | [0014](0014-cloud-broadcast.md) | Cloud broadcast | Proposed (pipeline amended by 0020) |
@@ -47,6 +47,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0039](0039-gift-powers.md) | Gift powers | Proposed (the powers card amended by 0041) |
 | [0040](0040-room-challenges-and-opinions.md) | Room challenges, a more forward host, and opinions on everything | Proposed |
 | [0041](0041-support-ticker-and-gift-showcase.md) | An always-on support ticker and a gift showcase | Proposed |
+| [0042](0042-dashboard-visual-refresh.md) | Dashboard visual refresh | Proposed |
 
 ## Evidence used
 

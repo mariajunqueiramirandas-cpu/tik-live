@@ -1,6 +1,8 @@
 /*
- * Design tokens (ADR-0011). Depth is elevation: surfaces get lighter and
- * more violet as they rise. Color is semantic: glow = live or act,
+ * Design tokens (ADR-0011, refreshed by ADR-0042). Depth is elevation:
+ * surfaces get lighter as they rise. The water is a near-neutral night
+ * with a violet cast, so the four meaning colors and the character itself
+ * are the only saturated things on screen: glow = live or act,
  * offering = money, bloom = the character, alarm = stop.
  */
 @layer reset, tokens, base, components, utilities;
@@ -10,35 +12,48 @@
     color-scheme: dark;
 
     /* Water depth */
-    --abyss: #0b0420;
-    --trench: #140a33;
-    --shelf: #1e1247;
-    --reef: #2a1a5e; /* hover on raised surfaces */
+    --abyss: #0a0912;
+    --trench: #100e1b;
+    --shelf: #181525;
+    --reef: #221e33; /* hover on raised surfaces */
+    --lift: #2c2742; /* pressed, selected */
 
     /* Ink */
-    --ink: #f4f0ff;
-    --haze: #a397d6;
-    --mist: #8a80ba; /* tertiary text: hints, placeholders, timestamps (AA on every surface) */
-    --hairline: rgb(163 151 214 / 0.18);
-    --hairline-strong: rgb(163 151 214 / 0.32);
+    --ink: #f4f2fa;
+    --haze: #ada8c6;
+    --mist: #8f89ac; /* tertiary text: hints, placeholders, timestamps (AA on every surface) */
+    --hairline: rgb(196 186 255 / 0.09);
+    --hairline-strong: rgb(196 186 255 / 0.17);
+    /* The faint light catching the top edge of a raised surface. */
+    --edge: inset 0 1px 0 rgb(255 255 255 / 0.045);
 
     /* Meaning */
     --glow: #7cf5ff;
+    --glow-strong: #b0f9ff;
     --glow-ink: #062a30; /* text on glow */
-    --glow-soft: rgb(124 245 255 / 0.14);
-    --bloom: #ff5fd2;
-    --bloom-soft: rgb(255 95 210 / 0.14);
+    --glow-soft: rgb(124 245 255 / 0.12);
+    --bloom: #ff6fd8;
+    --bloom-soft: rgb(255 111 216 / 0.12);
     --offering: #ffd15c;
-    --offering-soft: rgb(255 209 92 / 0.14);
+    --offering-soft: rgb(255 209 92 / 0.1);
     --alarm: #ff6b6b;
+    --alarm-strong: #ff8d8d;
     --alarm-ink: #2b0606;
-    --alarm-soft: rgb(255 107 107 / 0.14);
+    --alarm-soft: rgb(255 107 107 / 0.12);
+
+    /* The character on the page. Host pages set these from the host's own
+       look; everywhere else they're the brand's orb. Decoration only, never
+       text: a host's colors aren't checked for contrast. */
+    --host-a: var(--glow);
+    --host-b: var(--bloom);
 
     /* Type */
     --font-display: "Bricolage Grotesque", "Bricolage Fallback", system-ui, sans-serif;
-    --font-ui: "Atkinson Hyperlegible Next", "Atkinson Fallback", system-ui, sans-serif;
+    --font-ui: "Reddit Sans", "Reddit Fallback", system-ui, sans-serif;
     --t-12: 0.75rem;
+    --t-13: 0.8125rem;
     --t-15: 0.9375rem;
+    --t-17: 1.0625rem;
     --t-19: 1.1875rem;
     --t-23: 1.4375rem;
     --t-29: 1.8125rem;
@@ -62,10 +77,13 @@
     --s-24: 96px;
 
     /* Radius by role */
-    --r-control: 8px;
-    --r-panel: 14px;
-    --r-stage: 20px;
+    --r-control: 10px;
+    --r-panel: 16px;
+    --r-stage: 24px;
     --r-pill: 999px;
+
+    /* Floating things (menus, dialogs, toasts) are the only shadows. */
+    --float: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 0 0 1px var(--hairline-strong), 0 24px 48px -12px rgb(0 0 0 / 0.6);
 
     /* Motion */
     --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -76,7 +94,7 @@
     --dur-slow: 360ms;
 
     --focus: 0 0 0 2px var(--abyss), 0 0 0 4px var(--glow);
-    --sidebar: 248px;
+    --sidebar: 256px;
   }
 
   @media (prefers-reduced-motion: reduce) {

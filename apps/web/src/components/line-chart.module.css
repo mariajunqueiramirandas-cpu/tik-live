@@ -16,9 +16,6 @@
     font-size: 12px;
     font-family: var(--font-ui);
   }
-  .area {
-    fill: var(--glow-soft);
-  }
   .line {
     fill: none;
     stroke: var(--glow);

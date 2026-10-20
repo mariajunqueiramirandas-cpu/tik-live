@@ -74,9 +74,10 @@
     display: grid;
     justify-items: start;
     gap: var(--s-3);
-    padding: var(--s-8);
+    padding: var(--s-10) var(--s-8);
     border-radius: var(--r-panel);
     border: 1px dashed var(--hairline-strong);
+    background: radial-gradient(120% 140% at 0% 0%, var(--glow-soft), transparent 55%);
     color: var(--haze);
   }
   .empty h2 {
@@ -93,6 +94,9 @@
   }
   .raised {
     background: var(--shelf);
+    box-shadow:
+      var(--edge),
+      inset 0 0 0 1px var(--hairline);
   }
 
   .banner {
@@ -102,7 +106,9 @@
     padding: var(--s-3) var(--s-4);
     border-radius: var(--r-control);
     background: var(--shelf);
-    box-shadow: inset 3px 0 0 var(--haze);
+    box-shadow:
+      inset 3px 0 0 var(--haze),
+      inset 0 0 0 1px var(--hairline);
     color: var(--ink);
   }
   .banner svg {
@@ -116,13 +122,19 @@
     color: var(--haze);
   }
   .bannerWarn {
-    box-shadow: inset 3px 0 0 var(--offering);
+    background: linear-gradient(90deg, var(--offering-soft), transparent 60%), var(--shelf);
+    box-shadow:
+      inset 3px 0 0 var(--offering),
+      inset 0 0 0 1px var(--hairline);
   }
   .bannerWarn svg {
     color: var(--offering);
   }
   .bannerError {
-    box-shadow: inset 3px 0 0 var(--alarm);
+    background: linear-gradient(90deg, var(--alarm-soft), transparent 60%), var(--shelf);
+    box-shadow:
+      inset 3px 0 0 var(--alarm),
+      inset 0 0 0 1px var(--hairline);
   }
   .bannerError svg {
     color: var(--alarm);
