@@ -406,6 +406,8 @@ describe("Director with games and context", () => {
     await step(2_000);
     await step(100);
     expect(contexts.some((context) => context?.includes("Viewer lucas wrote: canta um funk aí"))).toBe(true);
+    // The segment's bit is part of what a line means.
+    expect(contexts.every((context) => context?.includes(`The show's current segment is "Quiz": Banter between rounds.`))).toBe(true);
     expect(sounds).toContain("fanfare");
   });
 });

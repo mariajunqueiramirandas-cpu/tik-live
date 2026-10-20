@@ -40,9 +40,11 @@ theme as a performance and believe viewers about their own time and place,
 do playful requests (sing, rap, voices) with original lines.
 
 The moderator gets **context**: the chat the line replies to, what the host
-just said, and whether it's a game turn, plus a policy line not to build dark
-readings out of idioms, slang, wordplay and music talk. It still judges the
-sentence, not the chat.
+just said, the current segment and the minigame on (so the show's own bits,
+like the "tribunal do chat" or typing PEGA in the hot potato, don't read as
+pressure or innuendo), plus a policy line not to build dark readings out of
+idioms, slang, wordplay and music talk. It still judges the sentence, not the
+chat.
 
 ## Consequences
 

@@ -437,7 +437,10 @@ function moderationContext(plan: TurnPlan, said: string[]): string {
     if (event.kind === "chat" || event.kind === "question") lines.push(`Viewer ${clip(viewerName(event.viewer), 30)} wrote: ${event.text}`);
     else if (event.kind === "gift") lines.push(`Viewer ${clip(viewerName(event.viewer), 30)} sent ${event.count}x ${event.giftName}.`);
   }
-  if (plan.kind === "game") lines.push("The host is running a chat quiz game and announcing a round.");
+  // The show's own bits ("confess to the chat's court", "type PEGA") read as pressure or innuendo without them.
+  lines.push(`The show's current segment is "${clip(plan.segment.title, 60)}": ${clip(plan.segment.prompt, 300)}`);
+  if (plan.game) lines.push(`A chat minigame is on (points only, never money):\n${clip(plan.game, 600)}`);
+  else if (plan.kind === "game") lines.push("The host is running a chat minigame and announcing a round.");
   if (plan.kind === "request") lines.push(`The channel owner asked the host: ${plan.note ?? ""}`);
   if (said.length) lines.push(`The host just said: ${said.slice(-2).join(" ")}`);
   return lines.join("\n");
