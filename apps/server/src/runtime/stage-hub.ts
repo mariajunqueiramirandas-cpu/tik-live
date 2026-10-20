@@ -18,6 +18,7 @@ import {
   type LeaderBoard,
   type LeaderRow,
   type PerksCard,
+  type Ticker,
   type SupportCard,
   type UpNextItem,
 } from "@tik-live/shared";
@@ -95,6 +96,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
   private lastSupport: SupportCard | null = null;
   private lastHook: string | null = null;
   private lastPerks: PerksCard | null = null;
+  private lastTicker: Ticker | null = null;
   /** The "dono da live" and when the reign ends (server clock), so a stage that connects counts down from now. */
   private lastBoss: { name: string; endsAt: number } | null = null;
   /** The challenge as last sent and when, so a stage that connects gets its clock from now. */
@@ -135,6 +137,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
     if (this.lastSupport) this.sendTo(peer, { t: "support", card: this.lastSupport });
     if (this.lastHook) this.sendTo(peer, { t: "hook", text: this.lastHook });
     if (this.lastPerks) this.sendTo(peer, { t: "perks", card: this.lastPerks });
+    if (this.lastTicker) this.sendTo(peer, { t: "ticker", ticker: this.lastTicker });
     if (this.lastBoss && this.lastBoss.endsAt > this.now()) {
       this.sendTo(peer, { t: "boss", boss: { name: this.lastBoss.name, leftMs: this.lastBoss.endsAt - this.now() } });
     }
@@ -367,6 +370,11 @@ export class StageHub implements SpeechOutput, StageNotifier {
   perks(card: PerksCard | null): void {
     this.lastPerks = card;
     this.broadcast({ t: "perks", card });
+  }
+
+  ticker(ticker: Ticker | null): void {
+    this.lastTicker = ticker;
+    this.broadcast({ t: "ticker", ticker });
   }
 
   boss(boss: { name: string; leftMs: number } | null): void {

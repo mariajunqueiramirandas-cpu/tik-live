@@ -37,15 +37,16 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0029](0029-gifts-power-ups-and-final-vote.md) | A gift ranking, gift combos and power-ups, and chat's vote on the last segment | Proposed |
 | [0030](0030-fish-audio-default-voice.md) | Fish Audio Drama 3, through OpenRouter, is the default voice | Proposed |
 | [0031](0031-not-every-message-needs-an-answer.md) | Not every message needs an answer, and chat can't hold the show | Proposed |
-| [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed |
+| [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed (on-screen support amended by 0041) |
 | [0033](0033-host-memory.md) | Host memory that's cheap, fast and accurate | Proposed |
 | [0034](0034-names-that-sound-rude.md) | Names that sound rude out loud | Proposed |
 | [0035](0035-automatic-run-of-show.md) | A run of show the host plans by itself | Proposed |
 | [0036](0036-like-and-gift-goals.md) | Like and gift goals on stage | Proposed |
 | [0037](0037-fan-levels-and-passers-by.md) | Fan levels, and catching people scrolling past | Proposed |
 | [0038](0038-games-of-chance-and-party-games.md) | Games of chance and party games | Proposed |
-| [0039](0039-gift-powers.md) | Gift powers | Proposed |
+| [0039](0039-gift-powers.md) | Gift powers | Proposed (the powers card amended by 0041) |
 | [0040](0040-room-challenges-and-opinions.md) | Room challenges, a more forward host, and opinions on everything | Proposed |
+| [0041](0041-support-ticker-and-gift-showcase.md) | An always-on support ticker and a gift showcase | Proposed |
 
 ## Evidence used
 

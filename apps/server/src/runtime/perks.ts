@@ -121,7 +121,11 @@ export class GiftPerks {
 
 /** The card the stage shows: what each gift unlocks. */
 export function perksCard(): PerksCard {
-  return { title: "PODERES DO PRESENTE", rows: PERKS.map((perk) => ({ diamonds: perk.diamonds, text: perk.card })) };
+  return {
+    title: "O QUE SEU PRESENTE FAZ",
+    rows: PERKS.map((perk) => ({ diamonds: perk.diamonds, text: perk.card })),
+    every: "Todo presente: seu nome na live + Top Doadores",
+  };
 }
 
 /** The powers on offer, in a line the host can say. */

@@ -174,4 +174,14 @@ describe("StageHub pacing", () => {
     expect(cleared.sent.some((m) => m.t === "perks" || m.t === "boss" || m.t === "challenge")).toBe(false);
     after();
   });
+
+  it("replays the support ticker to a stage that connects, until it's taken down", () => {
+    const { hub, attach, after } = setup();
+    const ticker = { title: "APOIE A LIVE", lines: [{ way: "gift" as const, text: "Presentes pagam as contas da IA" }] };
+    hub.ticker(ticker);
+    expect(attach("late", "program").sent.find((m) => m.t === "ticker")).toMatchObject({ ticker });
+    hub.ticker(null);
+    expect(attach("later", "program").sent.some((m) => m.t === "ticker")).toBe(false);
+    after();
+  });
 });

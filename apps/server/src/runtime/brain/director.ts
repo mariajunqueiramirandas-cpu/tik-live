@@ -21,6 +21,7 @@ import {
   type Segment,
   type Sound,
   type SupportCard,
+  type Ticker,
   type UpNextItem,
   type UpNextKind,
   type Viewer,
@@ -32,6 +33,7 @@ import { FinalVote, pickOptions, SoloPick, voteOptions } from "../games/vote";
 import { niceTarget, RoomChallenge } from "../challenges";
 import { type GoalReached, StreamGoals } from "../goals";
 import { BOSS_MS, GiftPerks, includes, perksCard, perksSummary, VIP_MS, type Unlock } from "../perks";
+import { supportTicker } from "../ticker";
 import { levelOf } from "./fans";
 import { GIFT_WINDOW_MS, LIKE_WINDOW_MS, RollingBoard } from "../leaderboards";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
@@ -78,8 +80,10 @@ export interface StageNotifier {
   fanLevel?(name: string, level: number): void;
   /** A big call to people scrolling past, or null to take it down (ADR-0037). */
   hook?(text: string | null): void;
-  /** The gift powers on offer, in the ranking card's place, or null to put the rankings back (ADR-0039). */
+  /** What each gift unlocks, big under the character, or null to take it down (ADR-0039, ADR-0041). */
   perks?(card: PerksCard | null): void;
+  /** The always-on support ticker, or null to take it down (ADR-0041). */
+  ticker?(ticker: Ticker | null): void;
   /** The "dono da live" and how long their reign has left, or null when it ends (ADR-0039). */
   boss?(boss: { name: string; leftMs: number } | null): void;
   /** An alert: a viewer just took first place among the gifters (ADR-0039). */
@@ -222,15 +226,18 @@ const FLOURISHES: readonly Effect[] = ["sparkles", "jump", "stars", "spin", "bub
 const LEVEL_TALK_FROM = 3;
 const LEVEL_TALK_GAP_MS = 90_000;
 /**
- * Gift powers (ADR-0039): the card with what each gift unlocks, by how
- * actively the channel asks for gifts; how long a viewer has to pick the
- * next game; how long a picked game is; the most anthems waiting.
+ * Gift powers (ADR-0039): the showcase of what each gift unlocks, big under
+ * the character (ADR-0041), by how actively the channel asks for gifts;
+ * how long a viewer has to pick the next game; how long a picked game is;
+ * the most anthems waiting.
  */
 const PERKS_PACE: Record<GiftAsks, { first: number; every: number }> = {
-  light: { first: 4.5 * 60_000, every: 7 * 60_000 },
-  active: { first: 2.5 * 60_000, every: 4 * 60_000 },
+  light: { first: 2.5 * 60_000, every: 5 * 60_000 },
+  active: { first: 90_000, every: 3 * 60_000 },
 };
-const PERKS_CARD_SHOW_MS = 18_000;
+const PERKS_CARD_SHOW_MS = 15_000;
+/** The showcase waits this long for a game, a challenge or a call to passers-by to clear its spot. */
+const PERKS_RETRY_MS = 20_000;
 const PICK_MS = 30_000;
 const PICK_ROUNDS = 3;
 /** A picked game waits this long after the last one ends. */
@@ -437,6 +444,8 @@ export class Director {
   private hookAt = Infinity;
   private hookIndex = 0;
   private hookHideAt = Infinity;
+  /** What the support ticker last said, so it's sent only when that changes. */
+  private tickerKey = "";
   private lastHookAt = -Infinity;
   private arrivals: number[] = [];
   private flourishAt = Infinity;
@@ -540,6 +549,7 @@ export class Director {
   start(intervalMs = 200): void {
     this.options.stage.segment(this.segment());
     this.publishGoals();
+    this.publishTicker();
     this.timer = setInterval(() => void this.tick(), intervalMs);
   }
 
@@ -972,6 +982,7 @@ export class Director {
     this.maybeShowSupport(now);
     this.maybeFlourish(now);
     if (now >= this.hookHideAt) this.hideHook();
+    this.publishTicker();
     this.publishHud(now);
     if (this.paused || this.engine.inFlight) return;
     this.maybeStartSegmentGame(now);
@@ -1261,6 +1272,17 @@ export class Director {
     return this.options.giftPerks?.() ?? true;
   }
 
+  /** The always-on support ticker (ADR-0041), sent again only when what it says changes. */
+  private publishTicker(): void {
+    const on = this.supportOn();
+    const perks = this.perksOn();
+    const asks = this.giftAsks();
+    const key = on ? `${perks}:${asks}` : "off";
+    if (key === this.tickerKey) return;
+    this.tickerKey = key;
+    this.options.stage.ticker?.(on ? supportTicker({ perks, asks }) : null);
+  }
+
   /** A gift that takes first place among the gifters: an alert now, and a word in the host's thank-you. */
   private crown(before: string | undefined): string[] {
     const now = this.now();
@@ -1382,12 +1404,12 @@ export class Director {
       : `${name} unlocked a personal anthem with a gift. Rap or sing two short original lines about ${name}, with their name in them, with all the drama of a stadium anthem.`;
   }
 
-  /** The card with what each gift unlocks, now and then, where the rankings are (never over a vote or the support card). */
+  /** The showcase of what each gift unlocks, now and then, under the character (never over a game, a challenge or a call to passers-by). */
   private maybeShowPerks(now: number): void {
     if (now >= this.perksHideAt) this.hidePerks();
     if (now < this.perksCardAt || this.standby || !this.perksOn()) return;
-    if (this.vote || this.pick || this.supportHideAt !== Infinity) {
-      this.perksCardAt = now + 30_000;
+    if (this.options.games?.isActive() || this.challenge.shown() || this.hookHideAt !== Infinity) {
+      this.perksCardAt = now + PERKS_RETRY_MS;
       return;
     }
     this.options.stage.perks?.(perksCard());

@@ -59,8 +59,25 @@ export type SupportCard = z.infer<typeof supportCardSchema>;
 export const perksCardSchema = z.object({
   title: z.string().max(60),
   rows: z.array(z.object({ diamonds: z.number().int().min(1), text: z.string().max(40) })).min(1).max(5),
+  /** What any gift gets, whatever its size (ADR-0041). */
+  every: z.string().max(60).optional(),
 });
 export type PerksCard = z.infer<typeof perksCardSchema>;
+
+/**
+ * The support ticker (ADR-0041): always on screen, a title and short lines
+ * the stage takes turns showing on its own. A `gift` line with `diamonds`
+ * is a gift power, shown with its price.
+ */
+export const TICKER_MAX = 12;
+export const tickerSchema = z.object({
+  title: z.string().max(24),
+  lines: z
+    .array(z.object({ way: z.enum(SUPPORT_WAYS), text: z.string().max(40), diamonds: z.number().int().min(1).optional() }))
+    .min(1)
+    .max(TICKER_MAX),
+});
+export type Ticker = z.infer<typeof tickerSchema>;
 
 /**
  * A short challenge for the whole room (ADR-0040): likes or messages to a
@@ -175,8 +192,10 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   }),
   /** The "how to support the show" card, in the ranking card's place for a moment, or null to put the rankings back (ADR-0032). */
   z.object({ v, t: z.literal("support"), card: supportCardSchema.nullable() }),
-  /** The gift powers on offer, in the ranking card's place for a moment, or null to put the rankings back (ADR-0039). */
+  /** What each gift unlocks, big under the character for a moment, or null to take it down (ADR-0039, ADR-0041). */
   z.object({ v, t: z.literal("perks"), card: perksCardSchema.nullable() }),
+  /** The always-on support ticker, or null to take it down (ADR-0041). */
+  z.object({ v, t: z.literal("ticker"), ticker: tickerSchema.nullable() }),
   /** Who's the "dono da live" right now and for how much longer (relative to receipt), or null when nobody is (ADR-0039). */
   z.object({ v, t: z.literal("boss"), boss: z.object({ name: z.string().max(40), leftMs: z.number().min(0) }).nullable() }),
   /** A challenge for the whole room or a raffle, with its live count, or null to take it down (ADR-0040). */

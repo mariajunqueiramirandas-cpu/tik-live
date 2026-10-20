@@ -239,15 +239,31 @@ after `hello` to a stage that connects while it's up.
 #### `perks`
 
 ```json
-{ "v": 1, "t": "perks", "card": { "title": "PODERES DO PRESENTE", "rows": [{ "diamonds": 5, "text": "fura-fila no chat" }, { "diamonds": 30, "text": "escolhe o próximo jogo" }, { "diamonds": 99, "text": "ganha um hino da IA" }, { "diamonds": 199, "text": "dono da live por 5 min" }] } }
+{ "v": 1, "t": "perks", "card": { "title": "O QUE SEU PRESENTE FAZ", "rows": [{ "diamonds": 5, "text": "fura-fila no chat" }, { "diamonds": 30, "text": "escolhe o próximo jogo" }, { "diamonds": 99, "text": "ganha um hino da IA" }, { "diamonds": 199, "text": "dono da live por 5 min" }], "every": "Todo presente: seu nome na live + Top Doadores" } }
 ```
 
 The gift powers on offer ([ADR-0039](adr/0039-gift-powers.md)): what a gift
 of so many diamonds unlocks, cheapest first, up to five rows of about 22
-characters. The stage's ranking card shows it for about 18 seconds every
-few minutes; it shares the slot with `support` (the latest wins) and an
-open `vote` stays on top. `"card": null` puts the rankings back. Sent right
-after `hello` to a stage that connects while it's up.
+characters, and optionally what `every` gift gets. The stage shows it as a
+big showcase under the character, in the challenge's place
+([ADR-0041](adr/0041-support-ticker-and-gift-showcase.md)), for about 15
+seconds every few minutes; it steps aside for a game, a `challenge` or a
+`hook`. `"card": null` takes it down. Sent right after `hello` to a stage
+that connects while it's up.
+
+#### `ticker`
+
+```json
+{ "v": 1, "t": "ticker", "ticker": { "title": "APOIE A LIVE", "lines": [{ "way": "gift", "text": "Presentes pagam as contas da IA" }, { "way": "like", "text": "Toque na tela pra curtir" }, { "way": "gift", "text": "escolhe o próximo jogo", "diamonds": 30 }] } }
+```
+
+The always-on support ticker ([ADR-0041](adr/0041-support-ticker-and-gift-showcase.md)):
+a title and up to twelve lines, each with a `way` (`like`, `follow`,
+`share` or `gift`) that picks its icon; a `gift` line with `diamonds` is
+a gift power, shown with its price. The stage shows it top right under the
+goals and turns to the next line every four seconds on its own, so it's
+sent once, and again only when what it says changes. `"ticker": null`
+takes it down. Sent right after `hello` to a stage that connects.
 
 #### `boss`
 
