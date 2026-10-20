@@ -26,6 +26,8 @@ export interface TurnPlan {
   game?: string;
   /** The piece of music playing on stage, if any. */
   music?: string;
+  /** How the segment that's starting does on this channel, when its record says something (ADR-0044). */
+  insight?: string;
   /** Chat is busy: answer in one or two sentences so the host keeps up. */
   brief?: boolean;
   /** What this turn is for, when the kind alone doesn't say (a milestone, a game moment, a filler idea). */
@@ -226,6 +228,7 @@ export function buildBrief(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, op
   lines.push(`Segment: "${segment.title}"${plan.kind !== "segment_change" && plan.segmentLeftMin !== undefined ? `, ${plan.segmentLeftMin} min left` : ""}.`);
   if (plan.game) lines.push(`Game:\n${plan.game}`);
   if (plan.music) lines.push(`Music: ${plan.music}`);
+  if (plan.insight) lines.push(`Track record: ${plan.insight}`);
   if (options.stillSpeaking) lines.push("Your previous line is still playing; this reply comes right after it, so don't repeat it.");
   lines.push(`Now: ${task(plan, refs, options)}`);
   if (plan.also) lines.push(`Also: ${plan.also}`);

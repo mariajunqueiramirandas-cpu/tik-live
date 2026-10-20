@@ -4,6 +4,7 @@ import {
   clip,
   GAME_KINDS,
   GAME_LABELS,
+  isAutoSegment,
   LEADER_BOARDS,
   LEADERS_MAX,
   UP_NEXT_MAX,
@@ -20,6 +21,8 @@ import {
   type PerksCard,
   runOfShow,
   type Segment,
+  segmentKey,
+  type ShowFocus,
   type Sound,
   type SupportCard,
   type Ticker,
@@ -37,6 +40,7 @@ import { BOSS_MS, GiftPerks, includes, perksCard, perksSummary, VIP_MS, type Unl
 import { supportTicker } from "../ticker";
 import { levelOf } from "./fans";
 import { GIFT_WINDOW_MS, LIKE_WINDOW_MS, RollingBoard } from "../leaderboards";
+import { SegmentMeter, type SegmentScores } from "../segment-scores";
 import type { CueMeta, SpeechPipeline } from "../voice/pipeline";
 import type { Chronicler } from "./chronicle";
 import type { RoomEntry } from "./conversation";
@@ -144,6 +148,8 @@ export interface DirectorOptions {
   giftAsks?: () => GiftAsks;
   /** Varies the automatic run of show between streams (ADR-0035); random when unset. */
   showSeed?: number;
+  /** Which segments pull viewers, likes and gifts on this channel (ADR-0044): learned from, and leaned toward. */
+  segmentScores?: SegmentScores;
   /** Gift powers are on (the channel's safety setting, ADR-0039); on when unset. */
   giftPerks?: () => boolean;
   /** Draws raffle winners and the games a viewer picks from; Math.random when unset. */
@@ -169,6 +175,20 @@ const REACT_SUPPORT = 6;
  * another forever.
  */
 const CHAT_STREAK_TURNS = 4;
+/**
+ * Live focus (ADR-0044): a segment doing this much better than the rest of
+ * the stream (log2 lift: about +50%) runs longer; an automatic one doing
+ * this much worse (about -40%) wraps up early. Judged once a segment has
+ * run this share of its time (and at least JUDGE_MIN_MS).
+ */
+const HOT_SEGMENT = 0.6;
+const COLD_SEGMENT = -0.75;
+const JUDGE_AFTER = 0.6;
+const JUDGE_MIN_MS = 3 * 60_000;
+/** A strong segment is extended this close to its end, by half its length, at most this much. */
+const EXTEND_LEAD_MS = 30_000;
+const EXTEND_MAX_MS = 5 * 60_000;
+
 /** A segment this late moves on even while chat keeps the host busy. */
 const SEGMENT_OVERDUE_MS = 30_000;
 /**
@@ -429,6 +449,13 @@ export class Director {
   /** The kind drawn for each "random" segment, kept until the show moves on so the preview and the game agree. */
   private readonly segmentDraws = new Map<number, GameKind>();
   private segmentStartedAt: number;
+  /** Time added to (or, cut early, taken from) the segment on air because of how it's doing (ADR-0044). */
+  private segmentExtraMs = 0;
+  private segmentJudged = false;
+  /** How the stream and the segment on air are doing: viewers, likes, diamonds (ADR-0044). */
+  private readonly meter = new SegmentMeter();
+  /** The automatic run of show leans toward what works on the channel. */
+  private readonly focus: ShowFocus = (key) => this.options.segmentScores?.weight(key) ?? 1;
   private forcedSegment: number | undefined;
   private startedAt: number;
   private readonly counters = { likes: 0, diamonds: 0, messages: 0, follows: 0, shares: 0, joins: 0, gifts: 0 };
@@ -522,7 +549,7 @@ export class Director {
     this.challenge = new RoomChallenge(this.random);
     this.persona = options.persona;
     this.showSeed = options.showSeed ?? Math.floor(Math.random() * 2 ** 31);
-    this.show = runOfShow(this.persona, 0, this.showSeed);
+    this.show = runOfShow(this.persona, 0, this.showSeed, this.focus);
     this.startedAt = this.now();
     this.segmentStartedAt = this.startedAt;
     this.lastEventAt = this.startedAt;
@@ -577,7 +604,7 @@ export class Director {
     const wasAuto = this.persona.autoShow === true;
     const isAuto = persona.autoShow === true;
     // The automatic plan doesn't depend on the persona: it stays as it is until the loop ends.
-    const show = isAuto ? (wasAuto ? this.show : autoShow(this.loops, this.showSeed)) : persona.segments;
+    const show = isAuto ? (wasAuto ? this.show : autoShow(this.loops, this.showSeed, this.focus)) : persona.segments;
     if (wasAuto !== isAuto || show.length !== this.show.length || persona.finalVote === false) {
       this.vote = null;
       this.finalGame = null;
@@ -619,7 +646,9 @@ export class Director {
       this.segmentIndex = index;
     } else {
       this.segmentIndex = 0;
-      this.segmentStartedAt = this.now();
+      this.restartSegmentClock(this.now());
+      // The segment that was on air is gone: what it did so far isn't a full take of anything.
+      this.meter.startSegment(this.now());
       this.options.stage.segment(this.segment());
       this.options.hooks?.onSegment?.(this.segment());
     }
@@ -665,6 +694,7 @@ export class Director {
       this.voteCue = null;
       this.finalGame = null;
       this.loops = 0;
+      this.meter.endStream();
       this.clearShowExtras();
       this.publishHud(this.now(), true);
       this.options.hooks?.onEvent?.(event, null);
@@ -687,6 +717,7 @@ export class Director {
       case "viewers":
         this.viewers = event.count;
         this.peakViewers = Math.max(this.peakViewers, event.count);
+        this.meter.setViewers(event.count, this.now());
         this.options.stage.stats({ viewers: this.viewers, likes: this.counters.likes });
         this.options.hooks?.onEvent?.(event, null);
         return;
@@ -710,6 +741,7 @@ export class Director {
           this.sound("levelup");
         }
         this.boards.likes.add(event.viewer.id, this.boardName(event.viewer), event.count);
+        this.meter.like(event.count);
         // Likes pull the rope in a tug of war (ADR-0038), and count in a like challenge (ADR-0040).
         this.options.games?.handleLike(event);
         this.challenge.like(event.count);
@@ -723,6 +755,7 @@ export class Director {
         this.counters.gifts += 1;
         this.stirred(this.now());
         this.counters.diamonds += event.diamonds;
+        this.meter.gift(event.diamonds);
         const top = this.boards.gifts.top(1)[0]?.name;
         this.boards.gifts.add(event.viewer.id, this.boardName(event.viewer), event.diamonds);
         tags.push(...this.crown(top), ...this.unlockPerks(event));
@@ -878,7 +911,7 @@ export class Director {
     const games = this.options.games;
     const ranking = this.options.ranking;
     const revealing = ranking?.isRevealing() === true;
-    const segmentEndsAt = this.segmentStartedAt + segment.minutes * 60_000;
+    const segmentEndsAt = this.segmentEndsAt();
     let at = Math.max(now, segmentEndsAt);
     const current = this.segmentGame(this.segmentIndex);
     if (current && games && !games.isActive() && !revealing) {
@@ -939,6 +972,7 @@ export class Director {
   /** Starts counting a new stream session (totals reset; viewer memory persists). */
   resetSession(): void {
     this.startedAt = this.now();
+    this.meter.startStream(this.startedAt, this.viewers);
     for (const key of Object.keys(this.counters) as Array<keyof typeof this.counters>) this.counters[key] = 0;
     this.peakViewers = this.viewers;
     this.nextMilestone = LIKE_MILESTONES[0] as number;
@@ -960,7 +994,7 @@ export class Director {
       reactOnly: this.reactOnly(),
       turnInFlight: this.engine.inFlight,
       segment,
-      segmentEndsInSec: Math.max(0, Math.round((this.segmentStartedAt + segment.minutes * 60_000 - this.now()) / 1000)),
+      segmentEndsInSec: Math.max(0, Math.round((this.segmentEndsAt() - this.now()) / 1000)),
       stats: this.stats(),
       recentLines: this.recentLines,
       host: this.options.host.name,
@@ -982,6 +1016,7 @@ export class Director {
     this.maybeShowPerks(now);
     this.maybeShowSupport(now);
     this.maybeFlourish(now);
+    this.maybeRefocus(now);
     if (now >= this.hookHideAt) this.hideHook();
     this.publishTicker();
     this.publishHud(now);
@@ -1036,7 +1071,7 @@ export class Director {
       [games?.hostContext() ?? ranking?.hostContext(), this.voteContext(), this.pickContext(now), this.challenge.describe(now), this.bossContext(now)].filter(Boolean).join("\n") ||
       undefined;
     const segment = this.segment();
-    const segmentEndsAt = this.segmentStartedAt + segment.minutes * 60_000;
+    const segmentEndsAt = this.segmentEndsAt();
     const base = {
       segment,
       stats: { viewers: this.viewers, likes: this.counters.likes, uptimeMinutes: this.stats().uptimeMinutes },
@@ -1057,7 +1092,8 @@ export class Director {
       if (this.perksOn()) this.perksCardAt = now + PERKS_PACE[this.giftAsks()].first;
       // Whoever woke the show up gets greeted in the opening, not answered again right after it.
       const focus = this.takeFocus();
-      return { ...base, kind: "opening", items: focus.items };
+      const insight = this.insight(this.segmentIndex);
+      return { ...base, kind: "opening", items: focus.items, ...(insight ? { insight } : {}) };
     }
 
     // Game moments are time-bound (a question just went up, an answer is being revealed, a podium place).
@@ -1139,7 +1175,8 @@ export class Director {
     if (segmentDue && speech.isIdle()) return this.advance(now, base);
     // A show with one segment loops it: each time it runs out is the end of a loop.
     if (this.show.length === 1 && !gameHolds && now >= segmentEndsAt && speech.isIdle()) {
-      this.segmentStartedAt = now;
+      this.learn(now, this.segmentIndex);
+      this.restartSegmentClock(now);
       const podium = this.endLoop(now, base);
       if (podium) return podium;
     }
@@ -1613,21 +1650,23 @@ export class Director {
     const nextIndex = this.forcedSegment ?? (this.segmentIndex + 1) % this.show.length;
     this.forcedSegment = undefined;
     const previous = this.segment();
+    this.learn(now, this.segmentIndex);
     if (this.vote) this.closeVote(nextIndex === this.show.length - 1, now);
     if (nextIndex === 0) {
       this.loops += 1;
       this.finalGame = null;
-      // A new loop of the automatic run of show is planned afresh.
-      if (this.persona.autoShow) this.show = autoShow(this.loops, this.showSeed);
+      // A new loop of the automatic run of show is planned afresh, leaning toward what worked.
+      if (this.persona.autoShow) this.show = autoShow(this.loops, this.showSeed, this.focus);
     }
     const nextSegment = this.show[nextIndex] as Segment;
     this.segmentIndex = nextIndex;
     this.segmentDraws.clear();
-    this.segmentStartedAt = now;
+    this.restartSegmentClock(now);
     this.options.stage.segment(nextSegment);
     this.options.hooks?.onSegment?.(nextSegment);
     this.remember({ at: now, kind: "show", text: `New segment: ${nextSegment.title}` });
-    return { ...base, segment: previous, kind: "segment_change", items: [], nextSegment };
+    const insight = this.insight(nextIndex);
+    return { ...base, segment: previous, kind: "segment_change", items: [], nextSegment, ...(insight ? { insight } : {}) };
   }
 
   /**
@@ -1735,6 +1774,75 @@ export class Director {
     return true;
   }
 
+  /** When the segment on air ends: its minutes, plus or minus what live focus changed (ADR-0044). */
+  private segmentEndsAt(): number {
+    return this.segmentStartedAt + this.segment().minutes * 60_000 + this.segmentExtraMs;
+  }
+
+  private restartSegmentClock(now: number): void {
+    this.segmentStartedAt = now;
+    this.segmentExtraMs = 0;
+    this.segmentJudged = false;
+  }
+
+  /** The key a segment's record is kept under: for a game segment, the game it actually played. */
+  private keyOf(index: number): string | undefined {
+    const segment = this.show[index];
+    return segment ? segmentKey(segment, this.segmentGame(index)?.kind) : undefined;
+  }
+
+  /** The segment at `index` just ended: folds what it did into the channel's record (ADR-0044). */
+  private learn(now: number, index: number): void {
+    const ended = this.meter.endSegment(now);
+    const scores = this.options.segmentScores;
+    const segment = this.show[index];
+    const key = this.keyOf(index);
+    if (!ended || !scores || !segment || !key) return;
+    const record = scores.record(key, segment.title, ended.take.ms / 60_000, ended.score);
+    this.options.log?.debug(`segment "${segment.title}" scored ${ended.score.score.toFixed(2)} (average ${record.score.toFixed(2)} over ${record.plays} plays)`);
+  }
+
+  /** What the segment at `index` is known for on this channel, for the host's brief. */
+  private insight(index: number): string | undefined {
+    const key = this.keyOf(index);
+    return key ? this.options.segmentScores?.describe(key) : undefined;
+  }
+
+  /**
+   * Live focus (ADR-0044): once a segment has run most of its time, one that
+   * pulls clearly more than the rest of the stream gets more time, and an
+   * automatic one that's losing the room wraps up early. A creator's own
+   * segments are only ever extended: their run of show is theirs.
+   */
+  private maybeRefocus(now: number): void {
+    if (this.segmentJudged || !this.opened || this.show.length < 2 || this.forcedSegment !== undefined) return;
+    const segment = this.segment();
+    const elapsed = now - this.segmentStartedAt;
+    if (elapsed < Math.max(JUDGE_MIN_MS, segment.minutes * 60_000 * JUDGE_AFTER)) return;
+    const live = this.meter.current(now, JUDGE_MIN_MS);
+    const endsAt = this.segmentEndsAt();
+    const closing = now >= endsAt - EXTEND_LEAD_MS;
+    if (live && live.score >= HOT_SEGMENT && closing) {
+      const extra = Math.min(EXTEND_MAX_MS, segment.minutes * 30_000);
+      this.segmentExtraMs += extra;
+      this.segmentJudged = true;
+      if (this.vote) this.vote.closesAt += extra;
+      this.remember({ at: now, kind: "show", text: `"${segment.title}" is pulling more than the rest of the show right now, so it runs about ${Math.round(extra / 60_000)} more minutes. Keep doing what's working.` });
+      this.options.log?.info(`segment "${segment.title}" is doing well (${live.score.toFixed(2)}): extended by ${Math.round(extra / 1000)} s`);
+      return;
+    }
+    // The segment chat votes in keeps time for the vote; an open vote runs to its end.
+    const votesHere = this.segmentIndex === this.show.length - 2 && this.persona.finalVote !== false;
+    const cutTo = now + (votesHere ? VOTE_LEAD_MS : 0);
+    if (live && live.score <= COLD_SEGMENT && isAutoSegment(segment) && !this.vote && cutTo < endsAt) {
+      this.segmentExtraMs -= endsAt - cutTo;
+      this.segmentJudged = true;
+      this.options.log?.info(`segment "${segment.title}" is losing the room (${live.score.toFixed(2)}): wrapping it up early`);
+      return;
+    }
+    if (closing) this.segmentJudged = true;
+  }
+
   /** The game a segment plays: its own, or for the last segment, the one chat voted for. */
   private segmentGame(index: number): GameConfig | undefined {
     const segments = this.show;
@@ -1761,7 +1869,7 @@ export class Director {
     const segments = this.show;
     if (this.vote || !this.opened || this.persona.finalVote === false || segments.length < 2) return;
     if (this.segmentIndex !== segments.length - 2 || this.finalGame) return;
-    const endsAt = this.segmentStartedAt + this.segment().minutes * 60_000;
+    const endsAt = this.segmentEndsAt();
     if (now < Math.max(this.segmentStartedAt + VOTE_MIN_DELAY_MS, endsAt - VOTE_LEAD_MS)) return;
     const ballot = new FinalVote(voteOptions(this.loops));
     this.vote = { ballot, closesAt: endsAt };
@@ -1897,7 +2005,7 @@ export class Director {
     // Not gated on a quiet room: on a busy stream it never is, and the game's cue gets its own turn.
     if (!games || !config || !this.opened || games.isActive() || this.options.ranking?.isRevealing() || this.reactOnly()) return;
     if (now - this.segmentStartedAt < SEGMENT_GAME_DELAY_MS || now - games.lastEndedAt() < GAME_BREAK_MS) return;
-    const left = this.segmentStartedAt + this.segment().minutes * 60_000 - now;
+    const left = this.segmentEndsAt() - now;
     if (left < MIN_GAME_WINDOW_MS) return;
     const started = games.start(config, "segment", this.chatSample());
     if (started.ok) this.options.log?.info(`starting the segment's game (${config.kind})`);

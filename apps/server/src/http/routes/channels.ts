@@ -25,7 +25,9 @@ import {
   type ChannelPatch,
   type ChannelRow,
 } from "../../repos/channels";
+import { loadSegmentScores } from "../../repos/segment-scores";
 import { getSession, listSamples, listSessions, listUtterances } from "../../repos/streams";
+import { SegmentScores } from "../../runtime/segment-scores";
 import { regulars, topSupporters, viewerCount } from "../../repos/viewers";
 import { toChannelDto } from "../dto";
 import type { AppEnv } from "../env";
@@ -265,6 +267,26 @@ export function channelRoutes(deps: AppDeps) {
         lastSeenAt: v.lastSeenAt.toISOString(),
       });
       return c.json({ remembered, supporters: supporters.map(view), regulars: regularViewers.map(view) });
+    })
+    .get("/:id/segments", valid("param", idParam), async (c) => {
+      const row = await owned(c.get("user").id, c.req.valid("param").id);
+      // Best first, as the show leans on them (ADR-0044). Lifts are log2: +1 is twice the stream's average.
+      const scores = new SegmentScores(await loadSegmentScores(deps.db, row.id));
+      return c.json({
+        segments: scores.ranked().map((s) => ({
+          key: s.key,
+          title: s.title,
+          kind: s.key.startsWith("game:") ? ("game" as const) : s.key.startsWith("talk:") ? ("talk" as const) : ("segment" as const),
+          plays: s.plays,
+          minutes: s.minutes,
+          score: s.score,
+          viewers: s.viewers,
+          likes: s.likes,
+          diamonds: s.diamonds,
+          focus: scores.weight(s.key),
+          lastPlayedAt: new Date(s.at).toISOString(),
+        })),
+      });
     });
 }
 

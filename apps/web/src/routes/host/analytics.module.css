@@ -28,6 +28,14 @@
   .dim {
     color: var(--haze);
   }
+  .up {
+    color: var(--glow);
+    font-weight: 650;
+  }
+  .down {
+    color: var(--alarm-strong);
+    font-weight: 650;
+  }
   .summary {
     max-width: 70ch;
     line-height: 1.5;

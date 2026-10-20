@@ -21,6 +21,7 @@ import type { Db } from "../db/client";
 import type { Logger } from "../log";
 import type { ChannelRow } from "../repos/channels";
 import { loadHostFacts, saveHostFacts } from "../repos/host-memory";
+import { loadSegmentScores, saveSegmentScores } from "../repos/segment-scores";
 import { latestSummary } from "../repos/streams";
 import { addUsage, channelCostOn, dayKey } from "../repos/usage";
 import { loadViewers, saveViewers, type ViewerRow } from "../repos/viewers";
@@ -36,6 +37,7 @@ import { LoopRanking } from "./games/ranking";
 import { ClaudeGameWriter } from "./games/writer";
 import { LatencyTracker } from "./latency";
 import { ClaudeModerator, SafetyGate } from "./safety/gate";
+import { SegmentScores } from "./segment-scores";
 import { sanitizeEvent } from "./sources/sanitize";
 import { SimulatorSource } from "./sources/simulator";
 import { TikTokSource } from "./sources/tiktok";
@@ -96,6 +98,7 @@ export class ChannelRuntime {
 
   private memory!: ViewerMemory;
   private hostFacts!: HostFacts;
+  private segmentScores!: SegmentScores;
   private triage!: Triage;
   private gate!: SafetyGate;
   private moderator: ClaudeModerator | null = null;
@@ -225,6 +228,18 @@ export class ChannelRuntime {
     this.recorder = new StreamRecorder(ctx.db, channel.id, channel.source, this.log, this.now);
     this.source = this.options.makeSource?.(channel) ?? this.defaultSource(channel);
     const simulated = this.source.name === "simulator";
+    // Which segments work on this channel (ADR-0044). A simulated audience reacts at random, so
+    // practice mode learns within the session but never writes over what real streams taught.
+    const scores = simulated
+      ? []
+      : await loadSegmentScores(ctx.db, channel.id).catch((err: unknown) => {
+          this.log.warn("could not load how the segments have been doing", err);
+          return [];
+        });
+    this.segmentScores = new SegmentScores(scores, {
+      ...(simulated ? {} : { persistence: { save: (all) => saveSegmentScores(ctx.db, channel.id, all, new Date(this.now())) } }),
+      now: this.now,
+    });
 
     this.director = new Director({
       persona: channel.persona,
@@ -239,6 +254,7 @@ export class ChannelRuntime {
       games: this.games,
       ranking: this.ranking,
       hostFacts: this.hostFacts,
+      segmentScores: this.segmentScores,
       ...(ai && this.host instanceof ClaudeHost
         ? {
             chronicler: new ClaudeChronicler({
@@ -307,6 +323,7 @@ export class ChannelRuntime {
     }
     await this.memory?.flush().catch((err) => this.log.warn("could not save viewer memory", err));
     await this.hostFacts?.flush().catch((err) => this.log.warn("could not save what the host said about itself", err));
+    await this.segmentScores?.flush().catch((err) => this.log.warn("could not save how the segments have been doing", err));
     await this.flushUsage().catch((err) => this.log.warn("could not save usage", err));
     this.setStatus("stopped", "");
     this.log.info(`host stopped (${reason})`);
@@ -649,6 +666,7 @@ export class ChannelRuntime {
     const tasks: Array<Promise<unknown>> = [
       this.memory.flush().catch((err) => this.log.warn("could not save viewer memory", err)),
       this.hostFacts.flush().catch((err) => this.log.warn("could not save what the host said about itself", err)),
+      this.segmentScores.flush().catch((err) => this.log.warn("could not save how the segments have been doing", err)),
       this.recorder.flush(this.director.stats()).catch(() => undefined),
     ];
     if (this.flushCount % USAGE_FLUSH_EVERY === 0) {

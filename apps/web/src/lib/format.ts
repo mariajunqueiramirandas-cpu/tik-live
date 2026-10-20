@@ -7,6 +7,13 @@ export function count(n: number): string {
   return n >= 10_000 ? compact.format(n) : whole.format(n);
 }
 
+const percent = new Intl.NumberFormat(LOCALE, { style: "percent", maximumFractionDigits: 0, signDisplay: "exceptZero" });
+
+/** A log2 lift as a change against the average: 1 → "+100%", -1 → "-50%", 0 → "0%". */
+export function lift(log2: number): string {
+  return percent.format(2 ** log2 - 1);
+}
+
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${count(n)} ${n === 1 ? one : many}`;
 }

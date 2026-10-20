@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import type { ChannelDto } from "@tik-live/shared";
+import { saveSegmentScores } from "../../src/repos/segment-scores";
 import { startTestServer, stageKeyFrom, type TestServer } from "../harness";
 
 let server: TestServer;
@@ -113,6 +114,7 @@ describe("tenancy (ADR-0016)", () => {
       ["PUT", `/api/channels/${mine.id}/broadcast`, { rtmpUrl: "rtmp://x.example.com/a" }],
       ["GET", `/api/channels/${mine.id}/sessions`],
       ["GET", `/api/channels/${mine.id}/audience`],
+      ["GET", `/api/channels/${mine.id}/segments`],
     ];
     for (const [method, path, json] of paths) {
       const res = await server.api(path, { method, user: "intruder", ...(json ? { json } : {}) });
@@ -124,6 +126,31 @@ describe("tenancy (ADR-0016)", () => {
 
     const still = await server.json(`/api/channels/${mine.id}`, { user: "owner" });
     expect(still.body.channel.name).toBe("My host");
+  });
+
+  it("lists the segments that work best first", async () => {
+    const channel = await createChannel("segments");
+    expect((await server.json(`/api/channels/${channel.id}/segments`, { user: "segments" })).body.segments).toEqual([]);
+    const at = Date.parse("2026-10-19T22:00:00Z");
+    const score = { minutes: 20, viewers: 0, likes: 0, diamonds: 0, at };
+    await saveSegmentScores(
+      server.deps.db,
+      channel.id,
+      [
+        { ...score, key: "talk:Resenha", title: "Resenha", plays: 4, score: -0.6 },
+        // A single great take ranks below a steady winner: one lucky night isn't a trend.
+        { ...score, key: "game:trivia", title: "Quiz da live", plays: 1, score: 1 },
+        { ...score, key: "segment:s1", title: "Abertura", plays: 6, score: 0.8, likes: 1.2 },
+      ],
+      new Date(at),
+    );
+    const res = await server.json(`/api/channels/${channel.id}/segments`, { user: "segments" });
+    expect(res.status).toBe(200);
+    expect(res.body.segments.map((s: { key: string }) => s.key)).toEqual(["segment:s1", "game:trivia", "talk:Resenha"]);
+    expect(res.body.segments[0]).toMatchObject({ title: "Abertura", kind: "segment", plays: 6, likes: 1.2, lastPlayedAt: "2026-10-19T22:00:00.000Z" });
+    expect(res.body.segments[0].focus).toBeGreaterThan(1);
+    expect(res.body.segments[2]).toMatchObject({ kind: "talk" });
+    expect(res.body.segments[2].focus).toBeLessThan(1);
   });
 
   it("treats malformed ids as not found", async () => {
