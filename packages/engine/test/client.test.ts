@@ -9,7 +9,7 @@ function setup() {
   const engine = new FakeEngine();
   const timers = new FakeTimers();
   const states: StageConnectionState[] = [];
-  let reloads = 0;
+  const reloads: boolean[] = [];
   const connection = connectStage({
     engine,
     url: "ws://localhost/ws/stage/key?role=program",
@@ -18,13 +18,13 @@ function setup() {
     random: () => 1,
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
-    reload: () => {
-      reloads += 1;
+    reload: (forced) => {
+      reloads.push(forced);
     },
     onState: (s) => states.push(s),
   });
   const socket = () => FakeSocket.instances.at(-1) as FakeSocket;
-  return { engine, timers, states, connection, socket, reloads: () => reloads };
+  return { engine, timers, states, connection, socket, reloads: () => reloads.length, forcedReloads: () => reloads.filter(Boolean).length };
 }
 
 beforeEach(() => {
@@ -130,6 +130,16 @@ describe("connectStage", () => {
     expect(reloads()).toBe(1);
     socket().receive({ v: 2, t: "hello", serverTime: 1, name: "B", look, disclosure: "x", newThing: 1 });
     expect(reloads()).toBe(2);
+    expect(engine.applied).toEqual([]);
+  });
+
+  it("reloads past the guard when the owner asks from the dashboard", () => {
+    const { socket, reloads, forcedReloads, engine } = setup();
+    socket().open();
+    socket().receive({ v: 1, t: "hello", serverTime: 1, name: "B", look, disclosure: "x", reload: true });
+    socket().receive({ v: 1, t: "reload" });
+    expect(reloads()).toBe(2);
+    expect(forcedReloads()).toBe(1);
     expect(engine.applied).toEqual([]);
   });
 

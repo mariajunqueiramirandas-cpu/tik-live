@@ -129,6 +129,24 @@ test("the stage page renders and connects", async ({ page, request }) => {
   expect(problems).toEqual([]);
 });
 
+test("the studio reloads the stage in OBS", async ({ page, context, request }) => {
+  const created = await request.post("/api/channels", { data: { name: "Recarregar" }, headers: { origin: "http://localhost:8099" } });
+  const { channel } = (await created.json()) as { channel: { id: string; stageUrl: string } };
+  const stage = await context.newPage();
+  await stage.goto(channel.stageUrl);
+  await expect(stage.locator("#stage")).toBeVisible();
+
+  await page.goto(`/app/hosts/${channel.id}`);
+  const reload = page.getByRole("button", { name: "Recarregar palco no OBS" });
+  await expect(reload).toBeEnabled();
+  const reloaded = stage.waitForEvent("load");
+  await reload.click();
+  await expect(page.getByText("Palco recarregado no OBS")).toBeVisible();
+  await reloaded;
+  await expect(stage.locator("#stage")).toBeVisible();
+  await stage.close();
+});
+
 test("unknown stage links explain themselves", async ({ request }) => {
   const res = await request.get("/s/not-a-real-key");
   expect(res.status()).toBe(404);
