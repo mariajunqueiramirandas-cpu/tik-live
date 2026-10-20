@@ -32,7 +32,7 @@ const TALK: ReadonlyArray<{ title: string; minutes: number; prompt: string }> = 
   {
     title: "Tribunal do chat",
     minutes: 6,
-    prompt: "Peça pra alguém do chat confessar uma mania ou treta do dia a dia e julgue como um juiz dramático: culpado ou inocente, com uma sentença engraçada. Depois peça pro chat dizer se concorda com o veredito.",
+    prompt: "Convide quem quiser no chat a confessar uma mania boba ou treta leve do dia a dia e julgue como um juiz dramático: culpado ou inocente, com uma sentença engraçada. Depois peça pro chat dizer se concorda com o veredito. É brincadeira de quem se oferece: nunca cobre uma confissão de alguém pelo nome, e quando ninguém confessar, julgue uma mania que você inventar.",
   },
   {
     title: "Red flag ou green flag",

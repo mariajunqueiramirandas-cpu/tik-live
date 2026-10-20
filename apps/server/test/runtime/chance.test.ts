@@ -197,6 +197,19 @@ describe("party games in the GameMaster", () => {
     expect(games.takeCue()?.note).toContain("won the race");
   });
 
+  it("plays every round of a generated game, not just the first", () => {
+    for (const kind of ["race", "wheel", "tug", "potato"] as const) {
+      const { clock, games } = setup();
+      games.start({ kind, rounds: 3 }, "studio");
+      for (let t = 0; t < 180_000 && (games.status()?.round ?? 0) < 2; t += 250) {
+        clock.advance(250);
+        games.tick(true);
+        while (games.takeCue()) {}
+      }
+      expect(games.status()?.round).toBe(2);
+    }
+  });
+
   it("spins the wheel after the bets and pays the color it stops on", () => {
     const { clock, games, last, ranking } = setup(9);
     games.start({ kind: "wheel", rounds: 1 }, "studio");

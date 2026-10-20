@@ -732,7 +732,8 @@ export class GameMaster {
 
   private hasNextRound(game: ActiveGame): boolean {
     const kind = game.config.kind;
-    return kind === "number" || kind === "math" || game.index < game.queue.length;
+    // Generated kinds make each round as it opens; their queue stays empty.
+    return isGenerated(kind) || game.index < game.queue.length;
   }
 
   private openRound(game: ActiveGame): void {
