@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import s from "./line-chart.module.css";
 
 export interface Point {
@@ -22,6 +22,7 @@ export function LineChart({ points, label, formatX, formatY, height = 220 }: { p
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(600);
   const [hover, setHover] = useState<number | null>(null);
+  const fade = `chart-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   useEffect(() => {
     const el = ref.current;
@@ -76,7 +77,13 @@ export function LineChart({ points, label, formatX, formatY, height = 220 }: { p
             {formatX(t)}
           </text>
         ))}
-        <path d={area} className={s.area} />
+        <defs>
+          <linearGradient id={fade} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="var(--glow)" stopOpacity="0.2" />
+            <stop offset="1" stopColor="var(--glow)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${fade})`} />
         <path d={path} className={s.line} />
         {active && (
           <g>

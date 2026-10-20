@@ -8,20 +8,24 @@
     align-items: center;
     justify-content: center;
     gap: var(--s-2);
+    --shine: var(--edge);
     min-height: 40px;
     padding: 0 var(--s-4);
     border: 1px solid var(--border);
     border-radius: var(--r-control);
     background: var(--bg);
+    box-shadow: var(--shine);
     color: var(--fg);
     font-weight: 650;
     font-size: var(--t-15);
+    letter-spacing: -0.005em;
     line-height: 1;
     white-space: nowrap;
     text-decoration: none;
     transition:
       background var(--dur-fast) var(--ease-out),
       border-color var(--dur-fast) var(--ease-out),
+      box-shadow var(--dur) var(--ease-out),
       transform var(--dur-fast) var(--ease-out);
     user-select: none;
   }
@@ -33,12 +37,20 @@
   }
   .button:focus-visible {
     outline: none;
-    box-shadow: var(--focus);
+    box-shadow: var(--shine), var(--focus);
   }
   .button:disabled,
   .button[aria-disabled="true"] {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  /* A disabled call to action goes quiet instead of turning muddy. */
+  .primary:disabled,
+  .danger:disabled {
+    --bg: var(--reef);
+    --fg: var(--mist);
+    --shine: none;
+    opacity: 1;
   }
   .button svg {
     width: 18px;
@@ -46,26 +58,34 @@
     flex: none;
   }
 
+  /* Lit from inside: the one cyan thing that says "do this". */
   .primary {
     --bg: var(--glow);
     --fg: var(--glow-ink);
     --border: transparent;
+    --shine: inset 0 1px 0 rgb(255 255 255 / 0.55), inset 0 -2px 0 rgb(6 42 48 / 0.18), 0 0 0 0 rgb(124 245 255 / 0);
+    font-weight: 700;
   }
   .primary:hover:not(:disabled) {
-    --bg: #a6f8ff;
+    --bg: var(--glow-strong);
+    --shine: inset 0 1px 0 rgb(255 255 255 / 0.6), inset 0 -2px 0 rgb(6 42 48 / 0.18), 0 6px 24px -6px rgb(124 245 255 / 0.55);
   }
   .danger {
     --bg: var(--alarm);
     --fg: var(--alarm-ink);
     --border: transparent;
+    --shine: inset 0 1px 0 rgb(255 255 255 / 0.4), inset 0 -2px 0 rgb(43 6 6 / 0.18);
+    font-weight: 700;
   }
   .danger:hover:not(:disabled) {
-    --bg: #ff8a8a;
+    --bg: var(--alarm-strong);
+    --shine: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 -2px 0 rgb(43 6 6 / 0.18), 0 6px 24px -6px rgb(255 107 107 / 0.55);
   }
   .quietDanger {
     --bg: transparent;
     --fg: var(--alarm);
-    --border: rgb(255 107 107 / 0.4);
+    --border: rgb(255 107 107 / 0.35);
+    --shine: none;
   }
   .quietDanger:hover:not(:disabled) {
     --bg: var(--alarm-soft);
@@ -74,15 +94,17 @@
     --bg: transparent;
     --border: transparent;
     --fg: var(--haze);
+    --shine: none;
   }
   .ghost:hover:not(:disabled) {
-    --bg: var(--shelf);
+    --bg: var(--reef);
     --fg: var(--ink);
   }
   .sm {
     min-height: 32px;
     padding: 0 var(--s-3);
-    font-size: var(--t-12);
+    border-radius: 8px;
+    font-size: var(--t-13);
     gap: 6px;
   }
   .sm svg {
@@ -92,8 +114,12 @@
   .lg {
     min-height: 52px;
     padding: 0 var(--s-6);
-    font-size: var(--t-19);
-    border-radius: 12px;
+    font-size: var(--t-17);
+    border-radius: 14px;
+  }
+  .lg svg {
+    width: 20px;
+    height: 20px;
   }
   .icon {
     padding: 0;
@@ -126,7 +152,7 @@
     min-width: 0;
   }
   .label {
-    font-weight: 650;
+    font-weight: 600;
     color: var(--ink);
   }
   .labelRow {
@@ -138,40 +164,43 @@
   .optional {
     color: var(--mist);
     font-weight: 400;
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .hint {
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     line-height: 1.45;
     max-width: 68ch;
   }
   .error {
     color: var(--alarm);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     font-weight: 600;
   }
   .counter {
     color: var(--mist);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
 
   .input {
     width: 100%;
-    min-height: 40px;
-    padding: 9px var(--s-3);
-    border: 1px solid var(--hairline);
+    min-height: 42px;
+    padding: 10px var(--s-3);
+    border: 1px solid var(--hairline-strong);
     border-radius: var(--r-control);
-    background: var(--trench);
+    background: var(--abyss);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
     color: var(--ink);
-    line-height: 1.4;
-    transition: border-color var(--dur-fast) var(--ease-out);
+    line-height: 1.45;
+    transition:
+      border-color var(--dur-fast) var(--ease-out),
+      box-shadow var(--dur-fast) var(--ease-out);
   }
   .input::placeholder {
     color: var(--mist);
   }
   .input:hover {
-    border-color: var(--hairline-strong);
+    border-color: rgb(196 186 255 / 0.26);
   }
   .input:focus {
     outline: none;
@@ -193,7 +222,7 @@
   select.input {
     appearance: none;
     padding-right: 36px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23A397D6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23ADA8C6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 12px center;
   }
@@ -205,10 +234,10 @@
     display: grid;
     place-items: center;
     padding: 0 var(--s-3);
-    border: 1px solid var(--hairline);
+    border: 1px solid var(--hairline-strong);
     border-right: 0;
     border-radius: var(--r-control) 0 0 var(--r-control);
-    background: var(--trench);
+    background: var(--shelf);
     color: var(--haze);
   }
   .prefixed .input {
@@ -229,7 +258,7 @@
     height: 26px;
     border: 1px solid var(--hairline-strong);
     border-radius: var(--r-pill);
-    background: var(--trench);
+    background: var(--lift);
     transition: background var(--dur) var(--ease-out);
   }
   .switch[data-state="checked"] {
@@ -259,16 +288,17 @@
     display: inline-flex;
     padding: 3px;
     gap: 2px;
-    border-radius: 10px;
-    background: var(--trench);
-    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    background: var(--abyss);
+    border: 1px solid var(--hairline-strong);
     flex-wrap: wrap;
+    justify-self: start;
   }
   .segment {
     min-height: 34px;
     padding: 0 var(--s-4);
     border: 0;
-    border-radius: 7px;
+    border-radius: 9px;
     background: transparent;
     color: var(--haze);
     font-weight: 600;
@@ -280,9 +310,9 @@
     color: var(--ink);
   }
   .segment[data-state="on"] {
-    background: var(--shelf);
+    background: var(--lift);
     color: var(--ink);
-    box-shadow: inset 0 0 0 1px var(--hairline-strong);
+    box-shadow: var(--edge), 0 1px 3px rgb(0 0 0 / 0.35);
   }
   .segment:focus-visible {
     outline: none;
@@ -304,8 +334,7 @@
     flex: 1;
     height: 6px;
     border-radius: 99px;
-    background: var(--trench);
-    box-shadow: inset 0 0 0 1px var(--hairline);
+    background: var(--lift);
   }
   .range {
     position: absolute;
@@ -320,6 +349,11 @@
     border-radius: 50%;
     background: var(--ink);
     border: 3px solid var(--glow);
+    box-shadow: 0 0 0 4px var(--glow-soft);
+    transition: box-shadow var(--dur-fast) var(--ease-out);
+  }
+  .sliderThumb:hover {
+    box-shadow: 0 0 0 6px var(--glow-soft);
   }
   .sliderThumb:focus-visible {
     outline: none;
@@ -333,9 +367,9 @@
     gap: 6px;
     padding: 6px;
     min-height: 44px;
-    border: 1px solid var(--hairline);
+    border: 1px solid var(--hairline-strong);
     border-radius: var(--r-control);
-    background: var(--trench);
+    background: var(--abyss);
     cursor: text;
   }
   .chips:focus-within {
@@ -348,9 +382,9 @@
     gap: 4px;
     max-width: 100%;
     padding: 3px 4px 3px 10px;
-    border-radius: 6px;
-    background: var(--shelf);
-    box-shadow: inset 0 0 0 1px var(--hairline-strong);
+    border-radius: 7px;
+    background: var(--reef);
+    box-shadow: var(--edge);
     font-size: var(--t-15);
     line-height: 1.35;
   }

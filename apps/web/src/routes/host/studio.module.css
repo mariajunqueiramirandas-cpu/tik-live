@@ -9,7 +9,7 @@
   }
   .grid {
     display: grid;
-    grid-template-columns: minmax(200px, 250px) minmax(320px, 1fr) minmax(260px, 300px);
+    grid-template-columns: minmax(220px, 290px) minmax(320px, 1fr) minmax(280px, 320px);
     gap: var(--s-5);
     align-items: start;
   }
@@ -17,8 +17,22 @@
     position: sticky;
     top: var(--s-4);
   }
+  /* The stage monitor sits in a bezel. On air, the bezel takes the
+     character's light: the one bold thing in the room. */
   .monitor {
     position: relative;
+    padding: 6px;
+    border-radius: calc(var(--r-stage) + 6px);
+    background: var(--trench);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    transition: box-shadow var(--dur-slow) var(--ease-out);
+  }
+  .studio[data-on-air] .monitor {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--host-a) 45%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--host-b) 18%, transparent),
+      0 30px 80px -30px color-mix(in srgb, var(--host-a) 55%, transparent),
+      0 0 120px -40px color-mix(in srgb, var(--host-b) 60%, transparent);
   }
   .reloadObs {
     margin-top: var(--s-2);
@@ -26,10 +40,11 @@
   }
   .listen {
     position: absolute;
-    top: 10px;
-    right: 10px;
-    background: rgb(11 4 32 / 0.7);
-    backdrop-filter: blur(6px);
+    top: 16px;
+    right: 16px;
+    background: rgb(10 9 18 / 0.72);
+    backdrop-filter: blur(8px);
+    box-shadow: inset 0 0 0 1px var(--hairline-strong);
   }
 
   .paneHead {
@@ -41,11 +56,12 @@
   .paneHead h2 {
     font-size: var(--t-15);
     font-family: var(--font-ui);
-    font-weight: 700;
+    font-weight: 650;
+    letter-spacing: 0;
   }
   .paneHint {
-    color: var(--haze);
-    font-size: var(--t-12);
+    color: var(--mist);
+    font-size: var(--t-13);
   }
   .dim {
     color: var(--haze);
@@ -55,19 +71,21 @@
   .health {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--s-2) var(--s-5);
-    padding: var(--s-3) var(--s-4);
-    border-radius: var(--r-control);
-    background: var(--trench);
-    box-shadow: inset 0 0 0 1px var(--hairline);
+    gap: var(--s-2);
   }
   .healthItem {
     display: flex;
     align-items: center;
     gap: 7px;
-    font-size: var(--t-12);
+    min-height: 30px;
+    padding: 0 var(--s-3);
+    border-radius: var(--r-pill);
+    background: var(--trench);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+    font-size: var(--t-13);
   }
   .healthDot {
+    flex: none;
     width: 7px;
     height: 7px;
     border-radius: 50%;
@@ -77,19 +95,26 @@
     color: var(--haze);
   }
   .healthValue {
-    font-weight: 700;
-  }
-  .healthDetail {
-    color: var(--haze);
+    font-weight: 650;
   }
   .ok .healthDot {
     background: var(--glow);
+    box-shadow: 0 0 8px var(--glow);
   }
   .warn .healthDot {
     background: var(--offering);
+    box-shadow: 0 0 8px var(--offering);
+  }
+  .warn {
+    box-shadow: inset 0 0 0 1px rgb(255 209 92 / 0.22);
   }
   .bad .healthDot {
     background: var(--alarm);
+    box-shadow: 0 0 8px var(--alarm);
+  }
+  .bad {
+    background: var(--alarm-soft);
+    box-shadow: inset 0 0 0 1px rgb(255 107 107 / 0.3);
   }
   .off .healthValue {
     color: var(--haze);
@@ -103,22 +128,25 @@
     grid-template-rows: auto 1fr;
     gap: var(--s-3);
     min-height: 0;
+    gap: 0;
     height: min(78dvh, 820px);
-    padding: var(--s-4) 0 0;
     border-radius: var(--r-panel);
     background: var(--trench);
     box-shadow: inset 0 0 0 1px var(--hairline);
+    overflow: hidden;
   }
   .room > .paneHead {
-    padding: 0 var(--s-4);
+    padding: var(--s-3) var(--s-4);
     flex-wrap: wrap;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--shelf);
   }
   .paneHead h2 {
     white-space: nowrap;
   }
   .roomScroll {
     overflow-y: auto;
-    padding: 0 var(--s-4) var(--s-4);
+    padding: var(--s-3) var(--s-4) var(--s-5);
     overscroll-behavior: contain;
   }
   .roomScroll:focus-visible {
@@ -126,32 +154,45 @@
     box-shadow: inset 0 0 0 2px var(--glow);
   }
   .roomEmpty {
-    color: var(--haze);
-    padding: var(--s-8) 0;
+    max-width: 34ch;
+    margin: 0 auto;
+    color: var(--mist);
+    padding: var(--s-16) 0;
     text-align: center;
+    text-wrap: balance;
   }
   .roomList {
     list-style: none;
     padding: 0;
     display: grid;
-    gap: 6px;
+    gap: 4px;
   }
   .time {
-    display: block;
-    margin: var(--s-3) 0 var(--s-1);
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    margin: var(--s-3) 0 var(--s-2);
     color: var(--mist);
     font-size: var(--t-12);
-    text-align: center;
+    font-weight: 600;
+  }
+  .time::before,
+  .time::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--hairline);
   }
   .item {
     display: flex;
     gap: var(--s-2);
     align-items: flex-start;
+    padding: 3px var(--s-2);
     line-height: 1.45;
     overflow-wrap: anywhere;
   }
   .item strong {
-    font-weight: 700;
+    font-weight: 650;
   }
   .itemIcon {
     flex: none;
@@ -165,12 +206,12 @@
   }
   .chat strong {
     color: var(--haze);
+    margin-right: 2px;
   }
   .question strong {
     color: var(--ink);
   }
   .question {
-    padding-left: var(--s-2);
     box-shadow: inset 2px 0 0 var(--hairline-strong);
   }
   .filtered {
@@ -178,9 +219,13 @@
   }
   .skipped {
     color: var(--mist);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .gift {
+    margin: 2px 0;
+    padding: 6px var(--s-3) 6px var(--s-2);
+    border-radius: var(--r-control);
+    background: linear-gradient(90deg, var(--offering-soft), transparent 80%);
     color: var(--offering);
   }
   .gift strong {
@@ -191,30 +236,34 @@
   }
   .quiet {
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .quiet .itemIcon {
     width: 14px;
     height: 14px;
     margin-top: 2px;
   }
+  /* What the host said: the character's voice, set apart from the chat. */
   .line {
-    margin: 4px 0;
+    margin: 6px 0;
     padding: var(--s-2) var(--s-3);
-    border-radius: 10px 10px 10px 3px;
-    background: var(--shelf);
-    box-shadow: inset 0 0 0 1px rgb(255 95 210 / 0.22);
-    max-width: 92%;
+    border-radius: 4px var(--r-control) var(--r-control) 4px;
+    background: linear-gradient(90deg, var(--bloom-soft), rgb(255 111 216 / 0.03));
+    box-shadow: inset 2px 0 0 var(--bloom);
+    color: var(--ink);
   }
   .speaker {
+    display: block;
     color: var(--bloom);
+    font-size: var(--t-13);
     font-weight: 700;
   }
   .blocked {
-    margin: 4px 0;
+    margin: 6px 0;
     padding: var(--s-2) var(--s-3);
-    border-radius: 10px;
-    box-shadow: inset 0 0 0 1px rgb(255 107 107 / 0.35);
+    border-radius: 4px var(--r-control) var(--r-control) 4px;
+    background: var(--alarm-soft);
+    box-shadow: inset 2px 0 0 var(--alarm);
     color: var(--haze);
   }
   .blocked .itemIcon {
@@ -223,7 +272,7 @@
   .blockedTitle {
     color: var(--alarm);
     font-weight: 700;
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .blockedText del {
     text-decoration-color: rgb(255 107 107 / 0.6);
@@ -233,7 +282,7 @@
     bottom: var(--s-3);
     left: 50%;
     translate: -50% 0;
-    box-shadow: 0 8px 24px rgb(5 2 18 / 0.6);
+    --shine: var(--float);
   }
 
   /* ---- Controls ------------------------------------------------------------ */
@@ -241,6 +290,17 @@
     display: grid;
     gap: var(--s-5);
     align-content: start;
+  }
+  /* Each tool in the column reads as its own block. */
+  .segments,
+  .queue,
+  .games,
+  .music,
+  .upNext,
+  .goals,
+  .likers {
+    padding-top: var(--s-4);
+    border-top: 1px solid var(--hairline);
   }
   .kill {
     display: grid;
@@ -250,21 +310,31 @@
     width: 100%;
   }
   .killHint {
-    color: var(--haze);
-    font-size: var(--t-12);
+    color: var(--mist);
+    font-size: var(--t-13);
   }
   .nowSaying {
+    position: relative;
     display: grid;
     gap: var(--s-2);
     padding: var(--s-3) var(--s-4) var(--s-4);
     border-radius: var(--r-panel);
-    background: var(--shelf);
+    background:
+      radial-gradient(100% 120% at 100% 0%, color-mix(in srgb, var(--host-b) 12%, transparent), transparent 60%),
+      var(--shelf);
+    box-shadow:
+      var(--edge),
+      inset 0 0 0 1px var(--hairline);
+  }
+  .nowSaying h2 {
+    color: var(--haze);
   }
   .saying {
     font-family: var(--font-display);
     font-size: var(--t-19);
     line-height: 1.3;
-    font-weight: 560;
+    font-weight: 600;
+    letter-spacing: -0.01em;
     min-height: 2.6em;
   }
   .sayingIdle {
@@ -304,7 +374,7 @@
     border-top: 1px solid var(--hairline);
   }
   .ranking h3 {
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     font-family: var(--font-ui);
     font-weight: 700;
   }
@@ -329,7 +399,7 @@
     list-style: none;
     display: grid;
     gap: var(--s-2);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .goalList li {
     display: grid;
@@ -353,11 +423,11 @@
     appearance: none;
     border: 0;
     border-radius: 3px;
-    background: var(--shelf);
+    background: var(--lift);
     overflow: hidden;
   }
   .goalBar::-webkit-progress-bar {
-    background: var(--shelf);
+    background: var(--lift);
   }
   .goalBar::-webkit-progress-value {
     background: var(--glow);
@@ -371,7 +441,7 @@
     list-style: none;
     display: grid;
     gap: 4px;
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .upNextList li {
     display: grid;
@@ -415,7 +485,7 @@
     font-weight: 600;
   }
   .segment:hover:not(:disabled) {
-    background: var(--trench);
+    background: var(--shelf);
     color: var(--ink);
   }
   .segment:disabled {
@@ -440,7 +510,7 @@
     align-items: center;
     gap: 4px;
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     font-weight: 600;
   }
   .segmentGame svg {
@@ -448,12 +518,13 @@
     height: 14px;
   }
   .segmentCurrent {
-    background: var(--trench);
+    background: var(--reef);
+    box-shadow: var(--edge);
     color: var(--ink);
   }
   .segmentCurrent .segmentDot {
     background: var(--glow);
-    box-shadow: none;
+    box-shadow: 0 0 8px var(--glow);
   }
   /* ---- Games ------------------------------------------------------------- */
   .gameForm {
@@ -480,7 +551,7 @@
   }
   .gamePhase {
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     font-weight: 650;
   }
   .gameTimer {
@@ -500,7 +571,7 @@
   }
   .gameFacts dt {
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .gameFacts dd {
     margin: 0;
@@ -519,7 +590,7 @@
     gap: 4px;
     padding: var(--s-2) 0 0;
     border-top: 1px solid var(--hairline);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .leaderboard li {
     display: grid;
@@ -588,7 +659,7 @@
   /* ---- Room: game answers ------------------------------------------------- */
   .answered {
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .answered strong {
     color: var(--haze);
@@ -608,7 +679,7 @@
     gap: 6px;
     padding-left: 1.2em;
     color: var(--ink);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .queueList li::marker {
     color: var(--mist);
@@ -643,13 +714,22 @@
   .offAir {
     display: grid;
     gap: var(--s-4);
-    padding: var(--s-5);
+    padding: var(--s-6) var(--s-5) var(--s-5);
     border-radius: var(--r-panel);
-    background: var(--shelf);
+    background:
+      radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--host-a) 10%, transparent), transparent 60%),
+      var(--shelf);
+    box-shadow:
+      var(--edge),
+      inset 0 0 0 1px var(--hairline);
     justify-items: start;
   }
   .offAir h2 {
     font-size: var(--t-23);
+    letter-spacing: -0.025em;
+  }
+  .offAir > button {
+    width: 100%;
   }
   .checklist {
     display: grid;
@@ -692,10 +772,22 @@
     .grid {
       grid-template-columns: 1fr;
     }
+    /* One swipeable row of signals instead of a stack. */
+    .health {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      margin: 0 calc(-1 * var(--s-4));
+      padding: 0 var(--s-4);
+      scrollbar-width: none;
+    }
+    .healthItem {
+      flex: none;
+      white-space: nowrap;
+    }
     .stageCol {
       position: static;
       width: 100%;
-      max-width: 240px;
+      max-width: 260px;
       margin: 0 auto;
     }
     /* The kill switch stays on screen on phones. */
@@ -707,7 +799,7 @@
       inset: auto 0 0;
       z-index: 30;
       padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom));
-      background: rgb(11 4 32 / 0.94);
+      background: rgb(10 9 18 / 0.92);
       backdrop-filter: blur(10px);
       border-top: 1px solid var(--hairline);
     }

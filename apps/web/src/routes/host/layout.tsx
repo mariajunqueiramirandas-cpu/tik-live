@@ -56,11 +56,14 @@ export default function HostLayout() {
   const context: HostContext = { channel, store, status };
   const base = `/app/hosts/${channel.id}`;
 
+  const look = channel.persona.look;
   return (
-    <div className={s.host}>
+    <div className={s.host} style={{ "--host-a": look.primary, "--host-b": look.secondary } as React.CSSProperties}>
       <header className={s.header}>
         <div className={s.identity}>
-          <HostSwatch look={channel.persona.look} size={48} />
+          <span className={s.avatar} data-live={status === "live" || undefined} data-square={look.character === "voice-line" || undefined}>
+            <HostSwatch look={look} size={52} />
+          </span>
           <div className={s.titles}>
             <h1 className={s.name}>{channel.name}</h1>
             <div className={s.meta}>
@@ -68,8 +71,10 @@ export default function HostLayout() {
               {status === "live" && snapshot && (
                 <>
                   <Uptime key={snapshot.session?.id ?? "x"} seconds={snapshot.stats.uptimeSec} />
-                  <span>{count(snapshot.stats.viewers)} assistindo</span>
-                  {snapshot.stats.diamonds > 0 && <span className="money">✦ {count(snapshot.stats.diamonds)}</span>}
+                  <span>
+                    <strong className={s.stat}>{count(snapshot.stats.viewers)}</strong> assistindo
+                  </span>
+                  {snapshot.stats.diamonds > 0 && <strong className={cx(s.stat, "money")}>✦ {count(snapshot.stats.diamonds)}</strong>}
                 </>
               )}
               {status === "failed" && <span className={s.detail}>{snapshot?.detail ?? channel.runtime.detail}</span>}

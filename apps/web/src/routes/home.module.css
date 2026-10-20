@@ -3,28 +3,39 @@
     display: grid;
     gap: 0;
     border-radius: var(--r-panel);
+    background: var(--trench);
     box-shadow: inset 0 0 0 1px var(--hairline);
     overflow: hidden;
   }
   .row {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(200px, 1.4fr) minmax(150px, 1fr) minmax(200px, 1.2fr) auto;
+    grid-template-columns: minmax(220px, 1.4fr) minmax(150px, 1fr) minmax(200px, 1.2fr) auto;
     align-items: center;
     gap: var(--s-4);
-    padding: var(--s-3) var(--s-4);
-    min-height: 72px;
+    padding: var(--s-4) var(--s-5);
+    min-height: 84px;
+    transition: background var(--dur-fast) var(--ease-out);
   }
   .row + .row {
     border-top: 1px solid var(--hairline);
   }
   .row:hover {
-    background: var(--trench);
+    background: var(--shelf);
+  }
+  /* A live row is lit by its own character from the left. */
+  .row[data-live] {
+    background: radial-gradient(60% 140% at 0% 50%, color-mix(in srgb, var(--host-a) 9%, transparent), transparent 70%);
+  }
+  .row[data-live]:hover {
+    background:
+      radial-gradient(60% 140% at 0% 50%, color-mix(in srgb, var(--host-a) 12%, transparent), transparent 70%),
+      var(--shelf);
   }
   .rowLink {
     display: flex;
     align-items: center;
-    gap: var(--s-3);
+    gap: var(--s-4);
     min-width: 0;
     color: inherit;
     text-decoration: none;
@@ -42,21 +53,30 @@
     box-shadow: inset 0 0 0 2px var(--glow);
     border-radius: var(--r-panel);
   }
+  .avatar {
+    display: grid;
+    flex: none;
+    border-radius: 50%;
+    filter: drop-shadow(0 0 14px color-mix(in srgb, var(--host-a) 35%, transparent));
+  }
   .identity {
     display: grid;
+    gap: 2px;
     min-width: 0;
   }
   .name {
     font-family: var(--font-display);
-    font-size: var(--t-19);
-    font-weight: 700;
+    font-size: var(--t-23);
+    font-weight: 720;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .where {
-    color: var(--haze);
-    font-size: var(--t-12);
+    color: var(--mist);
+    font-size: var(--t-13);
   }
   .status {
     display: grid;
@@ -64,7 +84,7 @@
   }
   .watching {
     color: var(--haze);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
   }
   .trend {
     display: flex;
@@ -73,7 +93,10 @@
   }
   .trendText {
     display: grid;
-    font-size: var(--t-12);
+    font-size: var(--t-13);
+  }
+  .trendText strong {
+    color: var(--ink);
   }
   .dim {
     color: var(--haze);
@@ -85,33 +108,53 @@
 
   .usage {
     display: grid;
-    gap: var(--s-2);
-    max-width: 520px;
+    gap: var(--s-3);
+    max-width: 560px;
+    padding: var(--s-4) var(--s-5);
+    border-radius: var(--r-panel);
+    box-shadow: inset 0 0 0 1px var(--hairline);
   }
   .usageText {
     display: flex;
-    justify-content: space-between;
-    gap: var(--s-3);
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--s-1) var(--s-3);
     color: var(--haze);
   }
-  .usageText strong {
+  .usageLabel {
+    flex: 1 0 100%;
+    color: var(--mist);
+    font-size: var(--t-13);
+  }
+  .usageValue {
     color: var(--ink);
+    font-family: var(--font-display);
+    font-size: var(--t-19);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .usageLink {
+    margin-left: auto;
+    font-size: var(--t-13);
+    font-weight: 600;
   }
   .meter {
     height: 6px;
     border-radius: 99px;
-    background: var(--trench);
-    box-shadow: inset 0 0 0 1px var(--hairline);
+    background: var(--lift);
     overflow: hidden;
   }
   .meter span {
     display: block;
     height: 100%;
+    min-width: 6px;
     border-radius: inherit;
     background: var(--glow);
+    box-shadow: 0 0 12px var(--glow);
   }
   .meter span[data-high] {
     background: var(--offering);
+    box-shadow: 0 0 12px var(--offering);
   }
 
   @media (max-width: 860px) {
@@ -120,7 +163,8 @@
       grid-template-areas:
         "who status"
         "trend trend";
-      row-gap: var(--s-2);
+      row-gap: var(--s-3);
+      padding: var(--s-4);
     }
     .rowLink {
       grid-area: who;

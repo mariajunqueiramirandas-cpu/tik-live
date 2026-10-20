@@ -81,6 +81,7 @@ export default function NewHost() {
                   role="radio"
                   aria-checked={i === presetIndex}
                   className={s.preset}
+                  style={{ "--host-a": option.persona.look.primary } as React.CSSProperties}
                   onClick={() => pick(i)}
                   onKeyDown={(e) => {
                     if (e.key === "ArrowDown" || e.key === "ArrowRight") {

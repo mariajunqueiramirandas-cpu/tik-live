@@ -2,7 +2,7 @@
   .page {
     display: grid;
     gap: var(--s-8);
-    padding: var(--s-8) clamp(var(--s-4), 4vw, var(--s-12)) var(--s-16);
+    padding: var(--s-10) clamp(var(--s-4), 4vw, var(--s-12)) var(--s-16);
     max-width: 1240px;
   }
   .narrow {
@@ -16,11 +16,13 @@
     flex-wrap: wrap;
   }
   .header h1 {
-    font-size: var(--t-37);
+    font-size: var(--t-46);
+    letter-spacing: -0.035em;
   }
   .lede {
-    margin-top: var(--s-2);
+    margin-top: var(--s-3);
     color: var(--haze);
+    font-size: var(--t-17);
     max-width: 60ch;
   }
   .actions {
@@ -63,7 +65,10 @@
       gap: var(--s-6);
     }
     .header h1 {
-      font-size: var(--t-29);
+      font-size: var(--t-37);
+    }
+    .lede {
+      font-size: var(--t-15);
     }
   }
 }
