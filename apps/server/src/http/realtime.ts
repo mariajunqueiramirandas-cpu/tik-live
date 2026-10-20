@@ -25,6 +25,7 @@ const MAX_MESSAGE_BYTES = 16_384;
 /**
  * Realtime endpoints (ADR-0008):
  * - `/ws/stage/:stageKey?role=program|preview|broadcast` for stage clients;
+ * - `/ws/bridge/:stageKey` for the local TikTok LIVE Studio bridge agent on the user's PC;
  * - `/ws/studio/:channelId` for the owner's dashboard.
  */
 export function mountRealtime(app: Hono<AppEnv>, deps: AppDeps): void {
@@ -52,6 +53,33 @@ export function mountRealtime(app: Hono<AppEnv>, deps: AppDeps): void {
         },
         onClose() {
           deps.manager.detachStage(channel.id, id);
+        },
+      };
+    }),
+  );
+
+  app.get(
+    "/ws/bridge/:stageKey",
+    async (c, next) => {
+      const channel = await channelForStageKey(deps, c.req.param("stageKey"));
+      if (!channel) return c.text("Unknown stage link", 404);
+      c.set("channel", channel);
+      return next();
+    },
+    upgradeWebSocket((c) => {
+      const channel = c.get("channel");
+      const id = crypto.randomUUID();
+      return {
+        onOpen(_event, ws) {
+          deps.liveStudio.attachBridge(channel, toPeer(id, ws));
+        },
+        onMessage(event) {
+          const data = typeof event.data === "string" ? event.data : "";
+          if (data.length > MAX_MESSAGE_BYTES) return;
+          deps.liveStudio.handleBridgeMessage(channel.id, id, data);
+        },
+        onClose() {
+          deps.liveStudio.detachBridge(channel.id, id);
         },
       };
     }),

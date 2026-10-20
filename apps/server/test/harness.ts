@@ -6,6 +6,7 @@ import type { MercadoPagoClient } from "../src/billing/mercadopago";
 import { testConfig } from "../src/config";
 import { openDatabase } from "../src/db/client";
 import type { BroadcasterClient } from "../src/broadcast/client";
+import type { LiveStudioClient } from "../src/broadcast/live-studio";
 import { createDeps, type AppDeps } from "../src/deps";
 import type { IdentityProvider } from "../src/identity/types";
 import { configureLogging } from "../src/log";
@@ -51,6 +52,7 @@ export async function startTestServer(
     identity?: IdentityProvider;
     database?: Awaited<ReturnType<typeof openDatabase>>;
     broadcaster?: BroadcasterClient;
+    liveStudio?: LiveStudioClient;
     /** Every host's voice; captions only by default. */
     tts?: () => TtsProvider;
   } = {},
@@ -64,6 +66,7 @@ export async function startTestServer(
     ...(options.mercadoPago ? { mercadoPago: options.mercadoPago } : {}),
     ...(options.identity ? { identity: options.identity } : {}),
     ...(options.broadcaster ? { broadcaster: options.broadcaster } : {}),
+    ...(options.liveStudio ? { liveStudio: options.liveStudio } : {}),
     runtimeOverrides: {
       makeSource: (channel) => {
         const source = new ManualSource();

@@ -11,6 +11,14 @@
         "typescript": "^7.0.2",
       },
     },
+    "apps/bridge": {
+      "name": "@tik-live/bridge",
+      "version": "0.2.0",
+      "dependencies": {
+        "@tik-live/shared": "workspace:*",
+        "zod": "^4.6.7",
+      },
+    },
     "apps/broadcaster": {
       "name": "@tik-live/broadcaster",
       "version": "0.2.0",
@@ -340,6 +348,8 @@
     "@tanstack/query-core": ["@tanstack/query-core@5.104.3", "", {}, "sha512-DZY9TuJAOgU3UyHUhXb4CcTYEHNZszlwkPg4VViIwTxOKzLprPUU+rbaPZQd3srqkGOtpaDdKpW972UV/LKlcg=="],
 
     "@tanstack/react-query": ["@tanstack/react-query@5.104.3", "", { "dependencies": { "@tanstack/query-core": "5.104.3" }, "peerDependencies": { "react": "^18 || ^19" } }, "sha512-5Ts1ImwJKqoJgPkLxl9WrPQy1JEoEmti3MaaODCfBamHUGFk57IFrc+AIksPq+BAm10EsroX56qm398Z42LG7w=="],
+
+    "@tik-live/bridge": ["@tik-live/bridge@workspace:apps/bridge"],
 
     "@tik-live/broadcaster": ["@tik-live/broadcaster@workspace:apps/broadcaster"],
 
