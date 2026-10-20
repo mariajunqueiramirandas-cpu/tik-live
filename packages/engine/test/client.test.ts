@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { PROTOCOL_VERSION } from "@tik-live/shared";
-import { CLOSE_GONE, CLOSE_REVOKED, connectStage, reconnectDelay, stageSocketUrl, type StageConnectionState } from "../src/client";
+import { ASLEEP_MS, CLOSE_GONE, CLOSE_REVOKED, connectStage, HEARTBEAT_MS, reconnectDelay, stageSocketUrl, type StageConnectionState } from "../src/client";
 import { FakeEngine, FakeSocket, FakeTimers } from "./fakes";
 
 const look = { character: "orb", primary: "#7CF5FF", secondary: "#FF5FD2", background: "#0B0420" } as const;
@@ -8,6 +8,8 @@ const look = { character: "orb", primary: "#7CF5FF", secondary: "#FF5FD2", backg
 function setup() {
   const engine = new FakeEngine();
   const timers = new FakeTimers();
+  const intervals = new FakeTimers();
+  const clock = { t: 0 };
   const states: StageConnectionState[] = [];
   const reloads: boolean[] = [];
   const connection = connectStage({
@@ -18,13 +20,21 @@ function setup() {
     random: () => 1,
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
+    setInterval: intervals.setTimeout,
+    clearInterval: intervals.clearTimeout,
+    now: () => clock.t,
     reload: (forced) => {
       reloads.push(forced);
     },
     onState: (s) => states.push(s),
   });
   const socket = () => FakeSocket.instances.at(-1) as FakeSocket;
-  return { engine, timers, states, connection, socket, reloads: () => reloads.length, forcedReloads: () => reloads.filter(Boolean).length };
+  // Runs the heartbeat `ms` after the last one (intervals repeat, so it stays pending).
+  const beat = (ms: number) => {
+    clock.t += ms;
+    intervals.pending[0]?.fn();
+  };
+  return { engine, timers, intervals, beat, states, connection, socket, reloads: () => reloads.length, forcedReloads: () => reloads.filter(Boolean).length };
 }
 
 beforeEach(() => {
@@ -143,12 +153,34 @@ describe("connectStage", () => {
     expect(engine.applied).toEqual([]);
   });
 
+  it("sends a heartbeat while connected, and stops it when the socket drops", () => {
+    const { socket, intervals, beat } = setup();
+    expect(intervals.pending).toHaveLength(0);
+    socket().open();
+    expect(intervals.pending).toMatchObject([{ ms: HEARTBEAT_MS }]);
+    const before = socket().sent.length;
+    beat(HEARTBEAT_MS);
+    expect(socket().sent.slice(before)).toMatchObject([{ t: "telemetry" }]);
+    socket().drop();
+    expect(intervals.pending).toHaveLength(0);
+  });
+
+  it("drops stale lines when it wakes up from a freeze", () => {
+    const { engine, socket, beat } = setup();
+    socket().open();
+    beat(HEARTBEAT_MS);
+    expect(engine.applied).toEqual([]);
+    beat(ASLEEP_MS + 1);
+    expect(engine.applied).toEqual([{ t: "stop" }]);
+  });
+
   it("close() cancels retries and detaches from the engine", () => {
-    const { connection, socket, timers, engine, states } = setup();
+    const { connection, socket, timers, intervals, engine, states } = setup();
     socket().open();
     socket().drop();
     connection.close();
     expect(timers.pending).toHaveLength(0);
+    expect(intervals.pending).toHaveLength(0);
     expect(engine.listeners.spoken.size).toBe(0);
     expect(engine.listeners.started.size).toBe(0);
     expect(states.at(-1)).toBe("closed");

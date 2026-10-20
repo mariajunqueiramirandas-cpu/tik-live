@@ -96,6 +96,14 @@ export function moderationPolicy(settings: Pick<SafetySettings, "strictness" | "
  */
 export const THINKING_OFF_MODELS: ReadonlySet<string> = new Set(["claude-haiku-5-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8", "claude-opus-4-7"]);
 
+/**
+ * Every line of speech waits for its verdict, so a slow moderator stalls the
+ * show. Past this the request gives up (and the gate fails open or closed,
+ * per MODERATION_FAIL_OPEN) instead of waiting on the SDK's minutes-long
+ * default timeout and retries.
+ */
+const MODERATION_TIMEOUT_MS = 8_000;
+
 const VERDICT_SCHEMA = {
   type: "object",
   properties: {
@@ -148,7 +156,7 @@ export class ClaudeModerator implements Moderator {
           content: `${context ? `<context>\n${escapeForPrompt(context)}\n</context>\n` : ""}<sentence>${escapeForPrompt(sentence)}</sentence>\nIs this sentence safe to say on stream?`,
         },
       ],
-    }));
+    }), { timeout: MODERATION_TIMEOUT_MS, maxRetries: 1 });
     this.options.onUsage?.({
       kind: "moderation",
       model: this.options.model,

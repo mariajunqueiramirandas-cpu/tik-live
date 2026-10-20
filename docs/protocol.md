@@ -42,6 +42,7 @@ Close codes with a meaning:
 |---|---|---|
 | `4001` | The stage link was replaced in the dashboard | Stops reconnecting, shows "This stage link was replaced" |
 | `4004` | The host was deleted | Stops reconnecting |
+| `4000` | An on-air stage sent nothing for 60 s (a frozen page) | Reconnects |
 | anything else | Network loss, server restart | Reconnects |
 
 Only `program` and `broadcast` stages are "on air": their `started` and
@@ -51,6 +52,17 @@ current one has finished it, so the show never runs ahead of the slowest
 stage on air ([ADR-0022](adr/0022-host-turn-taking.md)). Previews never pace
 the show. When no on-air stage is connected, the server paces speech by
 each line's estimated duration so the show keeps a realistic rhythm.
+
+A frozen page (a background tab, a hidden or suspended OBS source) keeps its
+socket open, because the browser still answers pings, but never finishes a
+line. So a stage only paces the show while it's answering: one that let a
+line run out without finishing it stops pacing until it reports a line
+again, one that sent nothing for 30 s doesn't pace, and an on-air stage
+silent for 60 s is closed with `4000`. Live pages send
+[`telemetry`](#telemetry) every 5 s from a timer for this. A page that
+notices it was frozen (its heartbeat ran more than 15 s late) drops the
+lines it has waiting, as if it got [`stop`](#stop): the show moved on long
+ago.
 
 ### Server to stage
 
@@ -427,7 +439,8 @@ the time described under [`started`](#started)).
 { "v": 1, "t": "telemetry", "fps": 60, "frameP95": 4.2, "quality": 0, "renderer": "ANGLE (…)", "error": null }
 ```
 
-Engine health, sent on connect, every 10 seconds, and at once after an
+Engine health, sent on connect, every 5 seconds (it doubles as the stage's
+heartbeat, see [lifecycle](#connection-lifecycle)), and at once after an
 engine error: frames per second, 95th percentile
 frame time in ms, quality level (0 is full quality; the governor steps down
 to 2 when frames drop), the GPU renderer string, and the last engine error.
