@@ -241,6 +241,8 @@ export type { AlertKind };
 
 /** Alerts end at the right margin and stay clear of the HUD column on the left (it ends at x 404). */
 const ALERT_RIGHT = 1080 - 64;
+/** Where the alerts start when nothing sits under the goals. */
+export const ALERT_TOP = 360;
 const ALERT_MAX_WIDTH = 600;
 const ALERT_SIZE = 32;
 const ALERT_MIN_SIZE = 24;
@@ -289,19 +291,20 @@ export class Alerts {
     while (this.items.length > 4) this.retire(this.items.length - 1, now);
   }
 
-  update(dt: number, now: number): void {
+  /** `top` is where the stack starts (under the goals and the support ticker); only `slots` alerts stay up at once. */
+  update(dt: number, now: number, top = ALERT_TOP, slots = 4): void {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const item = this.items[i]!;
       // The loud ones (a new top gifter, a gift power) stay up a little longer.
       const life = item.kind === "crown" || item.kind === "perk" ? 7.5 : 6;
-      if (now - item.bornAt > life) {
+      if (now - item.bornAt > life || item.slot.target >= slots) {
         item.sprite.opacity.target = 0;
         item.sprite.offsetY.target = -24;
       }
       item.slot.step(dt);
       item.sprite.update(dt, now);
       item.sprite.x = ALERT_RIGHT - item.sprite.width;
-      item.sprite.y = 360 + item.slot.value * 56;
+      item.sprite.y = top + item.slot.value * 56;
       if (now - item.bornAt > life + 1) this.retire(i, now);
     }
   }

@@ -434,7 +434,10 @@ export class Engine implements StageEngine {
         this.text.card.setSupport(message.card, this.time, this.scale);
         break;
       case "perks":
-        this.text.card.setPerks(message.card, this.time, this.scale);
+        this.text.showcase.set(message.card, this.time, this.scale);
+        break;
+      case "ticker":
+        this.text.ticker.set(message.ticker, this.time, this.scale);
         break;
       case "boss":
         this.text.boss.set(message.boss, this.time, this.scale);

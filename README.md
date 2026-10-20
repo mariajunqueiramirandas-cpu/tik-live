@@ -87,6 +87,11 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   gifter "dono da live" for five minutes, with a crown on stage. Taking
   first place among the gifters gets its own alert
   ([ADR-0039](docs/adr/0039-gift-powers.md)).
+- **Always asking, always showing what a gift gets**: a support ticker
+  stays on screen under the goals, taking turns between what gifts pay for,
+  each gift power with its price, and liking, following and sharing. Every
+  few minutes a big showcase under the character lays out what each gift
+  unlocks ([ADR-0041](docs/adr/0041-support-ticker-and-gift-showcase.md)).
 - **Challenges for the room**: every few minutes a like rush, a comment
   rush or a free raffle (type EU; the winner picks a game), with a banner
   and a prize when the room wins. The host welcomes first-timers by name,

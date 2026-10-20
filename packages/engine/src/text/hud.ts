@@ -1,4 +1,4 @@
-import type { Challenge, GoalKind, GoalView, LeaderBoard, LeaderRow, PerksCard, SupportCard, SupportWay, UpNextItem } from "@tik-live/shared";
+import type { Challenge, GoalKind, GoalView, LeaderBoard, LeaderRow, PerksCard, SupportCard, SupportWay, Ticker, UpNextItem } from "@tik-live/shared";
 import { Spring, SPRINGS } from "../anim/spring";
 import type { Gl } from "../gl/gl";
 import { FONT_FAMILY, GOLD, HAZE, INK, measureWith, roundRect, TextSprite, truncate, withAlpha } from "./sprites";
@@ -8,15 +8,16 @@ import { FONT_FAMILY, GOLD, HAZE, INK, measureWith, roundRect, TextSprite, trunc
  * under the disclosure badge: a slim "A seguir" pill with a countdown, and
  * one ranking card that takes turns between the top likers and the top
  * gifters (or shows a vote while one is open, or for a moment how to
- * support the show, ADR-0032, or the gift powers on offer, ADR-0039). The
- * "dono da live" badge (ADR-0039) sits just under the column, and a
- * challenge or raffle (ADR-0040) takes the hook banner's place under the
- * character. The column stays left of the
+ * support the show, ADR-0032). The "dono da live" badge (ADR-0039) sits
+ * just under the column, and a challenge or raffle (ADR-0040) or the gift
+ * showcase (ADR-0041) takes the hook banner's place under the character.
+ * The column stays left of the
  * character (x 375 at rest, 430 during games) and ends above where a game
  * board starts (y 560), clear of TikTok's header, right rail and comments.
  * Painted when content changes; the countdown repaints once a second and
  * the card crossfades when it turns. The stream's goals (ADR-0036) sit top
- * right, across from the title and above the alerts.
+ * right, across from the title, with the always-on support ticker
+ * (ADR-0041) under them and the alerts under that.
  */
 
 const X = 64;
@@ -408,7 +409,6 @@ export class LeaderCard {
   private showing: LeaderBoard | null = null;
   private vote: HudVote | null = null;
   private support: SupportCard | null = null;
-  private perks: PerksCard | null = null;
   private turnedAt = 0;
   private visible = false;
   private readonly top = new Spring(TOP, SPRINGS.snappy);
@@ -427,7 +427,7 @@ export class LeaderCard {
   set(board: LeaderBoard, rows: readonly LeaderRow[], windowMin: number, now: number, scale: number): void {
     const before = this.boards[board].rows;
     this.boards[board] = { rows: rows.slice(0, 3), windowMin };
-    if (this.vote || this.support || this.perks) return;
+    if (this.vote || this.support) return;
     // A new gift cuts in, whatever was up: gifters are the show's VIPs.
     if (board === "gifts" && giftCameIn(before, this.boards.gifts.rows)) {
       const crossfade = this.visible && this.showing !== "gifts";
@@ -461,19 +461,7 @@ export class LeaderCard {
   setSupport(card: SupportCard | null, now: number, scale: number): void {
     const crossfade = this.visible;
     this.support = card;
-    // It shares the place with the gift powers: the latest one wins.
-    if (card) this.perks = null;
-    if (!card && !this.vote && !this.perks) this.showing = nextBoard(null, (b) => this.has(b));
-    this.turnedAt = now;
-    this.paint(scale, crossfade, now);
-  }
-
-  /** Shows the gift powers on offer in the rankings' place (null: back to the rankings). An open vote stays on top. */
-  setPerks(card: PerksCard | null, now: number, scale: number): void {
-    const crossfade = this.visible;
-    this.perks = card;
-    if (card) this.support = null;
-    if (!card && !this.vote && !this.support) this.showing = nextBoard(null, (b) => this.has(b));
+    if (!card && !this.vote) this.showing = nextBoard(null, (b) => this.has(b));
     this.turnedAt = now;
     this.paint(scale, crossfade, now);
   }
@@ -486,7 +474,7 @@ export class LeaderCard {
   /** `above` is the room the pill takes over this card. */
   update(dt: number, now: number, above: number, scale: number): void {
     const gifts = this.showsGifts();
-    if (!this.vote && !this.support && !this.perks && this.showing && now - this.turnedAt >= (gifts ? TURN_GIFTS_S : TURN_S)) {
+    if (!this.vote && !this.support && this.showing && now - this.turnedAt >= (gifts ? TURN_GIFTS_S : TURN_S)) {
       const next = nextBoard(this.showing, (b) => this.has(b));
       this.turnedAt = now;
       if (next !== this.showing) {
@@ -531,16 +519,15 @@ export class LeaderCard {
   }
 
   private showsGifts(): boolean {
-    return !this.vote && !this.support && !this.perks && this.showing === "gifts" && this.has("gifts");
+    return !this.vote && !this.support && this.showing === "gifts" && this.has("gifts");
   }
 
   private paint(scale: number, crossfade: boolean, now: number): void {
     const wasHidden = !this.visible;
     const vote = this.vote;
     const support = this.support;
-    const perks = this.perks;
     const board = this.showing && this.has(this.showing) ? this.showing : null;
-    if (!vote && !support && !perks && !board) {
+    if (!vote && !support && !board) {
       this.visible = false;
       this.sprite.opacity.target = 0;
       return;
@@ -548,7 +535,6 @@ export class LeaderCard {
     this.visible = true;
     this.sprite.x = X;
     if (vote) this.paintVote(vote, scale, crossfade && !wasHidden, now);
-    else if (perks) this.paintPerks(perks, scale, crossfade && !wasHidden, now);
     else if (support) this.paintSupport(support, scale, crossfade && !wasHidden, now);
     else this.paintBoard(board as LeaderBoard, scale, crossfade && !wasHidden, now);
     enter(this.sprite, wasHidden);
@@ -812,55 +798,6 @@ export class LeaderCard {
     );
   }
 
-  /** The gift powers on offer: the title in gold, then one row per power, a diamond chip with its price and what it does. */
-  private paintPerks(card: PerksCard, scale: number, crossfade: boolean, now: number): void {
-    const headFont = `850 19px ${FONT_FAMILY}`;
-    const chipFont = `850 18px ${FONT_FAMILY}`;
-    const rows = card.rows.slice(0, 5);
-    const headH = 50;
-    const rowH = 34;
-    const height = headH + rows.length * rowH + 12;
-    const prices = rows.map((row) => formatCount(row.diamonds));
-    // One chip width for every row, so the powers line up.
-    const chipW = Math.max(...prices.map((text) => measureWith(chipFont)(text))) + 38;
-    this.sprite.draw(
-      WIDTH,
-      height,
-      scale,
-      (ctx) => {
-        glass(ctx, WIDTH, height, GOLD, PERK_PINK, 20);
-        diamond(ctx, PAD + 11, 27, 20, DIAMOND);
-        ctx.textBaseline = "alphabetic";
-        ctx.font = headFont;
-        const title = ctx.createLinearGradient(0, 14, 0, 36);
-        title.addColorStop(0, "#FFF1B8");
-        title.addColorStop(1, GOLD);
-        ctx.fillStyle = title;
-        ctx.fillText(fit(card.title.toUpperCase(), headFont, WIDTH - PAD * 2 - 30), PAD + 30, 35);
-        rows.forEach((row, i) => {
-          const top = headH + i * rowH;
-          const cy = top + rowH / 2 - 2;
-          const best = i === rows.length - 1 && rows.length > 1;
-          ctx.fillStyle = withAlpha(best ? GOLD : DIAMOND, best ? 0.26 : 0.16);
-          roundRect(ctx, PAD, cy - 13, chipW, 26, 13);
-          ctx.fill();
-          diamond(ctx, PAD + 14, cy + 1, 13, best ? GOLD : DIAMOND);
-          ctx.font = chipFont;
-          ctx.fillStyle = best ? GOLD : INK;
-          ctx.fillText(prices[i] as string, PAD + 26, cy + 7);
-          // Long powers shrink a little before they're cut.
-          const line = shrinkToFit(row.text, 720, 21, 17, WIDTH - PAD * 2 - chipW - 10);
-          ctx.font = line.font;
-          ctx.fillStyle = best ? GOLD : INK;
-          ctx.fillText(line.text, PAD + chipW + 10, cy + 7);
-        });
-        if (rows.length > 1) sparkle(ctx, WIDTH - PAD - 4, headH + (rows.length - 1) * rowH + 4, 12, withAlpha("#FFF6D6", 0.85));
-      },
-      crossfade,
-      now,
-    );
-  }
-
   /** One viewer chooses (a gift power or the raffle's prize): their name on top, the options numbered, no tally. */
   private paintPick(vote: HudVote & { by: string }, scale: number, crossfade: boolean, now: number): void {
     const headFont = `850 18px ${FONT_FAMILY}`;
@@ -975,7 +912,7 @@ export function giftCameIn(before: readonly LeaderRow[], after: readonly LeaderR
 
 // ---- the stream's goals ----------------------------------------------------------
 
-const GOALS = { right: 1080 - 64, top: 200, width: 300, rowH: 52, head: 42 };
+const GOALS = { right: 1080 - 64, top: 200, width: 340, rowH: 52, head: 42 };
 /** How long a goal just reached shows "META BATIDA!" before the next goal. */
 const CELEBRATE_S = 4;
 const GOAL_LOOK: Record<GoalKind, { label: string; color: string }> = {
@@ -1029,6 +966,11 @@ export class GoalPanel {
 
   repaint(scale: number): void {
     if (this.goals.length) this.paint(0, scale);
+  }
+
+  /** Where the panel ends (stage px), or where it would start when there are no goals. */
+  bottom(): number {
+    return this.goals.length ? GOALS.top + this.sprite.height : GOALS.top;
   }
 
   private paint(now: number, scale: number, crossfade = false): void {
@@ -1094,6 +1036,131 @@ export class GoalPanel {
   }
 }
 
+// ---- the support ticker ---------------------------------------------------------------
+
+/** Right-aligned with the goals, under them (or in their place when there are none). */
+const TICKER = { right: GOALS.right, width: GOALS.width, gap: 10, height: 98 };
+/** How long each line stays up before the next. */
+const TICKER_TURN_S = 4;
+
+/**
+ * Always on (ADR-0041): "APOIE A LIVE" and one line at a time, taking
+ * turns between what gifts pay for, what each gift gets on the show (a
+ * gift power with its price) and the free ways to help. Each new line
+ * crossfades in with a little hop.
+ */
+export class SupportTicker {
+  readonly sprite: TextSprite;
+  private ticker: Ticker | null = null;
+  private index = 0;
+  private turnedAt = 0;
+  private readonly top = new Spring(GOALS.top, SPRINGS.snappy);
+
+  constructor(gl: Gl) {
+    this.sprite = new TextSprite(gl);
+  }
+
+  set(ticker: Ticker | null, now: number, scale: number): void {
+    const wasHidden = !this.ticker;
+    this.ticker = ticker;
+    if (!ticker) {
+      this.sprite.opacity.target = 0;
+      return;
+    }
+    this.index = 0;
+    this.turnedAt = now;
+    this.paint(scale, !wasHidden, now);
+    if (wasHidden) enter(this.sprite, true);
+  }
+
+  /** Where the ticker ends (stage px), or `fallback` when it's off. */
+  bottom(fallback: number): number {
+    return this.ticker ? this.top.target + TICKER.height : fallback;
+  }
+
+  /** `above` is where the goals end. */
+  update(dt: number, now: number, above: number, scale: number): void {
+    const ticker = this.ticker;
+    if (ticker && ticker.lines.length > 1 && now - this.turnedAt >= TICKER_TURN_S) {
+      this.index = (this.index + 1) % ticker.lines.length;
+      this.turnedAt = now;
+      this.paint(scale, true, now);
+      this.sprite.offsetY.snap(-6);
+      this.sprite.offsetY.target = 0;
+    }
+    const top = above > GOALS.top ? above + TICKER.gap : GOALS.top;
+    if (this.top.target !== top && !this.sprite.visible()) this.top.snap(top);
+    this.top.target = top;
+    this.top.step(dt);
+    this.sprite.y = this.top.value;
+    this.sprite.update(dt, now);
+  }
+
+  repaint(scale: number): void {
+    if (this.ticker) this.paint(scale, false, 0);
+  }
+
+  private paint(scale: number, crossfade: boolean, now: number): void {
+    const ticker = this.ticker as Ticker;
+    const line = ticker.lines[this.index % ticker.lines.length] as Ticker["lines"][number];
+    const { width, height } = TICKER;
+    const gift = line.way === "gift";
+    const headFont = `850 18px ${FONT_FAMILY}`;
+    const chipFont = `900 24px ${FONT_FAMILY}`;
+    const price = line.diamonds ? formatCount(line.diamonds) : "";
+    const chipW = price ? measureWith(chipFont)(price) + 44 : 0;
+    this.sprite.x = TICKER.right - width;
+    this.sprite.draw(
+      width,
+      height,
+      scale,
+      (ctx) => {
+        glass(ctx, width, height, gift ? GOLD : WAY_COLORS[line.way], PERK_PINK, 20);
+        ctx.textBaseline = "alphabetic";
+        // The header: a gift and the title in gold, and how far along the lines are.
+        wayMark(ctx, "gift", PAD + 9, 27, GOLD);
+        ctx.font = headFont;
+        ctx.fillStyle = GOLD;
+        ctx.fillText(fit(ticker.title.toUpperCase(), headFont, width - PAD * 2 - 100), PAD + 26, 34);
+        const dots = Math.min(ticker.lines.length, 12);
+        for (let i = 0; i < dots; i++) {
+          ctx.fillStyle = i === this.index % dots ? GOLD : "rgba(255,255,255,0.22)";
+          ctx.beginPath();
+          ctx.arc(width - PAD - 4 - (dots - 1 - i) * 8, 27, 2.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // The line: a gift power's price in a chip, or the way's mark, then the text.
+        const cy = 66;
+        let x = PAD;
+        if (price) {
+          ctx.fillStyle = withAlpha(GOLD, 0.24);
+          roundRect(ctx, x, cy - 17, chipW, 34, 17);
+          ctx.fill();
+          diamond(ctx, x + 17, cy + 1, 17, DIAMOND);
+          ctx.font = chipFont;
+          ctx.fillStyle = GOLD;
+          ctx.fillText(price, x + 31, cy + 9);
+          x += chipW + 10;
+        } else {
+          const color = WAY_COLORS[line.way];
+          ctx.fillStyle = withAlpha(color, 0.18);
+          ctx.beginPath();
+          ctx.arc(x + 17, cy, 17, 0, Math.PI * 2);
+          ctx.fill();
+          wayMark(ctx, line.way, x + 17, cy, color);
+          x += 44;
+        }
+        const text = shrinkToFit(line.text, 820, 26, 19, width - x - PAD);
+        ctx.font = text.font;
+        ctx.fillStyle = gift ? GOLD : INK;
+        ctx.fillText(text.text, x, cy + 9);
+      },
+      crossfade,
+      now,
+    );
+  }
+}
+
 // ---- the call to people scrolling past ----------------------------------------------
 
 const HOOK_BANNER = { centerX: 540, top: 936, height: 80, maxWidth: 920, margin: 12 };
@@ -1124,6 +1191,11 @@ export class HookBanner {
     this.sprite.opacity.target = 1;
     this.sprite.offsetY.snap(46);
     this.sprite.offsetY.target = 0;
+  }
+
+  /** A call is up (the gift showcase steps aside). */
+  get active(): boolean {
+    return this.text !== null;
   }
 
   /** `away` (0 to 1) is how far a game board has come in, or 1 while a challenge has the spot: the banner gives way to them. */
@@ -1185,6 +1257,169 @@ export class HookBanner {
       ctx.strokeText(shown, width / 2, height / 2 + 2);
       ctx.fillStyle = "#FFFFFF";
       ctx.fillText(shown, width / 2, height / 2 + 2);
+    });
+  }
+}
+
+// ---- the gift showcase -------------------------------------------------------------
+
+/** In the challenge's place under the character (visible y 900 to 1052), above the caption. */
+const SHOWCASE = { centerX: 540, top: 888, width: 940, height: 176, margin: 12 };
+/** Each tile pops in this long after the one before, over this long. */
+const TILE_STAGGER_S = 0.12;
+const TILE_IN_S = 0.3;
+
+/** How far tile `i` has popped in, 0 to 1, `t` seconds after the showcase went up. */
+export function tileReveal(t: number, i: number): number {
+  return Math.max(0, Math.min(1, (t - i * TILE_STAGGER_S) / TILE_IN_S));
+}
+
+/**
+ * What each gift does on the show, big under the character (ADR-0041): a
+ * gold title, what every gift gets, and one tile per gift power with its
+ * price, the biggest one crowned. The tiles pop in one by one, then the
+ * banner bobs while it's up. It gives way to a game, a challenge or a
+ * call to people scrolling past.
+ */
+export class GiftShowcase {
+  readonly sprite: TextSprite;
+  private card: PerksCard | null = null;
+  private shownAt = 0;
+  private revealed = true;
+  private paintedAt = 0;
+
+  constructor(gl: Gl) {
+    this.sprite = new TextSprite(gl);
+  }
+
+  set(card: PerksCard | null, now: number, scale: number): void {
+    this.card = card;
+    if (!card) {
+      this.sprite.opacity.target = 0;
+      return;
+    }
+    this.shownAt = now;
+    this.revealed = false;
+    this.paint(scale, now);
+    this.sprite.opacity.snap(0);
+    this.sprite.opacity.target = 1;
+    this.sprite.offsetY.snap(46);
+    this.sprite.offsetY.target = 0;
+  }
+
+  /** `away` (0 to 1): a game board coming in, or 1 while a challenge or a call has the spot. */
+  update(dt: number, now: number, away: number, scale: number): void {
+    if (this.card) {
+      this.sprite.opacity.target = away > 0.05 ? 0 : 1;
+      if (!this.revealed && now - this.paintedAt >= BAR_FRAME_S) this.paint(scale, now);
+      if (now - this.shownAt > 0.6) this.sprite.offsetY.target = Math.sin((now - this.shownAt) * 3.2) * 4;
+    }
+    this.sprite.update(dt, now);
+  }
+
+  repaint(scale: number): void {
+    if (this.card) this.paint(scale, this.paintedAt);
+  }
+
+  private paint(scale: number, now: number): void {
+    const card = this.card as PerksCard;
+    const { width, height, margin } = SHOWCASE;
+    const rows = card.rows.slice(0, 5);
+    const t = now - this.shownAt;
+    this.paintedAt = now;
+    this.revealed = tileReveal(t, rows.length - 1) >= 1;
+    this.sprite.x = SHOWCASE.centerX - width / 2;
+    this.sprite.y = SHOWCASE.top;
+    const titleFont = `900 30px ${FONT_FAMILY}`;
+    const priceFont = `900 25px ${FONT_FAMILY}`;
+    this.sprite.draw(width, height, scale, (ctx) => {
+      const w = width - margin * 2;
+      const h = height - margin * 2;
+      ctx.save();
+      ctx.shadowColor = withAlpha(GOLD, 0.55);
+      ctx.shadowBlur = margin;
+      ctx.fillStyle = "rgba(14,6,36,0.88)";
+      roundRect(ctx, margin, margin, w, h, 26);
+      ctx.fill();
+      ctx.restore();
+      const edge = ctx.createLinearGradient(margin, 0, margin + w, 0);
+      edge.addColorStop(0, GOLD);
+      edge.addColorStop(0.5, PERK_PINK);
+      edge.addColorStop(1, GOLD);
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 3;
+      roundRect(ctx, margin, margin, w, h, 26);
+      ctx.stroke();
+      // The header: a gift and the title in gold, what every gift gets on the right.
+      const headY = margin + 36;
+      const left = margin + 22;
+      wayMark(ctx, "gift", left + 12, headY - 9, GOLD);
+      ctx.textBaseline = "alphabetic";
+      ctx.font = titleFont;
+      const title = ctx.createLinearGradient(0, headY - 26, 0, headY);
+      title.addColorStop(0, "#FFF1B8");
+      title.addColorStop(1, GOLD);
+      ctx.fillStyle = title;
+      const titleText = fit(card.title.toUpperCase(), titleFont, w * 0.55);
+      ctx.fillText(titleText, left + 32, headY);
+      if (card.every) {
+        const room = width - margin - 22 - (left + 32 + measureWith(titleFont)(titleText) + 24);
+        const every = shrinkToFit(card.every, 760, 21, 16, room);
+        ctx.font = every.font;
+        ctx.textAlign = "right";
+        ctx.fillStyle = INK;
+        ctx.fillText(every.text, width - margin - 22, headY - 2);
+        ctx.textAlign = "left";
+      }
+      // One tile per power in two rows, cheapest first: the price in a chip, then what it does. The biggest is crowned in gold.
+      const gap = 10;
+      const cols = Math.ceil(rows.length / 2);
+      const tilesX = margin + 14;
+      const tileW = (w - 28 - gap * (cols - 1)) / cols;
+      const tileTop = headY + 14;
+      const tileH = (height - margin - 12 - tileTop - gap) / 2;
+      const chipW = Math.max(...rows.map((row) => measureWith(priceFont)(formatCount(row.diamonds)))) + 46;
+      rows.forEach((row, i) => {
+        const p = tileReveal(t, i);
+        if (p <= 0) return;
+        const best = i === rows.length - 1 && rows.length > 1;
+        const color = best ? GOLD : DIAMOND;
+        const x = tilesX + (i % cols) * (tileW + gap);
+        const y = tileTop + Math.floor(i / cols) * (tileH + gap) + (1 - p) * 12;
+        const cy = y + tileH / 2;
+        ctx.save();
+        ctx.globalAlpha = p;
+        if (best) {
+          ctx.shadowColor = withAlpha(GOLD, 0.7);
+          ctx.shadowBlur = 14;
+        }
+        ctx.fillStyle = withAlpha(color, best ? 0.22 : 0.1);
+        roundRect(ctx, x, y, tileW, tileH, tileH / 2);
+        ctx.fill();
+        ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = p;
+        ctx.strokeStyle = withAlpha(color, best ? 0.9 : 0.4);
+        ctx.lineWidth = 2;
+        roundRect(ctx, x, y, tileW, tileH, tileH / 2);
+        ctx.stroke();
+        // The price: a diamond and the number in a chip.
+        ctx.fillStyle = withAlpha(color, best ? 0.3 : 0.18);
+        roundRect(ctx, x + 5, y + 5, chipW, tileH - 10, (tileH - 10) / 2);
+        ctx.fill();
+        diamond(ctx, x + 25, cy + 1, 19, color);
+        ctx.font = priceFont;
+        ctx.fillStyle = best ? GOLD : INK;
+        ctx.fillText(formatCount(row.diamonds), x + 41, cy + 9);
+        // What it does, shrunk to fit before it's cut, and a crown on the biggest.
+        const crowned = best ? 34 : 0;
+        const label = shrinkToFit(row.text, 800, 25, 18, tileW - chipW - 26 - crowned);
+        ctx.font = label.font;
+        ctx.fillStyle = best ? GOLD : INK;
+        ctx.fillText(label.text, x + chipW + 16, cy + 9);
+        if (best) crown(ctx, x + tileW - 30, cy, 24, GOLD);
+        ctx.restore();
+      });
     });
   }
 }

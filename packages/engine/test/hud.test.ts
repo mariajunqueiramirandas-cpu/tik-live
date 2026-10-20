@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { Challenge } from "@tik-live/shared";
 import { alertDetail } from "../src/engine";
-import { challengeFraction, challengeHeadline, formatClock, pickHeader } from "../src/text/hud";
+import { challengeFraction, challengeHeadline, formatClock, pickHeader, tileReveal } from "../src/text/hud";
 import { alertVerb, fitAlert } from "../src/text/sprites";
 
 const likes: Challenge = { kind: "likes", title: "DESAFIO DAS CURTIDAS", detail: "toque na tela", value: 640, target: 1_000, remainingMs: 30_000, durationMs: 45_000, result: null, winner: null };
@@ -36,6 +36,14 @@ describe("gift powers, the dono da live and challenges (ADR-0039, ADR-0040)", ()
 
   it("names who chooses on a one-viewer pick", () => {
     expect(pickHeader("mari.souza")).toBe("ESCOLHA DE MARI.SOUZA");
+  });
+
+  it("pops the gift showcase's tiles in one after another", () => {
+    expect(tileReveal(0, 0)).toBe(0);
+    expect(tileReveal(0.3, 0)).toBe(1);
+    expect(tileReveal(0.3, 1)).toBeCloseTo(0.6);
+    expect(tileReveal(0.1, 2)).toBe(0);
+    expect(tileReveal(0.66, 3)).toBe(1);
   });
 
   it("words the new alerts", () => {

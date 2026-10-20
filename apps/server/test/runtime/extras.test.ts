@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import type { Challenge, LiveEvent, PerksCard, Persona } from "@tik-live/shared";
+import type { Challenge, LiveEvent, PerksCard, Persona, Ticker } from "@tik-live/shared";
 import { Director, type StageNotifier } from "../../src/runtime/brain/director";
 import type { HostBrain } from "../../src/runtime/brain/host";
 import { ViewerMemory } from "../../src/runtime/brain/memory";
@@ -37,6 +37,7 @@ function setup(options: { persona?: Partial<Persona>; random?: () => number; gif
   const got = {
     votes: [] as Array<{ title: string; options: string[]; tally: number[]; by?: string } | null>,
     perks: [] as Array<PerksCard | null>,
+    tickers: [] as Array<Ticker | null>,
     boss: [] as Array<{ name: string; leftMs: number } | null>,
     crowns: [] as string[],
     unlocks: [] as Array<[string, string]>,
@@ -51,6 +52,7 @@ function setup(options: { persona?: Partial<Persona>; random?: () => number; gif
     sfx: () => {},
     vote: (vote) => got.votes.push(vote),
     perks: (card) => got.perks.push(card),
+    ticker: (ticker) => got.tickers.push(ticker),
     boss: (boss) => got.boss.push(boss),
     crown: (name) => got.crowns.push(name),
     perk: (name, perk) => got.unlocks.push([name, perk]),
@@ -214,6 +216,7 @@ describe("gift powers", () => {
     await on.step();
     await on.step(5 * 60_000);
     expect(on.got.perks[0]?.rows.map((row) => row.diamonds)).toEqual([5, 30, 99, 199]);
+    expect(on.got.perks[0]?.every).toContain("seu nome na live");
     await on.step(20_000);
     expect(on.got.perks.at(-1)).toBeNull();
 
@@ -224,6 +227,26 @@ describe("gift powers", () => {
     expect(off.got.perks).toEqual([]);
     expect(off.got.unlocks).toEqual([]);
     expect(off.got.boss).toEqual([]);
+  });
+
+  it("keeps the support ticker up from the start, with the powers and their prices, and takes it down when support is off", async () => {
+    const on = setup();
+    on.director.start(60_000_000);
+    on.director.stop();
+    await on.step(60_000);
+    expect(on.got.tickers).toHaveLength(1); // sent once, not every tick
+    const lines = on.got.tickers[0]?.lines ?? [];
+    expect(lines[0]).toEqual({ way: "gift", text: "Presentes pagam as contas da IA" });
+    expect(lines.filter((line) => line.diamonds).map((line) => line.diamonds)).toEqual([5, 30, 99, 199]);
+    expect(lines.some((line) => line.way === "like")).toBe(true);
+
+    const off = setup({ giftPerks: false });
+    off.director.start(60_000_000);
+    off.director.stop();
+    expect(off.got.tickers[0]?.lines.some((line) => line.diamonds)).toBe(false);
+    off.director.reconfigure({ ...persona, segments: [{ id: "a", title: "Resenha", minutes: 60, prompt: "Converse." }], support: false });
+    await off.step();
+    expect(off.got.tickers.at(-1)).toBeNull();
   });
 });
 

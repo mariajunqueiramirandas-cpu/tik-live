@@ -1,5 +1,5 @@
 import { createEngine, startDemo, type StageEngine } from "@tik-live/engine";
-import { EFFECTS, EMOTIONS, MUSIC_LIBRARY, musicTrackSchema, SOUNDS, type Challenge, type Effect, type Emotion, type GameScene, type Look, type PerksCard, type Sound, type StageServerPayload } from "@tik-live/shared";
+import { EFFECTS, EMOTIONS, MUSIC_LIBRARY, musicTrackSchema, SOUNDS, type Challenge, type Effect, type Emotion, type GameScene, type Look, type PerksCard, type Sound, type StageServerPayload, type Ticker } from "@tik-live/shared";
 import "../stage/stage.css";
 import { HUD, SCENES, tick } from "./samples";
 
@@ -11,7 +11,8 @@ import { HUD, SCENES, tick } from "./samples";
  * `?gift=galaxy`, `?emotion=shy`, `?music=lofi-night`, `?caption=0` (no
  * sample caption with scenes), `?hud` (up next and top likers), `?support`
  * (the "apoie a live" card), `?goals` (the stream's goals), `?hook` (the call
- * to people scrolling past), `?perks` (the gift powers), `?boss` (the "dono
+ * to people scrolling past), `?perks` (the gift showcase), `?ticker` (the
+ * always-on support ticker), `?boss` (the "dono
  * da live"), `?pick` (one viewer's choice), `?challenge=likes|chat|raffle|
  * likes-won|likes-lost|raffle-won` (a challenge or the raffle), `?bare` (no
  * control panel).
@@ -40,13 +41,29 @@ const GIFTS: Record<string, { giftName: string; diamonds: number }> = {
 
 /** The gift powers on offer (ADR-0039). */
 const PERKS: PerksCard = {
-  title: "Poderes do presente",
+  title: "O que seu presente faz",
   rows: [
-    { diamonds: 1, text: "Salve com seu nome" },
-    { diamonds: 5, text: "Fura-fila: resposta na hora" },
-    { diamonds: 30, text: "Escolha o próximo jogo" },
-    { diamonds: 99, text: "Um hino só seu" },
-    { diamonds: 199, text: "Dono da live por 5 min" },
+    { diamonds: 5, text: "fura-fila no chat" },
+    { diamonds: 30, text: "escolhe o próximo jogo" },
+    { diamonds: 99, text: "ganha um hino da IA" },
+    { diamonds: 199, text: "dono da live por 5 min" },
+  ],
+  every: "Todo presente: seu nome na live + Top Doadores",
+};
+
+/** The always-on support ticker (ADR-0041), as a channel with gift powers sends it. */
+const TICKER: Ticker = {
+  title: "APOIE A LIVE",
+  lines: [
+    { way: "gift", text: "Presentes pagam as contas da IA" },
+    { way: "like", text: "Toque na tela pra curtir" },
+    { way: "gift", text: "Todo presente: seu nome na live" },
+    { way: "follow", text: "Siga pra não perder a próxima" },
+    { way: "gift", text: "fura-fila no chat", diamonds: 5 },
+    { way: "share", text: "Compartilhe com um amigo" },
+    { way: "gift", text: "escolhe o próximo jogo", diamonds: 30 },
+    { way: "gift", text: "ganha um hino da IA", diamonds: 99 },
+    { way: "gift", text: "dono da live por 5 min", diamonds: 199 },
   ],
 };
 
@@ -111,8 +128,12 @@ const lab = {
   goals: (on = true) => engine.apply(on ? HUD.goals : { t: "goals", goals: [] }),
   /** Shows (or with false, takes down) the call to people scrolling past. */
   hook: (on = true) => engine.apply({ t: "hook", text: on ? "Comenta seu nome e ganha um apelido" : null }),
-  /** Shows (or with false, hides) the gift powers on offer. */
+  /** Shows (or with false, hides) the gift showcase: what each gift unlocks. */
   perks: (on = true) => engine.apply({ t: "perks", card: on ? PERKS : null }),
+  /** Shows (or with false, hides) the always-on support ticker; `line` starts it on that line. */
+  ticker(on = true, line = 0) {
+    engine.apply({ t: "ticker", ticker: on ? { ...TICKER, lines: [...TICKER.lines.slice(line), ...TICKER.lines.slice(0, line)] } : null });
+  },
   /** Crowns (or with null, uncrowns) the "dono da live" for five minutes. */
   boss: (name: string | null = "mari.souza", leftMs = 300_000) => engine.apply({ t: "boss", boss: name ? { name, leftMs } : null }),
   /** One viewer picks the next game (or with false, the card goes back to the rankings). */
@@ -168,6 +189,7 @@ if (params.has("support")) lab.support();
 if (params.has("goals")) lab.goals();
 if (params.has("hook")) lab.hook();
 if (params.has("perks")) lab.perks();
+if (params.has("ticker")) lab.ticker(true, Number(params.get("ticker")) || 0);
 if (params.has("boss")) lab.boss();
 if (params.has("pick")) lab.pick();
 const challenge = params.get("challenge");
@@ -205,8 +227,9 @@ function panel(): void {
     }
   });
   group("Jogos", ["(none)", ...Object.keys(SCENES)], (s) => lab.scene(s === "(none)" ? null : s));
-  group("Painéis", ["a seguir e curtidas", "apoie a live", "metas", "bater a meta", "chamada", "esconder"], (k) => {
+  group("Painéis", ["a seguir e curtidas", "apoie a live", "faixa de apoio", "metas", "bater a meta", "chamada", "esconder"], (k) => {
     if (k === "apoie a live") lab.support();
+    else if (k === "faixa de apoio") lab.ticker();
     else if (k === "chamada") lab.hook();
     else if (k === "metas") lab.goals();
     else if (k === "bater a meta") lab.reachGoal();
@@ -214,6 +237,7 @@ function panel(): void {
       if (k === "esconder") {
         lab.goals(false);
         lab.hook(false);
+        lab.ticker(false);
       }
       lab.support(false);
       lab.hud(k !== "esconder");

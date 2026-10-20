@@ -170,6 +170,45 @@ test("the call to passers-by drops in under the character and comes down again",
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
 });
 
+test("the support ticker stays up under the goals, and the gift showcase shows under the character", async ({ page }) => {
+  const gold = ([r, g, b]: Rgba) => r > 180 && g > 140 && b < 140;
+  const count = async (x0: number, x1: number, y0: number, y1: number, step: number, match: (rgba: Rgba) => boolean) => {
+    let n = 0;
+    for (let y = y0; y <= y1; y += 6) for (let x = x0; x <= x1; x += step) if (match(await probe(page, x, y))) n++;
+    return n;
+  };
+  // The ticker sits right under the goals (they end near y 350), the showcase under the orb.
+  const ticker = () => count(690, 1004, 360, 440, 12, gold);
+  const showcase = () => count(80, 1000, 904, 1046, 30, gold);
+  await page.evaluate(() => (window as any).__lab.frame(2));
+  const before = { ticker: await ticker(), showcase: await showcase() };
+  await page.evaluate(() => {
+    const lab = (window as any).__lab;
+    lab.goals(true);
+    lab.ticker(true);
+    lab.perks(true);
+    lab.frame(3.5);
+  });
+  expect(await ticker(), "the ticker's gold title and gift line").toBeGreaterThan(before.ticker + 6);
+  expect(await showcase(), "the showcase's gold title and crowned tile").toBeGreaterThan(before.showcase + 10);
+  // A call to people scrolling past takes the spot; the ticker stays.
+  await page.evaluate(() => {
+    (window as any).__lab.hook(true);
+    (window as any).__lab.frame(5);
+    (window as any).__lab.perks(false);
+    (window as any).__lab.hook(false);
+    (window as any).__lab.frame(7);
+  });
+  expect(await showcase(), "showcase taken down").toBeLessThanOrEqual(before.showcase + 3);
+  expect(await ticker(), "the ticker is still up").toBeGreaterThan(before.ticker + 6);
+  await page.evaluate(() => {
+    (window as any).__lab.ticker(false);
+    (window as any).__lab.frame(9);
+  });
+  expect(await ticker(), "ticker taken down").toBeLessThanOrEqual(before.ticker + 2);
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+});
+
 test("the stage recovers from a lost GPU context", async ({ page }) => {
   await page.evaluate(() => (window as any).__lab.frame(2));
   expect(brightness(await probe(page, 540, 625))).toBeGreaterThan(300);
