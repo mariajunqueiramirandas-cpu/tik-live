@@ -156,6 +156,8 @@ export function channelRoutes(deps: AppDeps) {
       });
       if (!row) throw notFound("Esse apresentador");
       await deps.manager.rotateStageKey(row, stage.key);
+      // The PC's stage source still shows the old link: point it at the new one.
+      void deps.liveStudio.refreshStageSource(row.id, await stageUrlFor(deps, row)).catch(() => undefined);
       await audit(deps.db, { userId: user.id, action: "channel.stage_key_rotated", target: row.id, ip: clientIp(c) });
       return c.json({ channel: await toChannelDto(deps, row) });
     })
@@ -201,12 +203,24 @@ export function channelRoutes(deps: AppDeps) {
       if (!deps.broadcasts) return problem(c, 409, "broadcast_disabled", "A transmissão pela nuvem não está ligada neste servidor.");
       return c.json(await deps.broadcasts.check(rtmpUrl));
     })
-    .post("/:id/live-studio/check", valid("param", idParam), valid("json", z.object({ launch: z.boolean().optional() })), async (c) => {
-      const row = await owned(c.get("user").id, c.req.valid("param").id);
-      const { launch } = c.req.valid("json");
-      return c.json(await deps.liveStudio.check({ channelId: row.id, ...(launch !== undefined ? { launch } : {}) }));
-    })
-    .post("/:id/live-studio/action", valid("param", idParam), valid("json", liveStudioActionRequestSchema), async (c) => {
+    .post(
+      "/:id/live-studio/check",
+      // Each check can open TikTok LIVE Studio on the creator's PC.
+      rateLimit({ windowMs: 60_000, max: 20, key: (c) => `live-studio-check:${c.get("user").id}` }),
+      valid("param", idParam),
+      valid("json", z.object({ launch: z.boolean().optional() })),
+      async (c) => {
+        const row = await owned(c.get("user").id, c.req.valid("param").id);
+        const { launch } = c.req.valid("json");
+        return c.json(await deps.liveStudio.check({ channelId: row.id, ...(launch !== undefined ? { launch } : {}) }));
+      },
+    )
+    .post(
+      "/:id/live-studio/action",
+      rateLimit({ windowMs: 60_000, max: 60, key: (c) => `live-studio-action:${c.get("user").id}` }),
+      valid("param", idParam),
+      valid("json", liveStudioActionRequestSchema),
+      async (c) => {
       const user = c.get("user");
       const row = await owned(user.id, c.req.valid("param").id);
       const input = c.req.valid("json");
@@ -247,7 +261,8 @@ export function channelRoutes(deps: AppDeps) {
       const stageUrl = input.action === "inject_stage" ? await stageUrlFor(deps, row) : undefined;
       const result = await deps.liveStudio.executeAction(row.id, input, stageUrl);
       return c.json({ ...result, channel: null });
-    })
+      },
+    )
     // Each download carries a fresh pairing code, so the copy pairs itself on first run (ADR-0047).
     .get(
       "/:id/live-studio/bridge.exe",

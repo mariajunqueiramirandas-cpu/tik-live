@@ -9,7 +9,7 @@ import {
   type BridgeClientMessage,
   type LiveStudioProbe,
 } from "@tik-live/shared";
-import { LocalLiveStudioController, type LocalStudioController } from "./live-studio";
+import { LocalLiveStudioController, type LocalStudioController } from "@tik-live/shared/live-studio";
 
 const BUSY_RETRY_MS = 30_000;
 
@@ -24,7 +24,7 @@ export type BridgeAgentOptions = BridgeConnection & {
   pollMs?: number;
   reconnectMs?: number;
   onLog?: (msg: string) => void;
-  /** The server closed the connection for good (unpaired, stage link changed, host deleted); the agent has stopped. */
+  /** The server closed the connection for good (unpaired, stage link changed, host deleted, replaced); the agent has stopped. */
   onEnded?: (code: number, reason: string) => void;
 };
 
@@ -52,6 +52,10 @@ export class BridgeAgent {
   private lastProbeJson = "";
   /** Another PC holds this host; we retry quietly until it lets go. */
   private waitingTurn = false;
+  /** A status probe is running; the poll skips a beat instead of piling up. */
+  private probing: Promise<LiveStudioProbe> | null = null;
+  private changeTimer: ReturnType<typeof setTimeout> | null = null;
+  private unsubscribeChange: (() => void) | null = null;
 
   constructor(options: BridgeAgentOptions) {
     if ("token" in options) {
@@ -72,6 +76,14 @@ export class BridgeAgent {
 
   start(): void {
     this.stopped = false;
+    // Studio pushes every change: report it right away instead of waiting for the next poll.
+    this.unsubscribeChange ??= this.controller.onChange?.(() => {
+      if (this.changeTimer) return;
+      this.changeTimer = setTimeout(() => {
+        this.changeTimer = null;
+        void this.pushStatus(false);
+      }, 200);
+    }) ?? null;
     this.connect();
   }
 
@@ -85,6 +97,13 @@ export class BridgeAgent {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.changeTimer) {
+      clearTimeout(this.changeTimer);
+      this.changeTimer = null;
+    }
+    this.unsubscribeChange?.();
+    this.unsubscribeChange = null;
+    this.controller.close?.();
     if (this.ws) {
       try {
         this.ws.close(1000, "agent stopped");
@@ -105,7 +124,12 @@ export class BridgeAgent {
   }
 
   private async pushStatus(force = false): Promise<LiveStudioProbe> {
-    const probe = await this.controller.probe();
+    if (this.probing && !force) return this.probing;
+    const probing = this.controller.probe().finally(() => {
+      if (this.probing === probing) this.probing = null;
+    });
+    this.probing = probing;
+    const probe = await probing;
     const serialized = JSON.stringify(probe);
     if (force || serialized !== this.lastProbeJson) {
       this.lastProbeJson = serialized;
@@ -120,6 +144,7 @@ export class BridgeAgent {
     this.ws = ws;
 
     ws.addEventListener("open", () => {
+      if (ws !== this.ws) return;
       this.attempts = 0;
       this.lastProbeJson = "";
       void this.pushStatus(true);
@@ -129,6 +154,7 @@ export class BridgeAgent {
     });
 
     ws.addEventListener("message", (event) => {
+      if (ws !== this.ws) return;
       const msg = parseMessage(bridgeServerMessageSchema, String(event.data));
       if (!msg) return;
       if (msg.t === "hello") {
@@ -142,12 +168,19 @@ export class BridgeAgent {
     });
 
     ws.addEventListener("close", (event) => {
+      // A socket we already replaced: the server closing it (4000) is about that old connection, not this agent.
+      if (ws !== this.ws) return;
       if (this.pollTimer) {
         clearInterval(this.pollTimer);
         this.pollTimer = null;
       }
       if (this.stopped) return;
-      if (event.code === BRIDGE_CLOSE.unpaired || event.code === BRIDGE_CLOSE.stageKeyRotated || event.code === BRIDGE_CLOSE.channelDeleted) {
+      if (
+        event.code === BRIDGE_CLOSE.unpaired ||
+        event.code === BRIDGE_CLOSE.stageKeyRotated ||
+        event.code === BRIDGE_CLOSE.channelDeleted ||
+        event.code === BRIDGE_CLOSE.replaced
+      ) {
         this.stopped = true;
         this.ws = null;
         if (this.onEnded) this.onEnded(event.code, event.reason);
@@ -277,6 +310,8 @@ export class BridgeAgent {
           this.log(result.detail);
           break;
         }
+        default:
+          result = { ok: false, detail: "Esta versão do agente não conhece esse comando. Baixe o agente de novo no painel." };
       }
       const probe = await this.pushStatus(true);
       this.send({ v: 1, t: "response", id, result, probe });

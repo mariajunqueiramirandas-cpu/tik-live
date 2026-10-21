@@ -33,14 +33,16 @@ export function loadConfig(): SavedBridgeConfig {
   return {};
 }
 
-export function saveConfig(config: SavedBridgeConfig): void {
+/** Saves to the first place that works; false when none did. */
+export function saveConfig(config: SavedBridgeConfig): boolean {
   for (const target of configFilePaths()) {
     try {
       mkdirSync(path.dirname(target), { recursive: true });
       writeFileSync(target, JSON.stringify(config, null, 2), "utf8");
-      return;
+      return true;
     } catch {
       // Try next candidate path.
     }
   }
+  return false;
 }

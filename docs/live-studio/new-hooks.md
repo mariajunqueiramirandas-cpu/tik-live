@@ -14,24 +14,13 @@ Two limits shape everything below:
 - **Everything we automate is reported to TikTok** as Stream Deck usage.
   Keep automated actions at a human-like pace.
 
-## 1. Keep one socket open and listen (foundation)
+## 1. Keep one socket open and listen (done)
 
-Today every command opens and closes a socket, and the bridge polls every
-3 s. Studio already pushes the full snapshot on every change, so one
-long-lived, joined socket per agent would give us:
-
-- Instant status: going live, pausing, ending, scene changes, mute changes
-  reach the server in under a second instead of 3–10 s.
-- No false "Studio closed" from a slow probe, which today can make Stop lie
-  and Start open a second Studio (see
-  [our-integration.md](our-integration.md), problem 4).
-- No more interrupting Studio's pushes: every close currently runs Studio's
-  `stopListening()` for all clients.
-
-Needed: reconnect with re-`join_room`; re-join after any other client (such
-as a real Stream Deck) disconnects; retry `sync_settings` while the snapshot
-is empty during Studio's start-up; one command queue so toggles never
-overlap. This is the prerequisite for most items below.
+Shipped with [ADR-0048](../adr/0048-live-studio-bridge-reliability.md): the
+agent holds one joined socket, reports Studio's changes as they're pushed,
+refreshes with leave-and-join, and runs commands one at a time. The items
+below build on it: parse more of the snapshot in
+`packages/shared/src/live-studio/controller.ts` and add actions there.
 
 ## 2. Check that the stage is actually on air and audible
 
@@ -121,11 +110,10 @@ useful if the creator has the feature set up in Studio.
   "Studio shortcuts" panel in the dashboard is the most they're good for.
 - `audiofilter` (voice presets) depends on the Studio UI language.
 
-## Hardening to do alongside
+## Hardening still open
 
-- Support Studio's token mode before TikTok turns it on: detect the
-  `44{"message":"invalid"}` refusal and report "Studio changed how it
-  accepts connections" instead of "not connected".
-- Move the Studio client into one shared module so the bridge and the
-  server stop carrying separate copies, and give it a socket-level test
-  against a mock that pushes status changes and acks every action.
+- Studio's token mode is detected and reported (`authRequired`), but not
+  supported: a token needs an Elgato device plugged in.
+- New actions should get a case in the mock Studio
+  (`packages/shared/test/mock-live-studio.ts`) that behaves like Studio's
+  handler, ack codes included.

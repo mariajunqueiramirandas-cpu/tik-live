@@ -53,6 +53,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0045](0045-automatic-dj.md) | An automatic DJ with Creative Commons tracks | Proposed |
 | [0046](0046-gifts-first-and-hype-mode.md) | Gifts first, every time, and hype mode on stage | Proposed |
 | [0047](0047-bridge-agent-pairing-and-distribution.md) | Pairing and handing out the Local Bridge Agent | Proposed |
+| [0048](0048-live-studio-bridge-reliability.md) | One TikTok LIVE Studio client, one socket, no lost stops | Proposed |
 
 ## Evidence used
 

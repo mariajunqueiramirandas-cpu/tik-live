@@ -75,6 +75,8 @@ flowchart LR
   platform[[tik-live platform]]
   platform -- read chat, gifts, likes<br/>unofficial webcast connector --> tiktok[(TikTok LIVE)]
   obs -- RTMP video --> tiktok
+  agent([Local Bridge Agent<br/>on creator's PC]) -- requests and Studio status, WS --> platform
+  agent -- Stream Deck socket, local --> obs
   platform -- optional cloud broadcast<br/>RTMP --> tiktok
   platform -- host turns, moderation --> anthropic[(Claude API)]
   platform -- text-to-speech, default --> openrouter[(OpenRouter<br/>Fish Audio Drama 3)]
@@ -90,7 +92,11 @@ There are two ways to get video to TikTok:
 
 - **Browser-source mode (default):** the creator adds the stage URL to OBS or
   TikTok LIVE Studio on their own PC. It costs us almost nothing to run, and
-  this is the mode most creators will use.
+  this is the mode most creators will use. With TikTok LIVE Studio, the
+  Local Bridge Agent on the same PC starts and ends the live with the host
+  and drives scenes and clips ([docs/live-studio](../live-studio/README.md),
+  [ADR-0047](../adr/0047-bridge-agent-pairing-and-distribution.md),
+  [ADR-0048](../adr/0048-live-studio-bridge-reliability.md)).
 - **Cloud broadcast (beta):** the platform renders the stage itself and pushes
   RTMP straight to TikTok, so no PC is needed. It is CPU-heavy (about
   1.8 vCPU a stream on an AVX2 server), so it is plan-gated
@@ -225,8 +231,10 @@ apps/
   server/        Bun + Hono: API, auth, realtime hubs, channel runtimes, billing
   web/           React dashboard, landing page, and the stage page entry (Vite)
   broadcaster/   Headless renderer + ffmpeg pusher (Phase 6)
+  bridge/        Local Bridge Agent for TikTok LIVE Studio (Windows .exe)
 packages/
-  shared/        Protocol messages, zod schemas (persona, channel), plans, shared types
+  shared/        Protocol messages, zod schemas (persona, channel), plans, shared types;
+                 live-studio/ is the Node-only TikTok LIVE Studio client
   engine/        WebGL2 stage engine, no runtime dependencies
 docs/            This documentation
 deploy/          Dockerfiles, compose file with Caddy, backup script, runbooks
