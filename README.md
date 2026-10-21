@@ -59,10 +59,9 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   true or false, quick math, riddles and fastest finger. Viewers answer in
   chat, the game keeps score, and each game has its own scene on stage
   ([ADR-0023](docs/adr/0023-chat-minigames.md)). Plus party games of luck
-  ([ADR-0038](docs/adr/0038-games-of-chance-and-party-games.md)): a horse
-  race chat bets on, a spinning wheel, a tug of war pulled by likes, and a
-  hot potato that blows up on whoever holds it. Bets are free and pay
-  points. Run them from a segment or
+  ([ADR-0038](docs/adr/0038-games-of-chance-and-party-games.md)): a tug of
+  war pulled by likes, and a hot potato that blows up on whoever holds it.
+  Run them from a segment or
   start one from the studio. Every game's points add up over a loop of the
   run of show, and when the last segment ends the top three are revealed on
   a podium, one place at a time, before the ranking starts over.
@@ -113,6 +112,12 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   the host can cue, gift effects that scale with the gift, sound effects, and
   short original music the host writes as a score and the stage synthesizes
   ([ADR-0024](docs/adr/0024-music-as-code.md)).
+- **Automatic DJ**: one switch and the stage plays recorded electronic
+  music non-stop under the host's voice: 34 Creative Commons tracks by Kevin
+  MacLeod (CC BY 4.0, credited on stage), shuffled and crossfaded, the same
+  on every stage, with skip in the studio. No AI picks them, and no
+  copyrighted hits: those get a TikTok LIVE muted
+  ([ADR-0045](docs/adr/0045-automatic-dj.md)).
 - **Presets**: nine ready-made hosts, from a cozy radio voice to a Brazilian
   party MC, a gaming caster and a study buddy.
 - **Cloud broadcast** (Pro): renders the stage in headless Chromium and

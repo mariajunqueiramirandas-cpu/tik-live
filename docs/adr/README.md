@@ -16,7 +16,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0008](0008-realtime-protocol.md) | Realtime protocol | Proposed |
 | [0009](0009-stage-engine.md) | WebGL2 stage engine | Proposed |
 | [0010](0010-frontend-stack.md) | Frontend stack | Proposed |
-| [0011](0011-design-direction.md) | Design direction | Proposed |
+| [0011](0011-design-direction.md) | Design direction | Proposed (palette, UI type and studio monitor amended by 0042) |
 | [0012](0012-ai-and-voice-pipeline.md) | AI and voice pipeline | Proposed (voice amended by 0021 and 0030, pacing by 0022 and 0031, prompt by 0025 and 0040, models and context by 0026) |
 | [0013](0013-billing-and-plans.md) | Billing and plans | Proposed |
 | [0014](0014-cloud-broadcast.md) | Cloud broadcast | Proposed (pipeline amended by 0020) |
@@ -29,7 +29,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0021](0021-self-hosted-tts.md) | A self-hosted Brazilian Portuguese voice | Proposed (default voice amended by 0030) |
 | [0022](0022-host-turn-taking.md) | Host turn-taking and speech pacing | Proposed (scheduling amended by 0026) |
 | [0023](0023-chat-minigames.md) | Chat minigames, game scenes and stage reactions | Proposed |
-| [0024](0024-music-as-code.md) | Music as code | Proposed |
+| [0024](0024-music-as-code.md) | Music as code | Proposed (recorded tracks for the DJ allowed by 0045) |
 | [0025](0025-host-context-and-memory.md) | What the host knows each turn | Proposed (amended by 0026 and 0033) |
 | [0026](0026-turn-engine-and-context-cache.md) | A turn engine over one cached conversation, on Claude Haiku 5.5 | Proposed (head and folding amended by 0033) |
 | [0027](0027-brazilian-portuguese-product.md) | The product is in Brazilian Portuguese | Accepted |
@@ -40,13 +40,17 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed (on-screen support amended by 0041) |
 | [0033](0033-host-memory.md) | Host memory that's cheap, fast and accurate | Proposed |
 | [0034](0034-names-that-sound-rude.md) | Names that sound rude out loud | Proposed |
-| [0035](0035-automatic-run-of-show.md) | A run of show the host plans by itself | Proposed |
+| [0035](0035-automatic-run-of-show.md) | A run of show the host plans by itself | Proposed (segment draw amended by 0044) |
 | [0036](0036-like-and-gift-goals.md) | Like and gift goals on stage | Proposed |
 | [0037](0037-fan-levels-and-passers-by.md) | Fan levels, and catching people scrolling past | Proposed |
-| [0038](0038-games-of-chance-and-party-games.md) | Games of chance and party games | Proposed |
+| [0038](0038-games-of-chance-and-party-games.md) | Games of chance and party games | Proposed (the race and the wheel taken out by 0043) |
 | [0039](0039-gift-powers.md) | Gift powers | Proposed (the powers card amended by 0041) |
 | [0040](0040-room-challenges-and-opinions.md) | Room challenges, a more forward host, and opinions on everything | Proposed |
 | [0041](0041-support-ticker-and-gift-showcase.md) | An always-on support ticker and a gift showcase | Proposed |
+| [0042](0042-dashboard-visual-refresh.md) | Dashboard visual refresh | Proposed |
+| [0043](0043-remove-betting-games.md) | Take out the betting games | Proposed |
+| [0044](0044-segments-that-work.md) | The show leans toward the segments that work | Proposed |
+| [0045](0045-automatic-dj.md) | An automatic DJ with Creative Commons tracks | Proposed |
 
 ## Evidence used
 

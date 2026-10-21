@@ -392,13 +392,19 @@ export default function Character() {
                 label={`Deixar ${persona.name || channel.name} compor e tocar músicas curtas`}
                 hint="Batidas originais criadas na hora, tocando por baixo da voz. Você também pode pedir uma pelo estúdio."
                 checked={persona.sound?.music ?? true}
-                onChange={(music) => set("sound", { music, effects: persona.sound?.effects ?? true })}
+                onChange={(music) => set("sound", { ...persona.sound, music, effects: persona.sound?.effects ?? true })}
               />
               <Switch
                 label="Efeitos sonoros para presentes, seguidores e jogos"
                 hint="Sininhos e fanfarras curtas, gerados no palco. Sem gravações."
                 checked={persona.sound?.effects ?? true}
-                onChange={(effects) => set("sound", { music: persona.sound?.music ?? true, effects })}
+                onChange={(effects) => set("sound", { ...persona.sound, music: persona.sound?.music ?? true, effects })}
+              />
+              <Switch
+                label="DJ automático: música eletrônica sem parar"
+                hint="Faixas eletrônicas gravadas, de Kevin MacLeod, com licença Creative Commons (CC BY 4.0): pode tocar em live, com o crédito que aparece no palco. Não são hits famosos: esses têm direitos autorais e o TikTok silencia a live."
+                checked={persona.sound?.dj ?? false}
+                onChange={(dj) => set("sound", { music: persona.sound?.music ?? true, effects: persona.sound?.effects ?? true, dj })}
               />
             </div>
           </Tabs.Content>
@@ -459,7 +465,7 @@ export default function Character() {
             />
             {persona.autoShow ? (
               <p className={s.note}>
-                Cada volta tem seis quadros: papo, opinião polêmica, pergunta sem filtro, tribunal do chat, red flag ou green flag, rankings e outros, intercalados com minijogos (quiz, corrida de apostas, roleta, cabo de guerra, batata quente…), e termina com um jogo e o pódio. Você continua podendo trocar de quadro pelo estúdio.
+                Cada volta tem seis quadros: papo, opinião polêmica, pergunta sem filtro, tribunal do chat, red flag ou green flag, rankings e outros, intercalados com minijogos (quiz, charadas, cabo de guerra, batata quente…), e termina com um jogo e o pódio. Você continua podendo trocar de quadro pelo estúdio.
               </p>
             ) : (
               <>

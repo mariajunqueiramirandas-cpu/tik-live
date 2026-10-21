@@ -22,6 +22,20 @@
       "when": 1792296832118,
       "tag": "0002_host_memory",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792534223530,
+      "tag": "0003_retire_betting_games",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792537858690,
+      "tag": "0004_segment_scores",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,11 @@
+import { useId } from "react";
+
 /**
  * A tiny trend line (no axes) for list rows. The label carries the numbers
  * for screen readers; the line is decoration for sighted users.
  */
 export function Sparkline({ values, width = 120, height = 32, label }: { values: number[]; width?: number; height?: number; label: string }) {
+  const fade = `spark-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   if (values.length < 2) {
     return (
       <svg width={width} height={height} role="img" aria-label={label}>
@@ -18,7 +21,13 @@ export function Sparkline({ values, width = 120, height = 32, label }: { values:
   const last = points[points.length - 1] as readonly [number, number];
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label}>
-      <path d={area} fill="var(--glow-soft)" />
+      <defs>
+        <linearGradient id={fade} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stopColor="var(--glow)" stopOpacity="0.22" />
+          <stop offset="1" stopColor="var(--glow)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${fade})`} />
       <path d={line} fill="none" stroke="var(--glow)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
       <circle cx={last[0]} cy={last[1]} r="2.5" fill="var(--glow)" />
     </svg>

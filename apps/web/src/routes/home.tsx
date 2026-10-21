@@ -16,9 +16,11 @@ function HostRow({ channel }: { channel: ChannelListItem }) {
   const last = channel.lastStream;
   const to = `/app/hosts/${channel.id}`;
   return (
-    <li className={s.row}>
+    <li className={s.row} data-live={live || undefined} style={{ "--host-a": channel.persona.look.primary, "--host-b": channel.persona.look.secondary } as React.CSSProperties}>
       <Link to={to} className={s.rowLink} viewTransition {...prefetchProps(to)}>
-        <HostSwatch look={channel.persona.look} size={40} />
+        <span className={s.avatar}>
+          <HostSwatch look={channel.persona.look} size={44} />
+        </span>
         <span className={s.identity}>
           <span className={s.name}>{channel.name}</span>
           <span className={s.where}>{channel.source === "tiktok" && channel.tiktokUsername ? `@${channel.tiktokUsername}` : "Modo de treino"}</span>
@@ -31,9 +33,11 @@ function HostRow({ channel }: { channel: ChannelListItem }) {
       <span className={s.trend}>
         {last ? (
           <>
-            <Sparkline values={last.viewers} label={`A última live teve pico de ${last.peakViewers} espectadores`} />
+            <Sparkline values={last.viewers} width={112} height={36} label={`A última live teve pico de ${last.peakViewers} espectadores`} />
             <span className={s.trendText}>
-              <span>Pico {count(last.peakViewers)}</span>
+              <span>
+                Pico <strong>{count(last.peakViewers)}</strong>
+              </span>
               <span className={s.dim}>{live ? "agora" : ago(last.endedAt ?? last.startedAt)}</span>
             </span>
           </>
@@ -59,11 +63,14 @@ function UsageMeter() {
   return (
     <div className={s.usage}>
       <div className={s.usageText}>
-        <span>Ao vivo neste mês</span>
+        <span className={s.usageLabel}>Ao vivo neste mês</span>
         <span>
-          <strong>{duration(liveSeconds * 1000)}</strong>
+          <strong className={s.usageValue}>{duration(liveSeconds * 1000)}</strong>
           {liveHoursLimit !== null && <span className={s.dim}> de {liveHoursLimit} h no plano {data.plan.name}</span>}
         </span>
+        <Link to="/app/billing" className={s.usageLink} {...prefetchProps("/app/billing")}>
+          Ver planos
+        </Link>
       </div>
       {liveHoursLimit !== null && (
         <div className={s.meter} role="meter" aria-valuemin={0} aria-valuemax={liveHoursLimit} aria-valuenow={Math.round(used * 10) / 10} aria-label="Horas ao vivo usadas neste mês">

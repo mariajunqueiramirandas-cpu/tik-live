@@ -62,6 +62,15 @@ the kill switch (pause, skip, stop) cuts a sentence.
   air.
 - Deadline: the estimated duration plus 4 s until a stage starts the line.
   After `started`, it becomes the real duration plus 1.5 s.
+- Only stages that answer pace the show. A frozen page (a background tab, a
+  suspended OBS source) keeps its socket open, because the browser still
+  answers pings, but never finishes a line: with three of them connected,
+  every line waited out the 4 s start grace and the show crawled. A stage
+  that lets a line run out stops pacing until it reports a line again, one
+  silent for 30 s doesn't pace, and an on-air stage silent for 60 s is
+  disconnected. Stages send telemetry from a timer every 5 s as a heartbeat,
+  and drop their waiting lines when that heartbeat shows they were frozen
+  ([protocol](../protocol.md#connection-lifecycle)).
 - Stats are coalesced to at most four messages a second.
 
 ### Speech pipeline

@@ -23,6 +23,7 @@ export const keys = {
   sessions: (id: string) => ["channels", id, "sessions"] as const,
   session: (id: string, sid: string) => ["channels", id, "sessions", sid] as const,
   audience: (id: string) => ["channels", id, "audience"] as const,
+  segments: (id: string) => ["channels", id, "segments"] as const,
   billing: ["billing"] as const,
   voices: ["voices"] as const,
 };
@@ -55,6 +56,10 @@ export const queries = {
     queryKey: keys.audience(id),
     queryFn: () => call(api.api.channels[":id"].audience.$get({ param: { id } })),
   }),
+  segments: (id: string) => ({
+    queryKey: keys.segments(id),
+    queryFn: async () => (await call(api.api.channels[":id"].segments.$get({ param: { id } }))).segments,
+  }),
   billing: () => ({ queryKey: keys.billing, queryFn: () => call(api.api.billing.$get()) }),
   voices: () => ({ queryKey: keys.voices, queryFn: () => call(api.api.voices.$get()), staleTime: 30 * 60_000 }),
 };
@@ -66,6 +71,7 @@ export const useChannel = (id: string) => useQuery(queries.channel(id));
 export const useSessions = (id: string) => useQuery(queries.sessions(id));
 export const useSession = (id: string, sid: string) => useQuery({ ...queries.session(id, sid), enabled: Boolean(sid) });
 export const useAudience = (id: string) => useQuery(queries.audience(id));
+export const useSegmentScores = (id: string) => useQuery(queries.segments(id));
 export const useBilling = () => useQuery(queries.billing());
 export const useVoices = () => useQuery(queries.voices());
 

@@ -26,6 +26,14 @@ export interface AudioEngineOptions {
 export type AudioState = "running" | "suspended" | "unavailable";
 
 const PREFETCH_LIMIT = 6;
+/**
+ * A clip that isn't fetched and decoded this soon after its line is due plays
+ * as captions instead: a line that starts late puts the stage out of sync
+ * with the show, and the server stops waiting for it a few seconds later.
+ */
+const LOAD_TIMEOUT_MS = 3_500;
+/** Past a clip's length plus this, a line counts as done even if the audio clock never got there (a suspended context). */
+const END_SLACK_MS = 1_000;
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -120,7 +128,7 @@ export class AudioEngine {
     const token = this.token;
     const ctx = audioUrl ? this.ensure() : null;
     if (ctx && audioUrl) {
-      const buffer = await this.load(audioUrl);
+      const buffer = await this.loadWithin(audioUrl, LOAD_TIMEOUT_MS);
       this.cache.delete(audioUrl);
       // Stopped (or replaced) while loading: start nothing.
       if (token !== this.token) return inertHandle(buffer?.duration ?? fallbackMs / 1000);
@@ -209,6 +217,15 @@ export class AudioEngine {
     return sum / Math.max(1, to - from + 1);
   }
 
+  /** The clip, or null if it isn't ready within `ms` (it keeps loading for the cache). */
+  private loadWithin(url: string, ms: number): Promise<AudioBuffer | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), ms);
+    });
+    return Promise.race([this.load(url), late]).finally(() => clearTimeout(timer));
+  }
+
   private load(url: string): Promise<AudioBuffer | null> {
     const cached = this.cache.get(url);
     if (cached) return cached;
@@ -270,15 +287,26 @@ export class AudioEngine {
     source.connect(this.analyser!);
     this.source = source;
     const done = new Promise<void>((resolve) => {
-      this.resolveCurrent = resolve;
-      source.onended = () => {
+      const finish = () => {
+        clearTimeout(watchdog);
+        source.onended = null;
         if (this.source === source) {
-          this.source.disconnect();
+          try {
+            source.stop();
+          } catch {
+            // already stopped
+          }
+          source.disconnect();
           this.source = null;
           this.resolveCurrent = null;
         }
         resolve();
       };
+      this.resolveCurrent = finish;
+      source.onended = finish;
+      // If the audio clock stalls (the context got suspended), `onended` never
+      // fires: without this the stage would hang on this line for good.
+      const watchdog = setTimeout(finish, buffer.duration * 1000 + END_SLACK_MS);
     });
     // A hair of lead time keeps the start sample-accurate and glitch-free.
     source.start(ctx.currentTime + 0.02);

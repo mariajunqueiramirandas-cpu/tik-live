@@ -11,3 +11,4 @@ export type SessionList = Ok<InferResponseType<(typeof api.api.channels)[":id"][
 export type SessionSummary = SessionList["sessions"][number];
 export type SessionDetail = Ok<InferResponseType<(typeof api.api.channels)[":id"]["sessions"][":sid"]["$get"]>>;
 export type Audience = Ok<InferResponseType<(typeof api.api.channels)[":id"]["audience"]["$get"]>>;
+export type SegmentScore = Ok<InferResponseType<(typeof api.api.channels)[":id"]["segments"]["$get"]>>["segments"][number];

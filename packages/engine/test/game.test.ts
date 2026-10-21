@@ -17,16 +17,10 @@ import {
   sceneChange,
   secondsLeft,
   shares,
-  spinTurns,
   staticKey,
-  stripOffsetAt,
-  stripPosition,
-  stripRepeats,
-  stripTarget,
   tileGrid,
   timerFraction,
   trackPosition,
-  wrap,
 } from "../src/game/model";
 import { alertDetail } from "../src/engine";
 import { giftFlavor, giftTier, KIND, nextCombo } from "../src/stage/fx";
@@ -92,62 +86,8 @@ describe("scene transitions", () => {
   });
 });
 
-const race = (over: Partial<Extract<GameScene, { kind: "race" }>> = {}): GameScene => ({
-  kind: "race",
-  round: 1,
-  rounds: 3,
-  phase: "open",
-  remainingMs: 20_000,
-  durationMs: 25_000,
-  stage: "bets",
-  racers: [
-    { name: "Relâmpago", odds: 3, bets: 0, progress: 0 },
-    { name: "Paçoca", odds: 10, bets: 0, progress: 0 },
-  ],
-  bets: 0,
-  winner: null,
-  winners: [],
-  event: null,
-  ...over,
-});
-
-const wheel = (over: Partial<Extract<GameScene, { kind: "wheel" }>> = {}): GameScene => ({
-  kind: "wheel",
-  round: 1,
-  rounds: 4,
-  phase: "open",
-  remainingMs: 15_000,
-  durationMs: 20_000,
-  stage: "bets",
-  sectors: [
-    { label: "Azul", odds: 2, bets: 0 },
-    { label: "Ouro", odds: 15, bets: 0 },
-  ],
-  strip: [0, 0, 1, 0],
-  landing: null,
-  spinMs: 0,
-  spinLeftMs: 0,
-  bets: 0,
-  result: null,
-  winners: [],
-  ...over,
-});
-
-describe("games of chance and parties", () => {
-  it("keeps a betting round on screen from the bets through the race to the finish", () => {
-    const running = race({ phase: "reveal", stage: "running", racers: [{ name: "Relâmpago", odds: 3, bets: 4, progress: 0.4 }, { name: "Paçoca", odds: 10, bets: 1, progress: 0.5 }] });
-    expect(sceneChange(race(), running)).toBe("update");
-    expect(sceneChange(running, race({ phase: "reveal", stage: "finish", winner: 1 }))).toBe("update");
-    expect(sceneChange(race(), race({ round: 2 }))).toBe("swap");
-    expect(sceneChange(wheel(), wheel({ phase: "reveal", stage: "running", landing: 2, spinMs: 6000, spinLeftMs: 6000 }))).toBe("update");
-    expect(sceneChange(wheel(), wheel({ strip: [1, 0, 0, 0] }))).toBe("swap");
-  });
-
-  it("moves racers, bets, the rope and the potato without repainting the board", () => {
-    const at = (progress: number, bets: number) => race({ phase: "reveal", stage: "running", bets, racers: [{ name: "Relâmpago", odds: 3, bets, progress }, { name: "Paçoca", odds: 10, bets: 0, progress: progress / 2 }], event: `${bets}` });
-    expect(staticKey(at(0.1, 1))).toBe(staticKey(at(0.8, 9)));
-    expect(staticKey(race())).not.toBe(staticKey(at(0.1, 1)));
-    expect(staticKey(wheel({ bets: 1 }))).toBe(staticKey(wheel({ bets: 30 })));
+describe("party games", () => {
+  it("moves the rope and the potato without repainting the board", () => {
     const tug = (rope: number, pulls: number, phase: "open" | "reveal" = "open", winner: number | null = null): GameScene => ({
       kind: "tug",
       round: 1,
@@ -182,50 +122,6 @@ describe("games of chance and parties", () => {
     expect(staticKey(potato("duda"))).toBe(staticKey(potato("caio")));
     expect(sceneChange(potato("duda"), potato("duda", { name: "duda", lost: 9 }))).toBe("update");
     expect(staticKey(potato("duda"))).not.toBe(staticKey(potato("duda", { name: "duda", lost: 9 })));
-  });
-
-  it("repeats a short strip until it covers the board as it wraps", () => {
-    expect(stripRepeats(12, 9)).toBe(1);
-    expect(stripRepeats(4, 9)).toBe(3);
-    expect(stripRepeats(9, 9)).toBe(1);
-    expect(wrap(-30, 100)).toBe(70);
-    expect(wrap(250, 100)).toBe(50);
-  });
-
-  it("draws every tile once, centered on the pointer when the offset says so", () => {
-    const tile = 150;
-    const total = tile * 10;
-    // Offset at a tile's center puts that tile right under the pointer.
-    expect(stripPosition(3, 3 * tile + tile / 2, tile, total)).toBe(0);
-    expect(stripPosition(4, 3 * tile + tile / 2, tile, total)).toBe(tile);
-    // Positions wrap into [-total/2, total/2).
-    for (let offset = 0; offset < total * 3; offset += 37) {
-      for (let i = 0; i < 10; i++) {
-        const pos = stripPosition(i, offset, tile, total);
-        expect(pos).toBeGreaterThanOrEqual(-total / 2);
-        expect(pos).toBeLessThan(total / 2);
-      }
-    }
-  });
-
-  it("spins whole loops and stops with the landing tile under the pointer", () => {
-    const tile = 150;
-    const total = tile * 12;
-    const from = tile / 2;
-    for (const landing of [0, 5, 11]) {
-      const to = stripTarget(from, landing, tile, total, spinTurns(6000));
-      expect(to - from).toBeGreaterThanOrEqual(2 * total);
-      expect(Math.abs(stripPosition(landing, to, tile, total))).toBeLessThan(1e-6);
-      // Still before the spin, fast at first, crawling at the end, and exactly there when it's over.
-      expect(stripOffsetAt(9, from, to, 10, 16)).toBe(from);
-      const early = stripOffsetAt(11, from, to, 10, 16) - from;
-      const late = to - stripOffsetAt(15, from, to, 10, 16);
-      expect(early).toBeGreaterThan(late * 50);
-      expect(stripOffsetAt(16, from, to, 10, 16)).toBe(to);
-      expect(stripOffsetAt(30, from, to, 10, 16)).toBe(to);
-    }
-    expect(spinTurns(2000)).toBe(2);
-    expect(spinTurns(9000)).toBe(4);
   });
 
   it("counts how long the potato has been held and maps the rope onto its track", () => {

@@ -10,15 +10,15 @@ import { useSearchParams } from "react-router";
 const appearance = {
   variables: {
     colorPrimary: "#7CF5FF",
-    colorBackground: "#1E1247",
-    colorInputBackground: "#140A33",
-    colorText: "#F4F0FF",
-    colorTextSecondary: "#A397D6",
-    colorInputText: "#F4F0FF",
+    colorBackground: "#181525",
+    colorInputBackground: "#0A0912",
+    colorText: "#F4F2FA",
+    colorTextSecondary: "#ADA8C6",
+    colorInputText: "#F4F2FA",
     colorDanger: "#FF6B6B",
     colorTextOnPrimaryBackground: "#062A30",
-    borderRadius: "8px",
-    fontFamily: '"Atkinson Hyperlegible Next", "Atkinson Fallback", system-ui, sans-serif',
+    borderRadius: "10px",
+    fontFamily: '"Reddit Sans", "Reddit Fallback", system-ui, sans-serif',
   },
 };
 

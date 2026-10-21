@@ -1,4 +1,5 @@
 import {
+  djCredit,
   disclosureText,
   parseMessage,
   PROTOCOL_VERSION,
@@ -14,6 +15,8 @@ import {
   type StageRole,
   type StageServerPayload,
   type BoostKind,
+  type DjStageTrack,
+  type DjTrack,
   type Challenge,
   type LeaderBoard,
   type LeaderRow,
@@ -36,6 +39,14 @@ const END_GRACE_MS = 1_500;
 const STATS_INTERVAL_MS = 250;
 /** A challenge that ended this long ago isn't worth showing to a stage that just connected. */
 const CHALLENGE_REPLAY_MS = 6_000;
+/**
+ * A live stage page sends telemetry every few seconds. One silent this long is
+ * frozen (a hidden or background tab, a suspended OBS source) even though its
+ * browser still answers WebSocket pings: it doesn't pace the show.
+ */
+const QUIET_MS = 30_000;
+/** Silent this long, an on-air stage is disconnected; if the page wakes up it reconnects and gets the show as it is now. */
+const SILENT_CLOSE_MS = 60_000;
 
 type VoteView = NonNullable<Extract<StageServerPayload, { t: "vote" }>["vote"]>;
 
@@ -51,6 +62,14 @@ export interface EngineTelemetry {
 interface StagePeer {
   peer: Peer;
   role: StageRole;
+  /** When it last sent anything. */
+  heardAt: number;
+  /**
+   * It let a line run out without finishing it (a frozen or throttled page).
+   * It doesn't pace the show again until it reports a line, so one stuck page
+   * can't add the start grace to every line.
+   */
+  lagging: boolean;
 }
 
 export interface StageHubOptions {
@@ -73,6 +92,8 @@ interface Playback {
   /** Moves the deadline (a stage started the line and told us how long it really is). */
   rearm(ms: number): void;
   done(): void;
+  /** The deadline passed: stop waiting, and stop pacing by the stages that never finished. */
+  expire(): void;
 }
 
 /**
@@ -88,6 +109,8 @@ export class StageHub implements SpeechOutput, StageNotifier {
   private lastGame: GameScene | null = null;
   /** The piece playing now and when it ends, so a stage that reconnects picks it up. */
   private lastMusic: { track: MusicTrack; endsAt: number } | null = null;
+  /** The DJ's track, when it started and what comes next, so a stage that connects joins it mid-track (ADR-0045). */
+  private lastDj: { track: DjTrack; startedAt: number; next: DjTrack | undefined } | null = null;
   private lastStats: { viewers: number; likes: number } | undefined;
   /** What's up next and when it was sent, so a stage that connects gets the countdowns from now. */
   private lastSchedule: { items: UpNextItem[]; at: number } | null = null;
@@ -117,7 +140,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
   }
 
   attach(peer: Peer, role: StageRole): void {
-    this.peers.set(peer.id, { peer, role });
+    this.peers.set(peer.id, { peer, role, heardAt: this.now(), lagging: false });
     this.sendTo(peer, {
       t: "hello",
       serverTime: this.now(),
@@ -146,6 +169,11 @@ export class StageHub implements SpeechOutput, StageNotifier {
     if (this.lastGoals.length) this.sendTo(peer, { t: "goals", goals: this.lastGoals });
     // A piece that's nearly over isn't worth restarting from the top.
     if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
+    if (this.lastDj) {
+      const offsetMs = this.now() - this.lastDj.startedAt;
+      // Past its end the next track is on its way; nothing to join.
+      if (offsetMs < this.lastDj.track.seconds * 1000) this.sendTo(peer, this.djMessage(this.lastDj.track, offsetMs, this.lastDj.next));
+    }
     this.options.log?.debug(`${role} stage connected`);
   }
 
@@ -163,16 +191,19 @@ export class StageHub implements SpeechOutput, StageNotifier {
     if (!entry) return;
     const message = parseMessage(stageClientMessageSchema, raw);
     if (!message) return;
+    entry.heardAt = this.now();
     switch (message.t) {
       case "ready":
         entry.role = message.role;
         break;
       case "started": {
+        entry.lagging = false;
         const playback = this.playing.get(message.id);
         if (playback?.pending.has(peerId)) playback.rearm((message.durationMs || playback.cue.durationMs) + END_GRACE_MS);
         break;
       }
       case "spoken": {
+        entry.lagging = false;
         // Only stages that are really on air pace the host; previews don't.
         const playback = this.playing.get(message.id);
         if (playback) this.settle(playback, peerId);
@@ -195,6 +226,23 @@ export class StageHub implements SpeechOutput, StageNotifier {
 
   isEmpty(): boolean {
     return this.peers.size === 0;
+  }
+
+  /**
+   * Disconnects on-air stages that went silent (a frozen page whose browser
+   * still answers pings, so the socket never times out). Called every few
+   * seconds by the manager. Returns how many were closed.
+   */
+  sweep(): number {
+    let closed = 0;
+    for (const [id, entry] of [...this.peers]) {
+      if (entry.role === "preview" || this.now() - entry.heardAt < SILENT_CLOSE_MS) continue;
+      this.options.log?.info(`${entry.role} stage stopped responding; disconnecting it`);
+      this.detach(id);
+      entry.peer.close(4000, "stage not responding");
+      closed += 1;
+    }
+    return closed;
   }
 
   counts(): { program: number; preview: number; broadcast: number } {
@@ -285,7 +333,7 @@ export class StageHub implements SpeechOutput, StageNotifier {
     });
     this.cueListener?.(cue, this.now());
 
-    const onAir = [...this.peers].filter(([, entry]) => entry.role !== "preview").map(([id]) => id);
+    const onAir = [...this.peers].filter(([, entry]) => this.paces(entry)).map(([id]) => id);
     return new Promise((resolve) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const playback: Playback = {
@@ -293,7 +341,16 @@ export class StageHub implements SpeechOutput, StageNotifier {
         pending: new Set(onAir),
         rearm: (ms) => {
           clearTimeout(timer);
-          timer = setTimeout(playback.done, ms);
+          timer = setTimeout(playback.expire, ms);
+        },
+        expire: () => {
+          for (const id of playback.pending) {
+            const entry = this.peers.get(id);
+            if (!entry || entry.lagging) continue;
+            entry.lagging = true;
+            this.options.log?.warn(`a ${entry.role} stage didn't finish a line in time; the show won't wait for it until it catches up`);
+          }
+          playback.done();
         },
         done: () => {
           clearTimeout(timer);
@@ -313,6 +370,11 @@ export class StageHub implements SpeechOutput, StageNotifier {
   interrupt(): void {
     this.broadcast({ t: "stop" });
     for (const playback of [...this.playing.values()]) playback.done();
+  }
+
+  /** On air and answering: its `started` and `spoken` set the show's pace. */
+  private paces(entry: StagePeer): boolean {
+    return entry.role !== "preview" && !entry.lagging && this.now() - entry.heardAt < QUIET_MS;
   }
 
   private settle(playback: Playback, peerId: string): void {
@@ -352,6 +414,12 @@ export class StageHub implements SpeechOutput, StageNotifier {
   music(track: MusicTrack | null, endsAt = 0): void {
     this.lastMusic = track ? { track, endsAt } : null;
     this.broadcast({ t: "music", track });
+  }
+
+  /** The automatic DJ's track (ADR-0045), started at `startedAt` (server clock), or null to fade it out. */
+  dj(track: DjTrack | null, startedAt = this.now(), next?: DjTrack): void {
+    this.lastDj = track ? { track, startedAt, next } : null;
+    this.broadcast(track ? this.djMessage(track, Math.max(0, this.now() - startedAt), next) : { t: "dj", track: null });
   }
 
   sfx(sound: Sound): void {
@@ -470,6 +538,22 @@ export class StageHub implements SpeechOutput, StageNotifier {
   // ---- internals ----------------------------------------------------------
 
   /** The challenge as a stage connecting now should see it: its clock moved on, and nothing that ended a while ago. */
+  private djMessage(track: DjTrack, offsetMs: number, next: DjTrack | undefined): StageServerPayload {
+    const stageTrack: DjStageTrack = {
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      credit: djCredit(track),
+      url: this.djUrl(track),
+      seconds: track.seconds,
+    };
+    return { t: "dj", track: stageTrack, offsetMs: Math.round(offsetMs), ...(next ? { next: this.djUrl(next) } : {}) };
+  }
+
+  private djUrl(track: DjTrack): string {
+    return `/api/stage/${this.options.stageKey}/dj/${track.id}`;
+  }
+
   private replayedChallenge(): Challenge | null {
     const last = this.lastChallenge;
     if (!last) return null;

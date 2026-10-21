@@ -6,11 +6,12 @@ type Tone = "ok" | "warn" | "bad" | "off";
 
 function Item({ tone, label, value, detail }: { tone: Tone; label: string; value: string; detail?: string }) {
   return (
-    <li className={cx(s.healthItem, s[tone])}>
+    <li className={cx(s.healthItem, s[tone])} title={detail}>
       <span className={s.healthDot} aria-hidden />
       <span className={s.healthLabel}>{label}</span>
       <span className={s.healthValue}>{value}</span>
-      {detail && <span className={s.healthDetail}>{detail}</span>}
+      {/* The breakdown is long: on hover for sighted users, read out for screen readers. */}
+      {detail && <span className="visually-hidden">, {detail}</span>}
     </li>
   );
 }

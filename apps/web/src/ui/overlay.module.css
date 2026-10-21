@@ -2,7 +2,7 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgb(5 2 18 / 0.72);
+    background: rgb(4 3 9 / 0.72);
     z-index: 40;
   }
   .overlay[data-state="open"] {
@@ -20,7 +20,7 @@
     padding: var(--s-6);
     border-radius: var(--r-panel);
     background: var(--shelf);
-    box-shadow: inset 0 0 0 1px var(--hairline-strong);
+    box-shadow: var(--float);
     display: grid;
     gap: var(--s-4);
   }
@@ -49,9 +49,7 @@
     padding: 6px;
     border-radius: 12px;
     background: var(--shelf);
-    box-shadow:
-      inset 0 0 0 1px var(--hairline-strong),
-      0 12px 32px rgb(5 2 18 / 0.5);
+    box-shadow: var(--float);
   }
   .menu[data-state="open"] {
     animation: pop var(--dur) var(--ease-out);
@@ -100,9 +98,9 @@
     border-radius: 7px;
     background: var(--reef);
     color: var(--ink);
-    font-size: var(--t-12);
+    font-size: var(--t-13);
     line-height: 1.3;
-    box-shadow: 0 6px 20px rgb(5 2 18 / 0.5);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.5);
     max-width: 280px;
   }
   .tooltip[data-state="delayed-open"] {
@@ -129,9 +127,7 @@
     padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
     border-radius: 12px;
     background: var(--shelf);
-    box-shadow:
-      inset 0 0 0 1px var(--hairline-strong),
-      0 12px 32px rgb(5 2 18 / 0.55);
+    box-shadow: var(--float);
   }
   .toast[data-state="open"] {
     animation: slideIn var(--dur-slow) var(--ease-out);

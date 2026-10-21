@@ -35,7 +35,9 @@ function HostList({ onNavigate }: { onNavigate?: () => void }) {
                 viewTransition
                 {...prefetchProps(`/app/hosts/${channel.id}`)}
               >
-                <HostSwatch look={channel.persona.look} size={24} />
+                <span className={cx(s.swatchWrap, channel.runtime.status === "live" && s.swatchLive)} data-square={channel.persona.look.character === "voice-line" || undefined}>
+                  <HostSwatch look={channel.persona.look} size={24} />
+                </span>
                 <span className={s.hostName}>{channel.name}</span>
                 {channel.runtime.status === "live" ? (
                   <span className={s.hostLive} aria-label={`Ao vivo, ${channel.runtime.viewers} assistindo`}>

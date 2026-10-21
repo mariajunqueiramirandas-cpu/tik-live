@@ -7,6 +7,10 @@ import type { Persona, Segment } from "./persona";
  * segments and minigames in turn, drawn from the pools below, ending on a
  * game so the loop closes on its podium (and chat can vote on it). Every
  * loop is planned again, so a long stream doesn't repeat the same order.
+ *
+ * With a `focus` (ADR-0044), the draw leans toward the formats and games
+ * that pull the most viewers, likes and gifts on the channel, and gives them
+ * more time; the rest still come up, less often and shorter.
  */
 
 /** Segments in one automatic loop: talk and games in turn, the last one a game. */
@@ -104,6 +108,32 @@ export function seededRandom(seed: number): () => number {
   };
 }
 
+/**
+ * How much the show leans toward a segment (ADR-0044), by `segmentKey`:
+ * 1 is neutral, above 1 it comes up sooner and runs longer, below 1 later
+ * and shorter.
+ */
+export type ShowFocus = (key: string) => number;
+
+/** The most and least a focus weight can count, so no format takes over or disappears. */
+export const FOCUS_MIN = 0.25;
+export const FOCUS_MAX = 4;
+
+/**
+ * What a segment is, for learning which ones work (ADR-0044): an automatic
+ * talk format by its title, an automatic game by its kind, a creator's
+ * segment by its id (its title and game can change, it's still their segment).
+ */
+export function segmentKey(segment: Pick<Segment, "id" | "title">, game?: GameKind): string {
+  if (!isAutoSegment(segment)) return `segment:${segment.id}`;
+  return game ? `game:${game}` : `talk:${segment.title}`;
+}
+
+/** Segments the automatic run of show planned (their ids carry the loop number). */
+export function isAutoSegment(segment: Pick<Segment, "id">): boolean {
+  return segment.id.startsWith("auto-");
+}
+
 function shuffled<T>(items: readonly T[], random: () => number): T[] {
   const out = items.slice();
   for (let i = out.length - 1; i > 0; i--) {
@@ -114,16 +144,38 @@ function shuffled<T>(items: readonly T[], random: () => number): T[] {
 }
 
 /**
+ * A shuffle where heavier items tend to come first (Efraimidis–Spirakis):
+ * each item's key is u^(1/w), highest first. Equal weights are a plain shuffle.
+ */
+function weighted<T>(items: readonly T[], weight: (item: T) => number, random: () => number): T[] {
+  return items
+    .map((item) => ({ item, key: Math.pow(random(), 1 / clampFocus(weight(item))) }))
+    .sort((a, b) => b.key - a.key)
+    .map((entry) => entry.item);
+}
+
+function clampFocus(weight: number): number {
+  return Number.isFinite(weight) ? Math.min(FOCUS_MAX, Math.max(FOCUS_MIN, weight)) : 1;
+}
+
+/** A segment's minutes, stretched for a strong one (up to +50%) and trimmed for a weak one (down to -25%). */
+export function focusMinutes(minutes: number, weight: number): number {
+  const stretch = Math.min(1.5, Math.max(0.75, 1 + 0.25 * Math.log2(clampFocus(weight))));
+  return Math.max(3, Math.round(minutes * stretch));
+}
+
+/**
  * One loop of the automatic run of show: talk, game, talk, game… ending on a
  * game. `loop` counts loops in this stream (it goes into the segment ids, so
  * a new loop never looks like the one before); `seed` varies the draw
- * between streams.
+ * between streams; `focus` leans it toward what works on the channel.
  */
-export function autoShow(loop: number, seed: number): Segment[] {
+export function autoShow(loop: number, seed: number, focus?: ShowFocus): Segment[] {
   const random = seededRandom(seed + Math.imul(loop + 1, 0x9e3779b1));
-  const talks = shuffled(TALK, random);
+  const lean = focus ?? (() => 1);
+  const talks = focus ? weighted(TALK, (talk) => lean(`talk:${talk.title}`), random) : shuffled(TALK, random);
   // "poll" has no winners, so it never closes a loop: the podium wants points.
-  const games = shuffled(GAME_KINDS, random);
+  const games = focus ? weighted(GAME_KINDS, (kind) => lean(`game:${kind}`), random) : shuffled(GAME_KINDS, random);
   const scored = games.filter((kind) => kind !== "poll");
   const segments: Segment[] = [];
   let talk = 0;
@@ -132,11 +184,12 @@ export function autoShow(loop: number, seed: number): Segment[] {
     const id = `auto-${loop + 1}-${i + 1}`;
     if (i % 2 === 0) {
       const pick = talks[talk++ % talks.length] as (typeof TALK)[number];
-      segments.push({ id, ...pick });
+      segments.push({ id, ...pick, minutes: focus ? focusMinutes(pick.minutes, lean(`talk:${pick.title}`)) : pick.minutes });
     } else {
       const last = i === AUTO_SHOW_SEGMENTS - 1;
       const kind: GameKind = last ? (scored.find((k) => !segments.some((s) => s.game?.kind === k)) ?? "trivia") : (games[game++ % games.length] as GameKind);
-      segments.push({ id, title: GAME_TITLES[kind], minutes: GAME_MINUTES, prompt: GAME_PROMPT, game: { kind, rounds: GAME_ROUNDS } });
+      const minutes = focus ? focusMinutes(GAME_MINUTES, lean(`game:${kind}`)) : GAME_MINUTES;
+      segments.push({ id, title: GAME_TITLES[kind], minutes, prompt: GAME_PROMPT, game: { kind, rounds: GAME_ROUNDS } });
     }
   }
   return segments;
@@ -152,13 +205,11 @@ const GAME_TITLES: Record<GameKind, string> = {
   math: "Conta rápida",
   riddle: "Charadas da live",
   fastest: "Dedo mais rápido",
-  race: "Corrida maluca",
-  wheel: "Roleta da sorte",
   tug: "Cabo de guerra",
   potato: "Batata quente",
 };
 
 /** The run of show a loop plays: the automatic one when it's on, otherwise the creator's segments. */
-export function runOfShow(persona: Pick<Persona, "segments" | "autoShow">, loop: number, seed: number): Segment[] {
-  return persona.autoShow ? autoShow(loop, seed) : persona.segments;
+export function runOfShow(persona: Pick<Persona, "segments" | "autoShow">, loop: number, seed: number, focus?: ShowFocus): Segment[] {
+  return persona.autoShow ? autoShow(loop, seed, focus) : persona.segments;
 }

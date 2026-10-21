@@ -56,6 +56,19 @@ const SYSTEM_MESSAGE_MODELS = new Set([
 const CACHE_WINDOW = 20;
 /** Rough characters per output token, to meter a reply cut off before the API reported its usage. */
 const CHARS_PER_TOKEN = 3;
+/**
+ * A reply stream that goes this long without an event has stalled. The SDK's
+ * timeout only covers waiting for the response to start, so without this a
+ * stalled stream leaves the host "thinking" and the show silent for good.
+ */
+export const STREAM_STALL_MS = 20_000;
+
+export class HostStalledError extends Error {
+  constructor(ms: number) {
+    super(`the Claude API sent nothing for ${ms / 1000} s`);
+    this.name = "HostStalledError";
+  }
+}
 
 export interface ClaudeHostOptions {
   client: Anthropic;
@@ -69,6 +82,8 @@ export interface ClaudeHostOptions {
   thinking?: "adaptive" | "off";
   onUsage?: (usage: UsageReport) => void;
   log?: Logger;
+  /** Tests shorten STREAM_STALL_MS. */
+  stallMs?: number;
 }
 
 /**
@@ -129,7 +144,8 @@ export class ClaudeHost implements HostBrain {
           this.system = this.buildSystem();
           continue;
         }
-        if (err instanceof Anthropic.RateLimitError) log?.warn("rate limited by the Claude API");
+        if (err instanceof HostStalledError) log?.warn(`host turn stalled: ${err.message}`);
+        else if (err instanceof Anthropic.RateLimitError) log?.warn("rate limited by the Claude API");
         else if (err instanceof Anthropic.APIConnectionError) log?.warn("could not reach the Claude API");
         else if (err instanceof Anthropic.APIError) log?.error(`Claude API error ${err.status}`, err.message);
         else log?.error("host generation failed", err);
@@ -176,6 +192,16 @@ export class ClaudeHost implements HostBrain {
     const local = new AbortController();
     const abort = () => local.abort();
     signal.addEventListener("abort", abort, { once: true });
+    let stalled = false;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const alive = () => {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(() => {
+        stalled = true;
+        local.abort();
+      }, this.options.stallMs ?? STREAM_STALL_MS);
+    };
+    alive();
 
     // One unpaired half of an emoji anywhere (a viewer's text, a clipped name) and the API refuses the whole request.
     const stream = client.beta.messages.stream(
@@ -239,6 +265,7 @@ export class ClaudeHost implements HostBrain {
 
     try {
       for await (const event of stream) {
+        alive();
         if (event.type === "message_start") {
           const u = event.message.usage;
           usage = {
@@ -286,9 +313,11 @@ export class ClaudeHost implements HostBrain {
         else log?.warn(`the host wrote music that doesn't parse (${call.error})`);
       }
     } catch (err) {
+      if (stalled && !signal.aborted) throw new HostStalledError(this.options.stallMs ?? STREAM_STALL_MS);
       if (local.signal.aborted) return;
       throw err;
     } finally {
+      clearTimeout(watchdog);
       report();
       signal.removeEventListener("abort", abort);
     }

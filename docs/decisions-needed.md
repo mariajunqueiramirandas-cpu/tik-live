@@ -27,6 +27,7 @@ charging other people.
 | 12 | [Pre-launch checks only the owner can run](#12-pre-launch-checks-only-the-owner-can-run) | Not done | Paid launch |
 | 13 | [Voice provider and voice rights](#13-voice-provider-and-voice-rights) | Fish Audio Drama 3 through OpenRouter, six designed voices from Fish's public library (Bia by default) | Paid launch |
 | 14 | [Gift powers, challenges and "sem filtro"](#14-gift-powers-challenges-and-sem-filtro) | Gift powers and challenges on; "sem filtro" off | Nothing |
+| 15 | [The automatic DJ's music](#15-the-automatic-djs-music) | 34 CC BY tracks by Kevin MacLeod, off until a creator turns it on | Nothing |
 
 ## 1. Prices, hours and AI models per plan
 
@@ -315,3 +316,24 @@ are free to play and pay points only.
 **Recommendation:** keep the defaults, and watch the first real streams'
 analytics (likes and messages a minute around a challenge, gifts around the
 powers card) before changing the numbers.
+
+## 15. The automatic DJ's music
+
+**Today:** the automatic DJ ([ADR-0045](adr/0045-automatic-dj.md)) plays 34
+electronic tracks by Kevin MacLeod under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), with the credit on
+stage. It's off until a creator turns it on. The server fetches the files
+from incompetech.com the first time each plays and keeps them on disk.
+
+**To decide:**
+
+- Whether the catalog suits the product, or should grow with other CC BY or
+  CC0 artists. Famous hits aren't an option: they're copyrighted and TikTok
+  mutes the live.
+- Whether creators may add their own tracks (links they confirm they have the
+  rights to), and on which plans.
+- Where the files live in production: a temp directory works (they're fetched
+  again after a restart); a volume or object storage saves the refetch.
+
+**Recommendation:** keep the catalog, turn the DJ on in one real stream first
+and check that TikTok doesn't flag any track, then offer it on every plan.

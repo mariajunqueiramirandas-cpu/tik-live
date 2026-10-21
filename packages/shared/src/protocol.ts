@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RUNTIME_STATUSES } from "./channel";
 import { injectEventSchema } from "./events";
 import { BOOST_KINDS, gameConfigSchema, gameSceneSchema, type GameStatus, type LoopRankingStatus, type SegmentGame } from "./game";
+import { djStageTrackSchema } from "./dj";
 import { MUSIC_LIBRARY, musicTrackSchema, SOUNDS } from "./music";
 import { effectSchema, emotionSchema, lookSchema } from "./persona";
 
@@ -172,6 +173,12 @@ export const stageServerMessageSchema = z.discriminatedUnion("t", [
   z.object({ v, t: z.literal("music"), track: musicTrackSchema.nullable() }),
   /** A short synthesized sound for a show moment. */
   z.object({ v, t: z.literal("sfx"), sound: z.enum(SOUNDS) }),
+  /**
+   * The automatic DJ (ADR-0045): play this track from `offsetMs` in (a stage that connects mid-track
+   * catches up), crossfading from the one before, or fade out with null. `next` is the track after it,
+   * to start loading early.
+   */
+  z.object({ v, t: z.literal("dj"), track: djStageTrackSchema.nullable(), offsetMs: z.number().min(0).max(3_600_000).optional(), next: z.string().max(200).optional() }),
   /** A minigame's scene, or null to go back to the show's normal stage (ADR-0023). */
   z.object({ v, t: z.literal("game"), scene: gameSceneSchema.nullable() }),
   /** A gift just powered up the game round on screen, for everyone (ADR-0029). */
@@ -288,6 +295,8 @@ export interface RuntimeSnapshot {
   vote: { segment: string; options: Array<{ label: string; votes: number }>; closesInSec: number } | null;
   /** The piece of music playing on stage, if any. */
   music: { title: string; endsInSec: number; byHost: boolean } | null;
+  /** The automatic DJ's track, when it's on (ADR-0045). */
+  dj: { id: string; title: string; artist: string; endsInSec: number } | null;
   stats: { viewers: number; likes: number; diamonds: number; messages: number; follows: number; uptimeSec: number };
   nowSaying: { text: string; emotion: string } | null;
   queue: QueueItemSummary[];
@@ -388,6 +397,8 @@ export const studioCommandSchema = z.discriminatedUnion("kind", [
     prompt: z.string().trim().min(1).max(120).optional(),
   }),
   z.object({ kind: z.literal("music_stop") }),
+  /** The automatic DJ moves on to its next track (ADR-0045). */
+  z.object({ kind: z.literal("dj_skip") }),
   /** Clears the stage (speech, game, podium, music) and restarts the stream's counters and leaderboards. */
   z.object({ kind: z.literal("reset") }),
   /** Reloads the stage page in every connected OBS source. Works with the host off the air. */

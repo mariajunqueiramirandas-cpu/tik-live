@@ -152,6 +152,7 @@ TikTok account to go live; no AI calls), `live`, `stopping`, `failed`.
 | `GET /api/channels/:id/sessions` | `{ sessions }`: the last 60 streams with `startedAt`, `endedAt`, `endReason`, `source`, `peakViewers`, `likes`, `diamonds`, `gifts`, `messages`, `follows`, `spokenLines`, `blockedLines`, `costUsd`. |
 | `GET /api/channels/:id/sessions/:sid` | `{ session, samples, lines }`: the session (including `summary`, the host's own account of the show, or `null`), per-minute `samples` (`viewers`, `likes`, `messages`, `diamonds`) and up to 1,000 transcript `lines` (`at`, `text`, `emotion`, `status` `spoken`/`blocked`, `reason`, `turnKind`). |
 | `GET /api/channels/:id/audience` | `{ remembered, supporters, regulars }`: how many viewers the host remembers, and the top 10 by diamonds and by visits. |
+| `GET /api/channels/:id/segments` | `{ segments }`: how each segment does on the channel's real streams ([ADR-0044](adr/0044-segments-that-work.md)), best first. Each has `key`, `title`, `kind` (`talk`, `game` or `segment`, a creator's own), `plays`, `minutes`, `score`, `viewers`, `likes`, `diamonds` (lifts against the rest of the same stream, in log2: `1` is twice the average, `-1` half), `focus` (how much the show leans toward it: `1` neutral, `0.25` to `4`) and `lastPlayedAt`. |
 
 Live state (what the host is saying, the queue, health) isn't polled: it
 streams over the studio WebSocket ([protocol.md](protocol.md#studio)).
@@ -200,6 +201,7 @@ purchase endpoints return `409 billing_disabled`.
 |---|---|
 | `GET /s/:stageKey` | The stage page for OBS or TikTok LIVE Studio (1080×1920). `?role=preview` for the dashboard's monitor, `?role=broadcast` for the cloud broadcaster. |
 | `GET /api/stage/:stageKey/audio/:cueId` | One line of speech audio (`audio/mpeg`), kept in memory for about two minutes. The stage key is the only credential. |
+| `GET /api/stage/:stageKey/dj/:trackId` | A track of the automatic DJ's catalog (`audio/mpeg`, [ADR-0045](adr/0045-automatic-dj.md)), fetched from its source once and kept on disk. Honors a single `Range: bytes=` range (206, or 416 outside the file). 404 for an unknown track or stage key; 503 with `Retry-After` while the file can't be fetched. |
 
 ## Identity provider routes
 

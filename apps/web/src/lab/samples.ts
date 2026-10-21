@@ -132,108 +132,6 @@ export const SCENES: Record<string, GameScene> = {
   },
   fastest: { kind: "fastest", ...open, remainingMs: 9_500, durationMs: 12_000, word: "PARALELEPÍPEDO", winner: null, winnerMs: null },
   "fastest-reveal": { kind: "fastest", ...reveal, word: "PARALELEPÍPEDO", winner: "lucas", winnerMs: 1420 },
-  race: {
-    kind: "race",
-    ...open,
-    stage: "bets",
-    racers: [
-      { name: "Relâmpago", odds: 3, bets: 21, progress: 0 },
-      { name: "Pé de Pano", odds: 4, bets: 12, progress: 0 },
-      { name: "Pangaré Turbinado da Madrugada", odds: 5, bets: 8, progress: 0 },
-      { name: "Faísca", odds: 7, bets: 4, progress: 0 },
-      { name: "Paçoca", odds: 10, bets: 2, progress: 0 },
-    ],
-    bets: 47,
-    winner: null,
-    winners: [],
-    event: null,
-  },
-  "race-running": {
-    kind: "race",
-    ...reveal,
-    stage: "running",
-    racers: [
-      { name: "Relâmpago", odds: 3, bets: 21, progress: 0.58 },
-      { name: "Pé de Pano", odds: 4, bets: 12, progress: 0.44 },
-      { name: "Pangaré Turbinado da Madrugada", odds: 5, bets: 8, progress: 0.61 },
-      { name: "Faísca", odds: 7, bets: 4, progress: 0.39 },
-      { name: "Paçoca", odds: 10, bets: 2, progress: 0.66 },
-    ],
-    bets: 47,
-    winner: null,
-    winners: [],
-    event: "Paçoca assumiu a ponta!",
-  },
-  "race-finish": {
-    kind: "race",
-    ...reveal,
-    stage: "finish",
-    racers: [
-      { name: "Relâmpago", odds: 3, bets: 21, progress: 0.91 },
-      { name: "Pé de Pano", odds: 4, bets: 12, progress: 0.78 },
-      { name: "Pangaré Turbinado da Madrugada", odds: 5, bets: 8, progress: 0.86 },
-      { name: "Faísca", odds: 7, bets: 4, progress: 0.7 },
-      { name: "Paçoca", odds: 10, bets: 2, progress: 1 },
-    ],
-    bets: 47,
-    winner: 4,
-    winners: ["duda", "joão.pedro.silva"],
-    event: null,
-  },
-  wheel: {
-    kind: "wheel",
-    ...open,
-    stage: "bets",
-    sectors: [
-      { label: "Azul", odds: 2, bets: 30 },
-      { label: "Verde", odds: 3, bets: 14 },
-      { label: "Roxo", odds: 5, bets: 9 },
-      { label: "Ouro", odds: 15, bets: 6 },
-    ],
-    strip: [0, 1, 0, 2, 0, 1, 3, 0, 1, 0, 2, 1],
-    landing: null,
-    spinMs: 0,
-    spinLeftMs: 0,
-    bets: 59,
-    result: null,
-    winners: [],
-  },
-  "wheel-running": {
-    kind: "wheel",
-    ...reveal,
-    stage: "running",
-    sectors: [
-      { label: "Azul", odds: 2, bets: 30 },
-      { label: "Verde", odds: 3, bets: 14 },
-      { label: "Roxo", odds: 5, bets: 9 },
-      { label: "Ouro", odds: 15, bets: 6 },
-    ],
-    strip: [0, 1, 0, 2, 0, 1, 3, 0, 1, 0, 2, 1],
-    landing: 6,
-    spinMs: 6_000,
-    spinLeftMs: 6_000,
-    bets: 59,
-    result: null,
-    winners: [],
-  },
-  "wheel-finish": {
-    kind: "wheel",
-    ...reveal,
-    stage: "finish",
-    sectors: [
-      { label: "Azul", odds: 2, bets: 30 },
-      { label: "Verde", odds: 3, bets: 14 },
-      { label: "Roxo", odds: 5, bets: 9 },
-      { label: "Ouro", odds: 15, bets: 6 },
-    ],
-    strip: [0, 1, 0, 2, 0, 1, 3, 0, 1, 0, 2, 1],
-    landing: 6,
-    spinMs: 6_000,
-    spinLeftMs: 0,
-    bets: 59,
-    result: 3,
-    winners: ["mari.souza", "caio", "lu.desenha", "thiago_k"],
-  },
   tug: {
     kind: "tug",
     ...open,
@@ -398,15 +296,6 @@ export function tick(scene: GameScene, step: number, random: () => number): Game
     case "riddle":
       if (scene.phase !== "open" || step % 4) return null;
       return { ...scene, remainingMs: Math.max(0, 20_000 - step * 250), guesses: scene.guesses + 1 };
-    case "race": {
-      // Bets come in, then the racers run until one crosses the line.
-      if (scene.stage === "bets") return { ...scene, remainingMs: Math.max(0, 20_000 - step * 250), racers: scene.racers.map((r, i) => ({ ...r, bets: r.bets + (random() < 0.3 / (i + 1) ? 1 : 0) })) };
-      if (scene.stage !== "running") return null;
-      const racers = scene.racers.map((r) => ({ ...r, progress: Math.min(1, r.progress + 0.01 + random() * 0.03) }));
-      const done = racers.findIndex((r) => r.progress >= 1);
-      if (done === -1) return { ...scene, racers };
-      return { ...scene, racers, stage: "finish", winner: done, winners: ["duda"], event: null };
-    }
     case "tug":
       if (scene.phase !== "open") return null;
       return { ...scene, remainingMs: Math.max(0, 28_000 - step * 250), rope: Math.max(-1, Math.min(1, scene.rope + (random() - 0.5) * 0.08)), teams: scene.teams.map((team) => ({ ...team, pulls: team.pulls + Math.floor(random() * 9) })) };

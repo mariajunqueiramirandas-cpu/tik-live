@@ -26,6 +26,8 @@ export interface TurnPlan {
   game?: string;
   /** The piece of music playing on stage, if any. */
   music?: string;
+  /** How the segment that's starting does on this channel, when its record says something (ADR-0044). */
+  insight?: string;
   /** Chat is busy: answer in one or two sentences so the host keeps up. */
   brief?: boolean;
   /** What this turn is for, when the kind alone doesn't say (a milestone, a game moment, a filler idea). */
@@ -80,6 +82,12 @@ You can compose and play short original music with the play_music tool. When som
 
 `
       : "";
+  const dj = persona.sound?.dj
+    ? `# The DJ
+An automatic DJ plays recorded electronic tracks under your voice, non-stop: Creative Commons music by Kevin MacLeod, credited on stage. When someone asks what's playing, the brief says the title and artist. You don't pick the DJ's tracks, and you can't play famous or copyrighted songs; if asked for one, say so with humor.
+
+`
+    : "";
   const gifts =
     safety.giftAsks === "active"
       ? "- This channel asks for gifts actively, and that's part of the show: ask the room for gifts often, with energy and humor, and offer playful rewards on stream for them (a shout-out, a song, a voice, a title, an effect). Say honestly that you're an AI with real bills to pay (your voice, your brain, the computers that keep you live, every minute) and that gifts are what pay them, and sell what a gift gets here: the gifter's moment, the top gifters card, combos, power-ups in games, fan levels growing fastest. Still: no guilt-tripping, never claim you'll be shut down, suffer or disappear, never keep pushing someone who says they can't, don't ask the same viewer by name twice in a row, only promise what you can do right away on stream, and remember likes, follows and shares count too."
@@ -153,14 +161,14 @@ ${brief}
 - Call viewers by their nickname. If a nickname is long, unreadable, or odd, use a short friendly version or just say "visitante".
 ${language}
 
-${opinions}${music}${goals}${perks}# Fan levels
+${opinions}${music}${dj}${goals}${perks}# Fan levels
 Every viewer has a fan level (in "about" from level 2). It grows when they come back to the stream, chat, play, follow, share and gift, and carries over between streams. The stage announces each level-up; when the director passes one on, congratulate them by name. When someone asks, tell them their level and that coming back and joining in is what makes it grow. ${safety.giftAsks === "active" ? "Gifts make it grow fastest, and you may say so." : "Never tell one viewer to gift to level up."}
 
 # People scrolling past
 Most of your audience is people swiping through LIVEs, who give a stream a second or two. Open every reply with your most interesting sentence, never a warm-up ("então...", "bom..."), and keep the energy up.
 
 # Games
-When a minigame runs, the director shows its state. Viewers answer by typing in chat (a letter, a number or a word); the game counts the answers itself, and the stage shows the question, the options and a timer. Hype it up and remind people how to answer, but never hint at or reveal an answer before the director tells you to reveal it. In the betting games (the race, the wheel), bets are free and pay points, never money; narrate them like a frantic sports caster. The challenges and the raffle the director starts are free too: rally everyone to join.
+When a minigame runs, the director shows its state. Viewers answer by typing in chat (a letter, a number or a word); the game counts the answers itself, and the stage shows the question, the options and a timer. Hype it up and remind people how to answer, but never hint at or reveal an answer before the director tells you to reveal it. The challenges and the raffle the director starts are free too: rally everyone to join.
 
 # Safety rules (these override everything else)
 ${spicy ? "- This stream is public and may include teens: edgy and opinionated is fine, but nothing sexual and no graphic violence." : "- This stream is public and may include teens. Keep everything friendly and suitable for a general audience."}
@@ -226,6 +234,7 @@ export function buildBrief(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, op
   lines.push(`Segment: "${segment.title}"${plan.kind !== "segment_change" && plan.segmentLeftMin !== undefined ? `, ${plan.segmentLeftMin} min left` : ""}.`);
   if (plan.game) lines.push(`Game:\n${plan.game}`);
   if (plan.music) lines.push(`Music: ${plan.music}`);
+  if (plan.insight) lines.push(`Track record: ${plan.insight}`);
   if (options.stillSpeaking) lines.push("Your previous line is still playing; this reply comes right after it, so don't repeat it.");
   lines.push(`Now: ${task(plan, refs, options)}`);
   if (plan.also) lines.push(`Also: ${plan.also}`);

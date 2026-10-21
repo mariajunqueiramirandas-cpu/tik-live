@@ -106,6 +106,13 @@ const envSchema = z.object({
    */
   BROADCAST_QUALITY: z.enum(["720p", "1080p"]).default("720p"),
 
+  /**
+   * Where the automatic DJ keeps the tracks it fetched (ADR-0045), up to about
+   * 280 MB for the whole catalog. A temporary directory when unset: losing it
+   * only means fetching each track again the first time it plays.
+   */
+  DJ_CACHE_DIR: z.string().optional(),
+
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 

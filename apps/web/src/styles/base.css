@@ -61,6 +61,7 @@
 
   body {
     font-size: var(--t-15);
+    font-weight: 430;
   }
 
   h1,
@@ -69,12 +70,13 @@
     font-family: var(--font-display);
     font-optical-sizing: auto;
     line-height: 1.1;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
     text-wrap: balance;
   }
   h1 {
     font-size: var(--t-29);
-    font-weight: 720;
+    font-weight: 740;
+    letter-spacing: -0.03em;
   }
   h2 {
     font-size: var(--t-19);
@@ -82,9 +84,14 @@
   }
   h3 {
     font-size: var(--t-15);
-    font-weight: 680;
+    font-weight: 650;
     font-family: var(--font-ui);
     letter-spacing: 0;
+  }
+
+  strong,
+  b {
+    font-weight: 650;
   }
 
   p {
@@ -103,7 +110,7 @@
   }
 
   ::selection {
-    background: rgb(124 245 255 / 0.3);
+    background: rgb(124 245 255 / 0.28);
     color: var(--ink);
   }
 
@@ -120,6 +127,7 @@
     border: 1px solid var(--hairline-strong);
     border-bottom-width: 2px;
     border-radius: 5px;
+    background: var(--trench);
     color: var(--haze);
     font-size: var(--t-12);
     line-height: 1.5;

@@ -6,7 +6,7 @@ export function LanternMark({ size = 28 }: { size?: number }) {
   // Unique per instance: a hidden copy (the desktop sidebar on phones) must not own the gradient.
   const id = `lantern-mark-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden style={{ flex: "none" }}>
       <defs>
         <radialGradient id={id} cx="38%" cy="32%" r="72%">
           <stop offset="0" stopColor="#fff" />
@@ -27,7 +27,7 @@ export function HostSwatch({ look, size = 28 }: { look: Look; size?: number }) {
   const id = `swatch-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   if (look.character === "voice-line") {
     return (
-      <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+      <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden style={{ flex: "none" }}>
         <rect width="32" height="32" rx="9" fill={look.background} />
         <path d="M4 16c3 0 3-6 6-6s3 12 6 12 3-12 6-12 3 6 6 6" stroke={look.primary} strokeWidth="2" fill="none" strokeLinecap="round" />
         <path d="M4 16c3 0 3 4 6 4s3-8 6-8 3 8 6 8 3-4 6-4" stroke={look.secondary} strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.8" />
@@ -35,7 +35,7 @@ export function HostSwatch({ look, size = 28 }: { look: Look; size?: number }) {
     );
   }
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden style={{ flex: "none" }}>
       <defs>
         <radialGradient id={id} cx="38%" cy="32%" r="72%">
           <stop offset="0" stopColor="#fff" />

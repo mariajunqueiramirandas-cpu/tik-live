@@ -10,8 +10,6 @@ export const GAME_HOW: Record<GameKind, string> = {
   math: "Resolva a conta. Ganha a primeira resposta certa.",
   riddle: "Responda a charada. Ganha a primeira resposta certa.",
   fastest: "Digite a palavra que aparece na tela. Ganha quem for mais rápido.",
-  race: "Cinco cavalos, cada um paga um tanto. O chat aposta no número e torce: o azarão paga mais.",
-  wheel: "O chat aposta numa cor e a roleta gira. Quanto mais rara a cor, mais pontos ela paga.",
   tug: "Dois times. O chat entra digitando 1 ou 2, e curtidas, PUXA e presentes puxam a corda.",
   potato: "Digite PEGA pra pegar a batata: cada segundo vale ponto, mas quem estiver com ela quando explodir perde tudo.",
 };
@@ -29,8 +27,6 @@ export const ANSWER_WORD: Record<GameKind, [one: string, many: string]> = {
   math: ["resposta", "respostas"],
   riddle: ["palpite", "palpites"],
   fastest: ["tentativa", "tentativas"],
-  race: ["aposta", "apostas"],
-  wheel: ["aposta", "apostas"],
   tug: ["jogador", "jogadores"],
   potato: ["pegada", "pegadas"],
 };
@@ -44,8 +40,6 @@ export function gamePhase(game: GameStatus): string {
       return "Escrevendo as perguntas…";
     case "open":
       return `Rodada ${game.round}/${game.rounds}`;
-    case "running":
-      return game.kind === "wheel" ? "A roleta está girando" : "A corrida está rolando";
     case "reveal":
       return "Revelando a resposta";
     case "results":

@@ -84,7 +84,7 @@ export default function Studio() {
   const onAir = status !== "stopped" && status !== "failed" && status !== "stopping";
 
   return (
-    <div className={s.studio}>
+    <div className={s.studio} data-on-air={status === "live" || undefined}>
       {(connection === "reconnecting" || notices.length > 0 || status === "failed") && (
         <div className={s.banners}>
           {connection === "reconnecting" && (

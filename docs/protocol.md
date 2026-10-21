@@ -42,6 +42,7 @@ Close codes with a meaning:
 |---|---|---|
 | `4001` | The stage link was replaced in the dashboard | Stops reconnecting, shows "This stage link was replaced" |
 | `4004` | The host was deleted | Stops reconnecting |
+| `4000` | An on-air stage sent nothing for 60 s (a frozen page) | Reconnects |
 | anything else | Network loss, server restart | Reconnects |
 
 Only `program` and `broadcast` stages are "on air": their `started` and
@@ -51,6 +52,17 @@ current one has finished it, so the show never runs ahead of the slowest
 stage on air ([ADR-0022](adr/0022-host-turn-taking.md)). Previews never pace
 the show. When no on-air stage is connected, the server paces speech by
 each line's estimated duration so the show keeps a realistic rhythm.
+
+A frozen page (a background tab, a hidden or suspended OBS source) keeps its
+socket open, because the browser still answers pings, but never finishes a
+line. So a stage only paces the show while it's answering: one that let a
+line run out without finishing it stops pacing until it reports a line
+again, one that sent nothing for 30 s doesn't pace, and an on-air stage
+silent for 60 s is closed with `4000`. Live pages send
+[`telemetry`](#telemetry) every 5 s from a timer for this. A page that
+notices it was frozen (its heartbeat ran more than 15 s late) drops the
+lines it has waiting, as if it got [`stop`](#stop): the show moved on long
+ago.
 
 ### Server to stage
 
@@ -166,7 +178,7 @@ A chat minigame's scene ([ADR-0023](adr/0023-chat-minigames.md)), or
 `"scene": null` to return to the show's normal stage. Each game kind has its
 own scene (`gameSceneSchema` in `packages/shared/src/game.ts`): `trivia`,
 `poll`, `scramble`, `number`, `truefalse`, `math`, `riddle`, `fastest`, the
-party games `race`, `wheel`, `tug` and `potato`
+party games `tug` and `potato`
 ([ADR-0038](adr/0038-games-of-chance-and-party-games.md)), `scoreboard` at
 the end of a game, and `podium` at the end of a loop of the
 run of show ([ADR-0028](adr/0028-up-next-likes-and-loop-ranking.md)): the
@@ -180,13 +192,7 @@ unlocked, see [`boost`](#boost)), and a quiz may carry `removed` (options a
 answers are never in the scene before `phase` is `reveal`. A stage that
 connects mid-game gets the current scene right after `hello`.
 
-The party games: in `race` and `wheel`, `stage` is `bets` while chat bets
-(`phase` `open`), then `running` while the race runs or the strip spins and
-`finish` at the result (both `phase` `reveal`). A race's `racers[].progress`
-(0 to 1) comes a few times a second while it runs. A wheel's `landing` (the
-`strip` tile it stops on) and `spinLeftMs` (relative to receipt) arrive
-with the first `running` scene, so the stage animates the spin on its own
-and lands on that tile. In `tug`, `rope` goes from -1 (team 1 pulled it all
+The party games: in `tug`, `rope` goes from -1 (team 1 pulled it all
 the way) to 1 (team 2). In `potato`, `durationMs` is 0: the fuse is secret,
 so the board shows no timer, only `heat` (time so far over the longest fuse)
 and how long the `holder` has had it (`heldMs`, counted up on stage).
@@ -376,6 +382,22 @@ A short synthesized sound for a show moment (`SOUNDS` in
 opening and revealing, wins, the end of a game. Not sent when the creator
 turned sound effects off.
 
+#### `dj`
+
+```json
+{ "v": 1, "t": "dj", "track": { "id": "werq", "title": "Werq", "artist": "Kevin MacLeod", "credit": "Kevin MacLeod (incompetech.com) · CC BY 4.0", "url": "/api/stage/<stageKey>/dj/werq", "seconds": 162 }, "offsetMs": 0, "next": "/api/stage/<stageKey>/dj/realizer" }
+```
+
+The automatic DJ ([ADR-0045](adr/0045-automatic-dj.md)): play this recorded
+track from `offsetMs` in, crossfading from the one before; `"track": null`
+fades the DJ out. The stage streams `url` (same origin, so it mixes into the
+stage's audio output like music), shows the title and `credit` while it
+plays (the Creative Commons license asks for it), ducks it under speech, and
+fades it out while a [`music`](#music) piece plays. `next` is the track after
+this one, to start loading early. The server sends the next track a few
+seconds before this one ends. A stage that connects mid-track gets it after
+`hello` with `offsetMs` set to how far in it is.
+
 #### `hold`
 
 The server is restarting (graceful shutdown). Keep the last frame and
@@ -427,7 +449,8 @@ the time described under [`started`](#started)).
 { "v": 1, "t": "telemetry", "fps": 60, "frameP95": 4.2, "quality": 0, "renderer": "ANGLE (…)", "error": null }
 ```
 
-Engine health, sent on connect, every 10 seconds, and at once after an
+Engine health, sent on connect, every 5 seconds (it doubles as the stage's
+heartbeat, see [lifecycle](#connection-lifecycle)), and at once after an
 engine error: frames per second, 95th percentile
 frame time in ms, quality level (0 is full quality; the governor steps down
 to 2 when frames drop), the GPU renderer string, and the last engine error.
@@ -613,6 +636,11 @@ what's playing.
 ##### `music_stop`
 
 Stop the music on stage.
+
+##### `dj_skip`
+
+The automatic DJ moves on to its next track now. Fails when the DJ is off
+(`persona.sound.dj`). The snapshot's `dj` field says what it's playing.
 
 ##### `reset`
 
