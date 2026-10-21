@@ -3,8 +3,8 @@ import os from "node:os";
 import readline from "node:readline/promises";
 import { BridgeAgent, type BridgeConnection } from "./agent";
 import { loadConfig, saveConfig } from "./config";
-import { LocalLiveStudioController } from "./live-studio";
-import { pairWithCode, readOwnStamp } from "./pair";
+import { LocalLiveStudioController } from "@tik-live/shared/live-studio";
+import { PairingNetworkError, pairWithCode, readOwnStamp } from "./pair";
 
 const TITLE = "=== Lantern — Agente Local do TikTok LIVE Studio ===";
 
@@ -78,12 +78,15 @@ async function pair(options: { code: string | null; server: string | null }): Pr
     try {
       console.log(`Pareando com o código ${formatPairingCode(code)}...`);
       const paired = await pairWithCode(server, code, os.hostname());
-      saveConfig({ server, token: paired.token, channelName: paired.channelName, usedCode: code });
+      if (!saveConfig({ server, token: paired.token, channelName: paired.channelName, usedCode: code })) {
+        console.error("Aviso: não foi possível salvar o pareamento neste computador. Na próxima vez que abrir o agente, será preciso parear de novo.");
+      }
       console.log(`Pareado com o apresentador "${paired.channelName}".`);
       return { server, token: paired.token };
     } catch (err) {
       console.error(err instanceof Error ? err.message : String(err));
-      saveConfig({ ...loadConfig(), usedCode: code });
+      // A code the server never saw isn't spent: only remember it when the server turned it down.
+      if (!(err instanceof PairingNetworkError)) saveConfig({ ...loadConfig(), usedCode: code });
       code = null;
     }
   }
@@ -119,6 +122,11 @@ async function run(connection: BridgeConnection, controller: LocalLiveStudioCont
 
   // The server let go for good: forget what no longer works and pair again.
   const ended = async (code: number) => {
+    if (code === BRIDGE_CLOSE.replaced) {
+      console.log("Outra janela do agente assumiu este apresentador, então esta foi encerrada. Deixe só uma aberta.");
+      await pauseBeforeExit();
+      process.exit(0);
+    }
     forgetPairing();
     console.log(
       code === BRIDGE_CLOSE.unpaired

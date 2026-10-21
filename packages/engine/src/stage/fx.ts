@@ -376,7 +376,7 @@ export class FxLayer {
     }
     this.chip.opacity.target = playing ? 1 : 0;
     if (playing) this.player.bands(this.eq);
-    // Right of the AI badge, in the show bar, clear of the columns and the board (ADR-0048).
+    // Right of the AI badge, in the show bar, clear of the columns and the board (ADR-0049).
     const room = CHIP_RIGHT - f.nowPlayingX;
     if (this.chipTitle && Math.abs(room - this.chipRoom) > 1) this.paintChip(f.scale, room);
     this.chip.x = f.nowPlayingX;

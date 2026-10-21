@@ -6,6 +6,7 @@ import type { MercadoPagoClient } from "./billing/mercadopago";
 import { BillingService } from "./billing/service";
 import { HttpBroadcasterClient, type BroadcasterClient } from "./broadcast/client";
 import { LiveStudioSupervisor, LocalLiveStudioClient, type LiveStudioClient } from "./broadcast/live-studio";
+import { inertStudioSystem } from "@tik-live/shared/live-studio";
 import { BROADCAST_VIDEO, BroadcastSupervisor } from "./broadcast/supervisor";
 import type { AppConfig } from "./config";
 import { Secrets } from "./crypto/secrets";
@@ -103,7 +104,9 @@ export async function createDeps(config: AppConfig, database: Database, override
     : undefined;
   const liveStudioClient =
     overrides.liveStudio ??
-    (config.NODE_ENV === "test" ? new LocalLiveStudioClient({ ports: [], executablePath: null }) : new LocalLiveStudioClient());
+    (config.NODE_ENV === "test"
+      ? new LocalLiveStudioClient({ ports: [], executablePath: null, ttStoreDir: null, system: inertStudioSystem })
+      : new LocalLiveStudioClient());
   const liveStudio = new LiveStudioSupervisor({
     client: liveStudioClient,
     log: createLogger("live-studio"),

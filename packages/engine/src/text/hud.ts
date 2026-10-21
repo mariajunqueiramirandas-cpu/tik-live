@@ -57,7 +57,7 @@ import {
 import { GOLD, HAZE, INK, measureWith, roundRect, TextSprite, truncate, withAlpha } from "./sprites";
 
 /**
- * The stage's side panels (ADR-0048), flanking the character under
+ * The stage's side panels (ADR-0049), flanking the character under
  * TikTok's header:
  *
  * - top left, the show bar: the segment's title and the AI badge;

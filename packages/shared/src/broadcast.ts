@@ -123,8 +123,78 @@ export const liveStudioProbeSchema = z.object({
   cameraEffects: liveStudioCameraEffectsSchema.nullable().optional(),
   tiktokUsername: z.string().max(100).nullable().optional(),
   stageInjected: z.boolean().optional(),
+  /** The URL our stage source points at in Studio's saved scenes, so the dashboard can tell a stale one. */
+  stageSourceUrl: z.string().max(500).nullable().optional(),
+  /** A stage source is waiting to be saved: Studio overwrites its scene file while open, so it's written once Studio closes. */
+  stagePending: z.boolean().optional(),
+  /** Studio is open (its process or its control port), even when it isn't answering yet. */
+  running: z.boolean().optional(),
+  /** Studio refused our connection: it asks for Stream Deck token auth, which the agent can't provide. */
+  authRequired: z.boolean().optional(),
 });
 export type LiveStudioProbe = z.infer<typeof liveStudioProbeSchema>;
+
+const PROBE_BUDGET_CHARS = 12_000;
+
+const clip = (text: string, max: number) => (text.length > max ? text.slice(0, max) : text);
+
+/**
+ * Trims a probe to the schema's limits and to a size that fits a bridge
+ * message (16 KB), so a creator with a big Studio setup gets a shorter list
+ * instead of a status the server throws away.
+ */
+export function fitLiveStudioProbe(probe: LiveStudioProbe): LiveStudioProbe {
+  const fitted: LiveStudioProbe = {
+    ...probe,
+    scene: probe.scene === null ? null : clip(probe.scene, 200),
+    executablePath: probe.executablePath === null ? null : clip(probe.executablePath, 500),
+    ...(probe.sceneList
+      ? {
+          sceneList: probe.sceneList.slice(0, 50).map((scene) => ({
+            name: clip(scene.name, 200),
+            sources: scene.sources.slice(0, 60).map((source) => ({ id: clip(source.id, 200), label: clip(source.label, 200), visible: source.visible })),
+          })),
+        }
+      : {}),
+    ...(probe.vibeList ? { vibeList: probe.vibeList.slice(0, 50).map((vibe) => ({ id: clip(vibe.id, 200), name: clip(vibe.name, 200) })) } : {}),
+    ...(probe.playingVibe ? { playingVibe: clip(probe.playingVibe, 200) } : {}),
+    ...(probe.cameraEffects
+      ? {
+          cameraEffects: {
+            sources: probe.cameraEffects.sources.slice(0, 20).map((source) => ({
+              ...source,
+              id: clip(source.id, 200),
+              label: clip(source.label, 200),
+              ...(source.effectId ? { effectId: clip(source.effectId, 200) } : {}),
+            })),
+            types: probe.cameraEffects.types.slice(0, 20).map((type) => clip(type, 100)),
+            categories: probe.cameraEffects.categories.slice(0, 20).map((category) => ({
+              key: clip(category.key, 100),
+              name: clip(category.name, 200),
+              effects: category.effects.slice(0, 100).map((effect) => ({ id: clip(effect.id, 200), label: clip(effect.label, 200) })),
+            })),
+          },
+        }
+      : {}),
+    ...(probe.tiktokUsername ? { tiktokUsername: clip(probe.tiktokUsername, 100) } : {}),
+    ...(probe.stageSourceUrl && probe.stageSourceUrl.length > 500 ? { stageSourceUrl: null } : {}),
+  };
+  // Still too big: shed the longest lists, least useful first.
+  const size = () => JSON.stringify(fitted).length;
+  if (size() > PROBE_BUDGET_CHARS && fitted.cameraEffects) {
+    fitted.cameraEffects = {
+      ...fitted.cameraEffects,
+      categories: fitted.cameraEffects.categories.map((category) => ({ ...category, effects: category.effects.slice(0, 12) })),
+    };
+  }
+  if (size() > PROBE_BUDGET_CHARS && fitted.cameraEffects) fitted.cameraEffects = null;
+  if (size() > PROBE_BUDGET_CHARS && fitted.sceneList) {
+    // Keep every scene's name, but only the current scene's sources.
+    fitted.sceneList = fitted.sceneList.map((scene) => (scene.name === fitted.scene ? scene : { ...scene, sources: [] }));
+  }
+  if (size() > PROBE_BUDGET_CHARS && fitted.vibeList) fitted.vibeList = fitted.vibeList.slice(0, 10);
+  return fitted;
+}
 
 export const BRIDGE_ACTIONS = [
   "probe",
@@ -277,6 +347,8 @@ export interface BridgePairResponse {
 
 /** WebSocket close codes the agent acts on. */
 export const BRIDGE_CLOSE = {
+  /** Another connection for the same host took this one's place (the same PC opened the agent twice): stop, don't fight it. */
+  replaced: 4000,
   /** The stage key changed (legacy stage-link agents). */
   stageKeyRotated: 4001,
   /** The device was removed from the dashboard, or its token is unknown: pair again. */

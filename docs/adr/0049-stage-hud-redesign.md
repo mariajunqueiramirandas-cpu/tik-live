@@ -1,4 +1,4 @@
-# ADR-0048: A stage HUD built to keep people watching
+# ADR-0049: A stage HUD built to keep people watching
 
 **Status:** Proposed
 **Date:** 2026-10-21

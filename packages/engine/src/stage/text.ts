@@ -8,7 +8,7 @@ import type { Frame, Layer, StageContext } from "./layer";
 const ALERTS_FLOOR = 888;
 
 /**
- * The HUD (ADR-0048), always on top: the show bar (segment title and the
+ * The HUD (ADR-0049), always on top: the show bar (segment title and the
  * AI-disclosure badge), up next and the ranking card on the left, the
  * goals, the support ticker and the alerts on the right, the spotlight
  * under the character (a challenge, a call to passers-by or the gift

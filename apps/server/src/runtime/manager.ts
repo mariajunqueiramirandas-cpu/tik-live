@@ -40,6 +40,10 @@ interface ChannelScheduleState {
   lastWindowKey: string | null;
   manualStopWindowKey: string | null;
   startedBySchedule: boolean;
+  /** The schedule as it was when the owner stopped inside a window; editing it lifts the stop. */
+  manualStopSchedule?: string;
+  /** The window whose scheduled start already failed and was reported, so the owner hears it once. */
+  failedWindowKey?: string | null;
 }
 
 export interface RuntimeManagerOptions {
@@ -135,6 +139,7 @@ export class RuntimeManager {
             startedBySchedule: false,
           };
           prev.manualStopWindowKey = evalResult.windowKey;
+          prev.manualStopSchedule = JSON.stringify(ch.broadcast.schedule);
           prev.startedBySchedule = false;
           this.scheduleState.set(channelId, prev);
         }
@@ -148,18 +153,20 @@ export class RuntimeManager {
       slot.runtime = null;
     }
     await this.options.broadcasts?.stop(channelId);
-    await this.options.liveStudio?.stop(channelId);
+    // Ending the PC's live can wait on the agent for a while; it's retried until the agent confirms, so don't hold the owner up.
+    void this.options.liveStudio?.stop(channelId).catch(() => undefined);
     slot.channel = { ...slot.channel, desiredState: "stopped" };
     this.prune(slot);
   }
 
   /** The owner edited the channel: update stages, running show, and scheduled stream hours. */
   async apply(channel: ChannelRow): Promise<void> {
+    const slot = this.slots.get(channel.id);
+    // A manual stop holds for the rest of the window; only changing the schedule itself lets it start again.
     const prevSchedule = this.scheduleState.get(channel.id);
-    if (prevSchedule) {
+    if (prevSchedule?.manualStopWindowKey && prevSchedule.manualStopSchedule !== JSON.stringify(channel.broadcast.schedule ?? null)) {
       prevSchedule.manualStopWindowKey = null;
     }
-    const slot = this.slots.get(channel.id);
     if (slot) {
       slot.channel = channel;
       slot.stage.setLook(channel.persona.name, channel.persona.look);
@@ -192,13 +199,14 @@ export class RuntimeManager {
 
   async remove(channelId: string): Promise<void> {
     this.scheduleState.delete(channelId);
+    // End the PC's live while its agent is still connected: once the channel is gone, it can't come back to do it.
+    await this.options.liveStudio?.stop(channelId);
     this.options.liveStudio?.closeBridge(channelId, 4004, "channel deleted");
     const slot = this.slots.get(channelId);
     if (!slot) return;
     if (slot.failure?.timer) clearTimeout(slot.failure.timer);
     await slot.runtime?.stop("channel deleted");
     await this.options.broadcasts?.stop(channelId);
-    await this.options.liveStudio?.stop(channelId);
     slot.stage.closeAll(4004, "channel deleted");
     this.slots.delete(channelId);
   }
@@ -323,6 +331,7 @@ export class RuntimeManager {
       lastWindowKey: null,
       manualStopWindowKey: null,
       startedBySchedule: false,
+      failedWindowKey: null,
     };
     const slot = this.slots.get(channel.id);
     const running = Boolean(slot?.runtime && isActive(slot.runtime.getStatus().status));
@@ -331,8 +340,21 @@ export class RuntimeManager {
       state.lastWindowKey = evalResult.windowKey;
       this.scheduleState.set(channel.id, state);
       if (!running && state.manualStopWindowKey !== evalResult.windowKey) {
-        if (channel.source === "tiktok" && !channel.tiktokUsername) return;
-        const check = await this.start(channel);
+        const check: EntitlementCheck =
+          channel.source === "tiktok" && !channel.tiktokUsername
+            ? { ok: false, code: "tiktok_handle_required", message: "adicione o usuário do TikTok que este apresentador deve acompanhar." }
+            : await this.start(channel);
+        if (!check.ok && state.failedWindowKey !== evalResult.windowKey) {
+          state.failedWindowKey = evalResult.windowKey;
+          this.log.warn("scheduled start failed", { channelId: channel.id, code: check.code });
+          this.slots.get(channel.id)?.studio.publish({
+            t: "notice",
+            level: "error",
+            code: "schedule_start_failed",
+            message: `O horário agendado (${schedule.startTime}–${schedule.endTime}) não conseguiu iniciar o apresentador: ${check.message}`,
+            at: at.getTime(),
+          });
+        }
         if (check.ok) {
           state.startedBySchedule = true;
           this.scheduleState.set(channel.id, state);

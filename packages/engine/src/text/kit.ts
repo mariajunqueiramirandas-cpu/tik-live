@@ -2,7 +2,7 @@ import type { GoalView, SupportWay } from "@tik-live/shared";
 import { FONT_FAMILY, GOLD, measureWith, roundRect, type TextSprite, truncate, withAlpha } from "./sprites";
 
 /**
- * The stage HUD's look (ADR-0048): one kit every panel draws with, so the
+ * The stage HUD's look (ADR-0049): one kit every panel draws with, so the
  * whole overlay reads as one broadcast package instead of a row of
  * look-alike boxes.
  *

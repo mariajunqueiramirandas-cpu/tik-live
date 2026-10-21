@@ -37,7 +37,7 @@ import {
 import { GOLD, INK, measureWith, roundRect, TextSprite, withAlpha } from "./sprites";
 
 /**
- * The spotlight (ADR-0048): the one call to action under the character,
+ * The spotlight (ADR-0049): the one call to action under the character,
  * above the caption. A challenge or raffle (ADR-0040) has it first, then a
  * call to people scrolling past (ADR-0037), then the gift showcase
  * (ADR-0041); a game board covers the spot, so they all give way to it.

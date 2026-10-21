@@ -53,7 +53,7 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   each goal ("FALTAM 1.760", then "QUASE!"), what takes the gifters' crown,
   and viewers' names big on name cards. Calls to people scrolling past ask
   "ACABOU DE CHEGAR?". During games the panels fold so the board has the
-  stage ([ADR-0048](docs/adr/0048-stage-hud-redesign.md)).
+  stage ([ADR-0049](docs/adr/0049-stage-hud-redesign.md)).
 - **Runtime**: one supervised runtime per live host, with audience-aware
   pacing, per-plan AI budgets and daily spend caps, viewer memory, and
   graceful restarts that don't drop OBS. The show is one append-only
@@ -170,6 +170,11 @@ To give the host its real brain and voice, copy `.env.example` to `.env`:
 3. Start your TikTok LIVE, then press **Go live** in the dashboard. The host
    waits in standby until TikTok reports the stream live, so it never talks
    to an empty room, and goes back to standby when the stream ends.
+
+With **TikTok LIVE Studio** instead of OBS, download the Local Bridge Agent
+from the Setup tab and leave it open on the PC: it starts and ends the
+TikTok live with the host, and **Scheduled hours** can put the host on and
+off the air by themselves ([docs/live-studio](docs/live-studio/README.md)).
 
 On Pro, **Broadcast from the cloud** streams to TikTok without OBS: paste the
 server URL and stream key from TikTok LIVE Producer. Stream keys aren't

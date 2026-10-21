@@ -76,7 +76,7 @@ describe("gift powers, the dono da live and challenges (ADR-0039, ADR-0040)", ()
   });
 });
 
-describe("the HUD's hooks (ADR-0048)", () => {
+describe("the HUD's hooks (ADR-0049)", () => {
   it("says what's left for a goal, and when it's close", () => {
     expect(goalLeft({ value: 3_240, target: 5_000 })).toBe("FALTAM 1.760");
     expect(goalLeft({ value: 4_999, target: 5_000 })).toBe("FALTA 1");

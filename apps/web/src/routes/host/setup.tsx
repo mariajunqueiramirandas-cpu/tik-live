@@ -409,6 +409,8 @@ function TikTokLiveStudio() {
     probe?: LiveStudioProbe;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cameraSource, setCameraSource] = useState("");
+  const [allEffects, setAllEffects] = useState<Record<string, boolean>>({});
 
   const check = useMutation({
     mutationFn: (launch: boolean) => call(api.api.channels[":id"]["live-studio"].check.$post({ param: { id: channel.id }, json: { launch } })),
@@ -453,6 +455,15 @@ function TikTokLiveStudio() {
   const currentSceneItem = probe?.sceneList?.find((sc) => sc.name === probe.scene) ?? probe?.sceneList?.[0] ?? null;
   const download = config?.bridge.download ?? false;
   const megabytes = config?.bridge.bytes ? Math.round(config.bridge.bytes / 1_000_000) : null;
+  // The stage source in Studio is only right if it shows this host's current stage link.
+  const stageNote = probe?.stagePending
+    ? "Fonte do palco: será gravada quando você fechar o TikTok LIVE Studio"
+    : probe?.stageSourceUrl
+      ? probe.stageSourceUrl === channel.stageUrl
+        ? "Fonte Vincular (1080×1920) configurada"
+        : "Fonte Vincular com um link antigo do palco: clique em Configurar palco na cena"
+      : null;
+  const cameraSources = probe?.cameraEffects?.sources ?? [];
 
   return (
     <Panel as="section" aria-labelledby="live-studio-heading" className={p.form}>
@@ -463,7 +474,7 @@ function TikTokLiveStudio() {
       <div className={s.form}>
         <Switch
           label="Iniciar e encerrar a live no TikTok LIVE Studio"
-          hint="Começa e encerra a transmissão no TikTok LIVE Studio junto com o apresentador, e aciona clipes de 60s e Vibes automaticamente nos melhores momentos."
+          hint="Começa e encerra a transmissão no TikTok LIVE Studio junto com o apresentador, e aciona clipes de 60s e Vibes automaticamente nos melhores momentos. Com o apresentador no ar, desligar esta opção encerra a live no TikTok, e uma live encerrada direto no TikTok LIVE Studio é reiniciada: para parar de vez, pare o apresentador."
           checked={Boolean(channel.broadcast.liveStudio)}
           onChange={(enabled) => void toggle(enabled)}
           disabled={update.isPending}
@@ -505,7 +516,13 @@ function TikTokLiveStudio() {
           <p className={s.status} data-ok="true">
             <span className={s.statusDot} aria-hidden />
             Conta logada no TikTok LIVE Studio: <strong>@{detectedHandle}</strong>
-            {probe?.stageInjected ? " · Fonte Vincular (1080×1920) configurada" : ""}
+            {detectedHandle !== channel.tiktokUsername ? ". Usar essa conta faz o apresentador acompanhar o chat dela." : ""}
+          </p>
+        )}
+        {stageNote && (
+          <p className={s.status} data-ok={probe?.stageSourceUrl === channel.stageUrl && !probe?.stagePending}>
+            <span className={s.statusDot} aria-hidden />
+            {stageNote}
           </p>
         )}
         {error && <p className={s.error}>{error}</p>}
@@ -553,6 +570,7 @@ function TikTokLiveStudio() {
                   variant="ghost"
                   icon={<Film aria-hidden />}
                   busy={actionMutation.isPending}
+                  disabled={probe.highlightAble === false}
                   onClick={() => actionMutation.mutate({ action: "highlight" })}
                 >
                   Salvar clipe de destaque (60s)
@@ -567,6 +585,7 @@ function TikTokLiveStudio() {
                   {probe.recording ? "Gravando MP4 local (Parar)" : "Gravar MP4 local"}
                 </Button>
               </div>
+              {probe.highlightAble === false && <p className={s.note}>O clipe de destaque fica disponível com a live no ar.</p>}
             </div>
 
             {probe.sceneList && probe.sceneList.length > 0 && (
@@ -636,27 +655,54 @@ function TikTokLiveStudio() {
             {probe.cameraEffects && probe.cameraEffects.categories.some((c) => c.effects.length > 0) && (
               <div className={s.deckSection}>
                 <span className={s.deckTitle}>Efeitos de Câmera</span>
-                <div className={s.chipRow}>
-                  {probe.cameraEffects.categories.flatMap((cat) =>
-                    cat.effects.slice(0, 8).map((fx) => (
-                      <Button
-                        key={`${cat.key}:${fx.id}`}
-                        size="sm"
-                        variant="ghost"
-                        busy={actionMutation.isPending}
-                        onClick={() =>
-                          actionMutation.mutate({
-                            action: "camera_effect",
-                            cameraEffectType: cat.key,
-                            cameraEffectId: fx.id,
-                          })
-                        }
-                      >
-                        {fx.label}
-                      </Button>
-                    )),
-                  )}
-                </div>
+                {cameraSources.length > 1 && (
+                  <Field label="Aplicar em" hint="Clicar de novo no mesmo efeito tira o efeito.">
+                    {(props) => (
+                      <Select {...props} value={cameraSource} onChange={(e) => setCameraSource(e.target.value)}>
+                        <option value="">Câmera padrão</option>
+                        {cameraSources.map((source) => (
+                          <option key={source.id} value={source.id}>
+                            {source.label}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </Field>
+                )}
+                {probe.cameraEffects.categories
+                  .filter((cat) => cat.effects.length > 0)
+                  .map((cat) => {
+                    const shown = allEffects[cat.key] ? cat.effects : cat.effects.slice(0, 8);
+                    return (
+                      <div key={cat.key} className={s.chipRow} role="group" aria-label={cat.name}>
+                        <span className={s.note}>{cat.name}</span>
+                        {shown.map((fx) => (
+                          <Button
+                            key={`${cat.key}:${fx.id}`}
+                            size="sm"
+                            variant="ghost"
+                            busy={actionMutation.isPending}
+                            onClick={() =>
+                              actionMutation.mutate({
+                                action: "camera_effect",
+                                // Studio finds the category by its name.
+                                cameraEffectType: cat.name,
+                                cameraEffectId: fx.id,
+                                ...(cameraSource ? { cameraSource } : {}),
+                              })
+                            }
+                          >
+                            {fx.label}
+                          </Button>
+                        ))}
+                        {cat.effects.length > shown.length && (
+                          <Button size="sm" variant="ghost" onClick={() => setAllEffects((prev) => ({ ...prev, [cat.key]: true }))}>
+                            Mostrar todos ({cat.effects.length})
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             )}
           </div>
