@@ -47,6 +47,7 @@ import { TikTokSource } from "./sources/tiktok";
 import type { EventSource } from "./sources/types";
 import type { StageHub } from "./stage-hub";
 import { StreamRecorder } from "./stream-recorder";
+import { InactivityWatch } from "./inactivity";
 import type { StudioFeed } from "./studio-feed";
 import { UsageMeter, type UsageReport } from "./usage";
 import { SpeechPipeline, type SpeechCue } from "./voice/pipeline";
@@ -123,6 +124,8 @@ export class ChannelRuntime {
   private readonly meter: UsageMeter;
   private readonly latency = new LatencyTracker();
   private flushTimer: ReturnType<typeof setInterval> | undefined;
+  private readonly inactivity: InactivityWatch;
+  private inactivityTimer: ReturnType<typeof setTimeout> | undefined;
   private flushCount = 0;
   private lastTickAt: number;
   private budgetWarned = false;
@@ -137,6 +140,7 @@ export class ChannelRuntime {
     this.channelId = options.channel.id;
     this.now = options.ctx.now ?? Date.now;
     this.meter = new UsageMeter(this.now);
+    this.inactivity = new InactivityWatch(this.now);
     this.lastTickAt = this.now();
     this.log = options.ctx.log.child({ channelId: this.channelId }, (entry) => {
       if (entry.level === "debug") return;
@@ -295,7 +299,13 @@ export class ChannelRuntime {
     await this.source.start((raw) => {
       try {
         const event = sanitizeEvent(raw);
-        if (event) this.director.handleEvent(event);
+        if (!event) return;
+        // TikTok's inactivity check is for the owner, not the audience: the host brain never reacts to it.
+        if (event.kind === "inactivity_check") this.onInactivityCheck(event);
+        else {
+          if (event.kind === "stream_end") this.closeInactivity(event.at);
+          this.director.handleEvent(event);
+        }
       } catch (err) {
         this.log.error("failed to handle a live event", err);
       }
@@ -320,6 +330,8 @@ export class ChannelRuntime {
     this.setStatus("stopping", "Parando");
     clearInterval(this.flushTimer);
     this.flushTimer = undefined;
+    clearTimeout(this.inactivityTimer);
+    this.inactivityTimer = undefined;
     this.director?.stop();
     this.speech?.stop();
     this.stopMusic();
@@ -676,6 +688,31 @@ export class ChannelRuntime {
     }
   }
 
+  private onInactivityCheck(event: Extract<LiveEvent, { kind: "inactivity_check" }>): void {
+    const check = this.inactivity.begin(event);
+    if (!check) return;
+    this.log.warn(`TikTok pediu confirmação de atividade (${check.verifyDurationInSec} s para responder)`);
+    this.notice(
+      "warn",
+      "inactivity_check",
+      `O TikTok pediu para confirmar que você está ao vivo. Responda no TikTok LIVE Studio em até ${check.verifyDurationInSec} s, ou a live será encerrada por inatividade.`,
+    );
+    clearTimeout(this.inactivityTimer);
+    this.inactivityTimer = setTimeout(() => this.closeInactivity(), check.verifyDurationInSec * 1000);
+  }
+
+  /** Closes the open check: at the stream's end time, or once its window has passed. */
+  private closeInactivity(endedAt?: number): void {
+    clearTimeout(this.inactivityTimer);
+    this.inactivityTimer = undefined;
+    const outcome = endedAt === undefined ? this.inactivity.windowPassed() : this.inactivity.streamEnded(endedAt);
+    if (outcome === "ended_during_check") {
+      this.notice("error", "inactivity_ended", "A live terminou enquanto o TikTok aguardava a confirmação de atividade.");
+    } else if (outcome === "window_passed") {
+      this.notice("info", "inactivity_window_passed", "O prazo da confirmação de atividade passou. O painel não recebe a resposta: confira no TikTok se a live continua.");
+    }
+  }
+
   private async onStandbyChange(standby: boolean): Promise<void> {
     if (standby) {
       this.accrue();
@@ -690,7 +727,7 @@ export class ChannelRuntime {
   }
 
   private summarize(event: LiveEvent, result: TriageResult | null): LiveEventSummary | null {
-    if (event.kind === "like" || event.kind === "viewers" || event.kind === "stream_end") return null;
+    if (event.kind === "like" || event.kind === "viewers" || event.kind === "stream_end" || event.kind === "inactivity_check") return null;
     const base = { id: `${event.at}-${++this.eventCounter}`, at: event.at, kind: event.kind, who: viewerName(event.viewer) };
     const filtered = result && !result.queued && result.reason !== "not queueable" && result.reason !== "join from new viewer" ? { filtered: result.reason } : {};
     switch (event.kind) {

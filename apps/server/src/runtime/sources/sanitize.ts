@@ -24,6 +24,8 @@ export const LIMITS = {
   diamondsPerGift: 50_000,
   viewers: 10_000_000,
   likesTotal: 1_000_000_000_000,
+  /** A verification window an hour or longer is not something TikTok sends; cap it anyway. */
+  verifySeconds: 3_600,
 } as const;
 
 /**
@@ -165,6 +167,11 @@ export function sanitizeEvent(event: LiveEvent): LiveEvent | undefined {
       return { kind: "viewers", at, count: int(event.count, 0, LIMITS.viewers, 0) };
     case "stream_end":
       return { kind: "stream_end", at, reason: cleanText(event.reason, LIMITS.reason) || "stream ended" };
+    case "inactivity_check": {
+      const captchaRecordId = cleanText(event.captchaRecordId, LIMITS.id);
+      if (!captchaRecordId) return undefined;
+      return { kind: "inactivity_check", at, captchaRecordId, verifyDurationInSec: int(event.verifyDurationInSec, 1, LIMITS.verifySeconds, 60) };
+    }
     default:
       return undefined;
   }

@@ -13,6 +13,7 @@ owner to decide is in [decisions needed](decisions-needed.md).
 | [Architecture decision records](adr/README.md) | One record per significant decision, with the options we weighed |
 | [HTTP API](api.md) | Every endpoint, the error shape, authentication, the broadcaster's internal API |
 | [Realtime protocol](protocol.md) | Stage and studio WebSocket messages, lifecycle and close codes |
+| [TikTok LIVE Studio](live-studio/README.md) | How the Local Bridge Agent drives Studio, Studio's Stream Deck control protocol, known problems, and unused hooks |
 | [Deploying on Dokploy](../deploy/DOKPLOY.md) | The owner's deployment: one Compose service behind Dokploy's Traefik |
 | [Deployment runbook (plain VPS)](../deploy/README.md) | Install, configure, upgrade, roll back, back up, restore, harden |
 | [Contributing](../CONTRIBUTING.md) | Dev setup, scripts, testing rules, conventions, the ADR process |

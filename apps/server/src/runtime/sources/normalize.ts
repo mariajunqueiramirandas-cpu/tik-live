@@ -98,6 +98,18 @@ export function normalizeViewerCount(raw: unknown, at = Date.now()): LiveEvent |
   return { kind: "viewers", at, count };
 }
 
+/**
+ * The host's inactivity check: TikTok's AccessControl message with a captcha
+ * record. Only the record id and the time allowed are kept; the captcha itself
+ * is answered by the host in LIVE Studio, never by us.
+ */
+export function normalizeAccessControl(raw: unknown, at = Date.now()): LiveEvent | undefined {
+  const captcha = obj(obj(raw)?.captcha);
+  const captchaRecordId = str(captcha?.captchaRecordId);
+  if (!captchaRecordId) return undefined;
+  return { kind: "inactivity_check", at, captchaRecordId, verifyDurationInSec: num(captcha?.verifyDurationInSec) };
+}
+
 export function normalizeSimple(
   kind: "follow" | "share" | "join",
   raw: unknown,

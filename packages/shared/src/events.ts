@@ -33,7 +33,13 @@ export type LiveEvent =
   | (Base & { kind: "share"; viewer: Viewer })
   | (Base & { kind: "join"; viewer: Viewer })
   | (Base & { kind: "viewers"; count: number })
-  | (Base & { kind: "stream_end"; reason: string });
+  | (Base & { kind: "stream_end"; reason: string })
+  /**
+   * TikTok asks the host to confirm they're still there (in TikTok LIVE Studio)
+   * before the LIVE is ended for inactivity. Not an audience event: the host
+   * brain never sees it, only the owner's dashboard.
+   */
+  | (Base & { kind: "inactivity_check"; captchaRecordId: string; verifyDurationInSec: number });
 
 export type LiveEventKind = LiveEvent["kind"];
 

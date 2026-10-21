@@ -7,6 +7,7 @@ import {
 import type { LiveEvent } from "@tik-live/shared";
 import type { Logger } from "../../log";
 import {
+  normalizeAccessControl,
   normalizeChat,
   normalizeGift,
   normalizeLike,
@@ -135,6 +136,7 @@ export class TikTokSource implements EventSource {
     events.on(WebcastEvent.FOLLOW, (data: unknown) => forward(() => normalizeSimple("follow", data)));
     events.on(WebcastEvent.SHARE, (data: unknown) => forward(() => normalizeSimple("share", data)));
     events.on(WebcastEvent.MEMBER, (data: unknown) => forward(() => normalizeSimple("join", data)));
+    events.on(WebcastEvent.ACCESS_CONTROL, (data: unknown) => forward(() => normalizeAccessControl(data)));
     events.on(WebcastEvent.ROOM_USER, (data: unknown) => forward(() => normalizeViewerCount(data)));
     events.on(WebcastEvent.STREAM_END, () => {
       this.live = false;
