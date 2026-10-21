@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { EMOTIONS } from "@tik-live/shared";
 import { createRandom } from "../src/anim/random";
-import { FaceController } from "../src/character/face";
+import { FaceController, facePose } from "../src/character/face";
 
 const settle = (face: FaceController, seconds: number, amplitude = 0, start = 0) => {
   let t = start;
@@ -93,5 +93,28 @@ describe("new expressions", () => {
     expect(mood("sleepy")[0]).toBeLessThan(0.5);
     expect(mood("love")[3]).toBeGreaterThan(0.9);
     expect(mood("confused")[2]).toBeGreaterThan(0.9);
+  });
+});
+
+describe("facePose", () => {
+  it("is the settled expression with open eyes and a closed mouth", () => {
+    for (const emotion of EMOTIONS) {
+      const face = new FaceController(createRandom(1));
+      face.setEmotion(emotion);
+      settle(face, 4);
+      const pose = facePose(emotion);
+      expect(pose.eye2[3]).toBe(0);
+      expect(pose.mouth[0]).toBe(0);
+      expect(pose.eye[0]).toBeCloseTo(face.state.eye[0], 2);
+      expect(pose.eye[2]).toBeCloseTo(face.state.eye[2], 2);
+      expect(pose.mouth[1]).toBeCloseTo(face.state.mouth[1], 2);
+      expect(pose.blush).toBeCloseTo(face.state.blush, 2);
+      expect(pose.tilt).toBeCloseTo(face.state.tilt, 2);
+    }
+  });
+
+  it("looks where the emotion rests its gaze", () => {
+    expect(facePose("happy").gaze).toEqual([0, 0]);
+    expect(facePose("thinking").gaze).toEqual([0.6, -0.7]);
   });
 });

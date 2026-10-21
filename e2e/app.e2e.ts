@@ -1,3 +1,4 @@
+import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 /** Fails the test on any page error or console error (except expected network noise). */
@@ -101,6 +102,40 @@ test("the character editor autosaves and the change sticks", async ({ page }) =>
   await expect(saved.getByLabel("Minijogo")).toHaveValue("riddle");
   await expect(saved.getByLabel("Rodadas", { exact: true })).toHaveValue("3");
   await expect(saved.getByLabel("Tema")).toHaveValue("espaço");
+});
+
+test("the character's profile picture downloads as a square PNG of the orb", async ({ page }) => {
+  await page.goto("/app/new");
+  await page.getByLabel("Nome").fill("Foto da Lua");
+  await page.getByRole("button", { name: "Criar apresentador" }).click();
+  await expect(page).toHaveURL(/\/app\/hosts\/[^/]+$/);
+  await page.getByRole("link", { name: "Personagem" }).click();
+  await page.getByRole("tab", { name: "Visual" }).click();
+
+  const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Baixar foto de perfil" }).click()]);
+  // Named after the character (the preset's, here), not the channel.
+  expect(download.suggestedFilename()).toMatch(/^[a-z0-9-]+-foto-de-perfil\.png$/);
+  const png = await readFile((await download.path()) as string);
+  if (process.env.PORTRAIT_OUT) await writeFile(process.env.PORTRAIT_OUT, png);
+  // PNG signature, then the IHDR chunk's width and height.
+  expect(png.subarray(1, 4).toString()).toBe("PNG");
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1080, 1080]);
+
+  // The orb fills the middle (bright); the corners are the water (dark).
+  const { center, corner } = await page.evaluate(async (bytes) => {
+    const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: "image/png" }));
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
+    ctx.drawImage(bitmap, 0, 0);
+    const sum = (x: number, y: number) => [...ctx.getImageData(x, y, 1, 1).data.slice(0, 3)].reduce((a, b) => a + b, 0);
+    return { center: sum(400, 380), corner: sum(10, 10) };
+  }, [...png]);
+  expect(center).toBeGreaterThan(450);
+  expect(corner).toBeLessThan(200);
+
+  // A voice-only host has no character to picture.
+  await page.getByRole("radio", { name: "Só voz" }).click();
+  await expect(page.getByRole("button", { name: "Baixar foto de perfil" })).toHaveCount(0);
 });
 
 test("the stage page renders and connects", async ({ page, request }) => {

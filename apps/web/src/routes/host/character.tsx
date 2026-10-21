@@ -1,5 +1,5 @@
 import { EMOTIONS, GAME_KINDS, GAME_LABELS, PLANS, personaSchema, type Emotion, type GameKind, type Look, type Persona, type Segment, type SegmentGame, type VoiceSettings } from "@tik-live/shared";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Download, Plus, Trash2 } from "lucide-react";
 import { Tabs } from "radix-ui";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -12,6 +12,7 @@ import { useAutosave } from "../../lib/use-autosave";
 import { Button, ButtonLink } from "../../ui/Button";
 import { Banner, Panel, Skeleton } from "../../ui/Display";
 import { Chips, ColorField, Field, Input, Segmented, Select, Slider, Switch, TextArea } from "../../ui/Field";
+import { toast } from "../../ui/toast-store";
 import { useHost } from "./context";
 import s from "./character.module.css";
 
@@ -77,6 +78,46 @@ function slugify(title: string, taken: Set<string>): string {
   let id = base;
   for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
   return id;
+}
+
+/** Downloads the character as a square PNG, drawn by the stage's own shaders, to use as the TikTok profile picture. */
+function ProfilePicture({ name, look }: { name: string; look: Look }) {
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const { renderPortrait } = await import("@tik-live/engine/portrait");
+      const url = URL.createObjectURL(await renderPortrait(look, { size: 1080 }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${fileName(name)}-foto-de-perfil.png`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch {
+      toast.error("Não deu para criar a foto de perfil", new Error("Este navegador não conseguiu desenhar o personagem. Tente de novo ou use outro navegador."));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className={s.portrait}>
+      <Button icon={<Download aria-hidden />} busy={busy} disabled={busy} onClick={() => void download()}>
+        Baixar foto de perfil
+      </Button>
+      <p className={s.note}>Uma imagem quadrada de {name} com as cores de agora, para usar como foto do perfil no TikTok.</p>
+    </div>
+  );
+}
+
+/** "Luna Estrela!" → "luna-estrela", safe as a file name everywhere. */
+function fileName(name: string): string {
+  const slug = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "personagem";
 }
 
 function issuesByPath(persona: Persona): Record<string, string> {
@@ -454,6 +495,7 @@ export default function Character() {
                 {(props) => <ColorField id={props.id} label="Água" value={persona.look.background} onChange={(background) => setLook({ background })} />}
               </Field>
             </div>
+            {persona.look.character === "orb" && <ProfilePicture name={persona.name || channel.name} look={persona.look} />}
           </Tabs.Content>
 
           <Tabs.Content value="show" className={s.panel}>

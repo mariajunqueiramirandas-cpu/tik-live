@@ -132,31 +132,45 @@ export class FaceController {
     this.mouthWide.step(dt);
 
     const s = this.state;
-    s.eye[0] = this.shape.get(0);
-    s.eye[1] = this.shape.get(1);
-    s.eye[2] = clamp01(this.shape.get(2));
-    s.eye[3] = clamp01(this.shape.get(3));
-    s.eye2[0] = clamp01(this.shape.get(4));
-    s.eye2[1] = clamp01(this.shape.get(5));
-    s.eye2[2] = clamp01(this.shape.get(6));
+    writeShape(s, (i) => this.shape.get(i));
     s.eye2[3] = blink;
     s.gaze[0] = this.gazeX.value;
     s.gaze[1] = this.gazeY.value;
     s.mouth[0] = clamp01(this.mouthOpen.value);
-    s.mouth[1] = this.shape.get(7);
-    s.mouth[2] = clamp01(this.shape.get(8));
-    s.mouth[3] = this.shape.get(9);
     s.vowel[0] = clamp01(this.mouthRound.value);
     s.vowel[1] = clamp01(this.mouthWide.value);
-    s.blush = clamp01(this.shape.get(10));
-    s.desat = clamp01(this.shape.get(11));
-    s.tilt = this.shape.get(12);
-    s.mood[0] = this.shape.get(13);
-    s.mood[1] = clamp01(this.shape.get(14));
-    s.mood[2] = clamp01(this.shape.get(15));
-    s.mood[3] = clamp01(this.shape.get(16));
     return s;
   }
+}
+
+/** An emotion's settled face with the eyes open, the mouth closed and the gaze at its rest point (a still portrait). */
+export function facePose(emotion: Emotion): FaceState {
+  const target = FACES[emotion] ?? FACES.neutral;
+  const gaze = GAZE[emotion] ?? [0, 0];
+  const s: FaceState = { eye: [0, 0, 0, 0], eye2: [0, 0, 0, 0], gaze: [gaze[0], gaze[1]], mouth: [0, 0, 0, 0], vowel: [0, 0], blush: 0, desat: 0, tilt: 0, mood: [0, 0, 0, 0] };
+  writeShape(s, (i) => target[i] as number);
+  return s;
+}
+
+/** Copies the blended shape parameters into the state the shaders read. */
+function writeShape(s: FaceState, get: (i: number) => number): void {
+  s.eye[0] = get(0);
+  s.eye[1] = get(1);
+  s.eye[2] = clamp01(get(2));
+  s.eye[3] = clamp01(get(3));
+  s.eye2[0] = clamp01(get(4));
+  s.eye2[1] = clamp01(get(5));
+  s.eye2[2] = clamp01(get(6));
+  s.mouth[1] = get(7);
+  s.mouth[2] = clamp01(get(8));
+  s.mouth[3] = get(9);
+  s.blush = clamp01(get(10));
+  s.desat = clamp01(get(11));
+  s.tilt = get(12);
+  s.mood[0] = get(13);
+  s.mood[1] = clamp01(get(14));
+  s.mood[2] = clamp01(get(15));
+  s.mood[3] = clamp01(get(16));
 }
 
 function clamp01(v: number): number {
