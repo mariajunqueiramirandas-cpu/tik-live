@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import type { BroadcasterList, BroadcastStatus, ChannelDto, RuntimeSnapshot, StartBroadcast } from "@tik-live/shared";
+import {
+  evaluateStreamSchedule,
+  type BroadcasterList,
+  type BroadcastStatus,
+  type ChannelDto,
+  type RuntimeSnapshot,
+  type StartBroadcast,
+} from "@tik-live/shared";
 import type { BroadcasterClient } from "../../src/broadcast/client";
 import { LIVE_STUDIO_ACTIONS, LocalLiveStudioClient, type LiveStudioClient, type LiveStudioProbe } from "../../src/broadcast/live-studio";
 import { eventually, stageKeyFrom, startTestServer, type TestServer } from "../harness";
@@ -472,5 +479,108 @@ describe("TikTok LIVE Studio automation", () => {
     } finally {
       mockServer.stop(true);
     }
+  });
+});
+
+describe("scheduled stream hours", () => {
+  it("evaluates same-day and overnight schedules across time zones and weekdays", () => {
+    // 2026-10-21T23:30:00Z is Wednesday 20:30 in America/Sao_Paulo (UTC-3)
+    const wed2030Brt = new Date("2026-10-21T23:30:00Z");
+    const sameDay = evaluateStreamSchedule(
+      {
+        enabled: true,
+        startTime: "20:00",
+        endTime: "23:00",
+        days: [3], // Wednesday
+        timezone: "America/Sao_Paulo",
+      },
+      wed2030Brt,
+    );
+    expect(sameDay.inWindow).toBe(true);
+    expect(sameDay.localTime).toBe("20:30");
+    expect(sameDay.windowKey).toBe("2026-10-21:20:00-23:00");
+
+    // Overnight: Wednesday 22:00 -> Thursday 02:00 in America/Sao_Paulo
+    // At Thursday 01:15 BRT (2026-10-22T04:15:00Z), it is still inside Wednesday's overnight window!
+    const thu0115Brt = new Date("2026-10-22T04:15:00Z");
+    const overnight = evaluateStreamSchedule(
+      {
+        enabled: true,
+        startTime: "22:00",
+        endTime: "02:00",
+        days: [3], // Wednesday only
+        timezone: "America/Sao_Paulo",
+      },
+      thu0115Brt,
+    );
+    expect(overnight.inWindow).toBe(true);
+    expect(overnight.windowKey).toBe("2026-10-21:22:00-02:00");
+
+    // At Thursday 02:05 BRT (2026-10-22T05:05:00Z), the overnight window has ended
+    const thu0205Brt = new Date("2026-10-22T05:05:00Z");
+    const afterOvernight = evaluateStreamSchedule(
+      {
+        enabled: true,
+        startTime: "22:00",
+        endTime: "02:00",
+        days: [3],
+        timezone: "America/Sao_Paulo",
+      },
+      thu0205Brt,
+    );
+    expect(afterOvernight.inWindow).toBe(false);
+    expect(afterOvernight.windowKey).toBeNull();
+  });
+
+  it("saves scheduled stream hours and automatically starts and stops the channel at the scheduled times", async () => {
+    const created = await server.json<{ channel: ChannelDto }>("/api/channels", {
+      method: "POST",
+      user: "schedcaster",
+      json: { name: "Scheduled Host" },
+    });
+    const channel = created.body.channel;
+
+    const saved = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}/broadcast`, {
+      method: "PUT",
+      user: "schedcaster",
+      json: {
+        liveStudio: true,
+        schedule: {
+          enabled: true,
+          startTime: "20:00",
+          endTime: "23:00",
+          days: [3], // Wednesday
+          timezone: "America/Sao_Paulo",
+        },
+      },
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.channel.broadcast.schedule).toEqual({
+      enabled: true,
+      startTime: "20:00",
+      endTime: "23:00",
+      days: [3],
+      timezone: "America/Sao_Paulo",
+    });
+
+    const startsBefore = liveStudio.starts;
+    const stopsBefore = liveStudio.stops;
+
+    // 19:30 BRT on Wednesday -> outside window, remains stopped
+    await server.deps.manager.checkSchedules(new Date("2026-10-21T22:30:00Z"));
+    let checkChannel = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}`, { user: "schedcaster" });
+    expect(checkChannel.body.channel.desiredState).toBe("stopped");
+
+    // 20:05 BRT on Wednesday -> inside window, starts automatically (including TikTok LIVE Studio!)
+    await server.deps.manager.checkSchedules(new Date("2026-10-21T23:05:00Z"));
+    await eventually(() => liveStudio.starts === startsBefore + 1);
+    checkChannel = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}`, { user: "schedcaster" });
+    expect(checkChannel.body.channel.desiredState).toBe("running");
+
+    // 23:01 BRT on Wednesday -> window ended, stops automatically
+    await server.deps.manager.checkSchedules(new Date("2026-10-22T02:01:00Z"));
+    await eventually(() => liveStudio.stops === stopsBefore + 1);
+    checkChannel = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}`, { user: "schedcaster" });
+    expect(checkChannel.body.channel.desiredState).toBe("stopped");
   });
 });

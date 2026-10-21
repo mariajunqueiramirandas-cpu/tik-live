@@ -1,25 +1,40 @@
 import {
   broadcastUpdateSchema,
+  DEFAULT_STREAM_SCHEDULE,
+  evaluateStreamSchedule,
   PLANS,
   PRODUCT_NAME,
+  streamScheduleSchema,
   tiktokHandleSchema,
   type LiveStudioActionRequest,
   type LiveStudioProbe,
+  type StreamSchedule,
 } from "@tik-live/shared";
-import { Download, Film, RefreshCw, Sparkles, Video, Wand2 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { CalendarClock, Download, Film, RefreshCw, Sparkles, Video, Wand2 } from "lucide-react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api, call, errorMessage } from "../../lib/api";
 import { putChannel, useConfig, useMe, useRotateStageKey, useUpdateBroadcast, useUpdateChannel } from "../../lib/query";
 import { useStudio } from "../../lib/studio";
+import { browserTimeZone, timeZoneLabel, timeZoneOptions } from "../../lib/timezone";
 import { Button, ButtonLink } from "../../ui/Button";
 import { Banner, CopyField, Panel } from "../../ui/Display";
-import { Field, Input, PrefixedInput, Segmented, Switch } from "../../ui/Field";
+import { Field, Input, PrefixedInput, Segmented, Select, Switch } from "../../ui/Field";
 import { Confirm } from "../../ui/Overlay";
 import { toast } from "../../ui/toast-store";
 import p from "../page.module.css";
 import { useHost } from "./context";
 import s from "./setup.module.css";
+
+const WEEKDAYS = [
+  { day: 0, short: "Dom", full: "Domingo" },
+  { day: 1, short: "Seg", full: "Segunda" },
+  { day: 2, short: "Ter", full: "Terça" },
+  { day: 3, short: "Qua", full: "Quarta" },
+  { day: 4, short: "Qui", full: "Quinta" },
+  { day: 5, short: "Sex", full: "Sexta" },
+  { day: 6, short: "Sáb", full: "Sábado" },
+] as const;
 
 function Source() {
   const { channel } = useHost();
@@ -129,6 +144,166 @@ function StageLink() {
           toast.success("Novo link do palco pronto", "Cole na sua fonte de Navegador do OBS.");
         }}
       />
+    </Panel>
+  );
+}
+
+function ScheduledStreamHours() {
+  const { channel } = useHost();
+  const update = useUpdateBroadcast(channel.id);
+  const browserTz = useMemo(() => browserTimeZone(), []);
+  const saved = channel.broadcast.schedule ?? DEFAULT_STREAM_SCHEDULE;
+  const defaultTz = saved.timezone ?? channel.persona.timezone ?? browserTz ?? "America/Sao_Paulo";
+
+  const [enabled, setEnabled] = useState(saved.enabled);
+  const [startTime, setStartTime] = useState(saved.startTime);
+  const [endTime, setEndTime] = useState(saved.endTime);
+  const [days, setDays] = useState<number[]>(saved.days);
+  const [timezone, setTimezone] = useState<string>(defaultTz);
+  const [error, setError] = useState<string | null>(null);
+
+  const zones = useMemo(() => {
+    const now = new Date();
+    return timeZoneOptions([timezone, channel.persona.timezone, browserTz]).map((z) => ({
+      zone: z,
+      label: timeZoneLabel(z, now),
+    }));
+  }, [timezone, channel.persona.timezone, browserTz]);
+
+  const draftSchedule: StreamSchedule = {
+    enabled,
+    startTime,
+    endTime,
+    days,
+    ...(timezone ? { timezone } : {}),
+  };
+
+  const evalStatus = evaluateStreamSchedule(draftSchedule, new Date(), channel.persona.timezone);
+  const crossesMidnight = startTime > endTime;
+
+  const toggleDay = (day: number) => {
+    setDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day].sort((a, b) => a - b)));
+  };
+
+  const persistSchedule = async (next: StreamSchedule) => {
+    setError(null);
+    const parsed = streamScheduleSchema.safeParse(next);
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "Confira os horários e dias selecionados.");
+      return;
+    }
+    try {
+      await update.mutateAsync({ schedule: parsed.data });
+      toast.success(
+        parsed.data.enabled
+          ? `Horário agendado salvo (${parsed.data.startTime} às ${parsed.data.endTime})`
+          : "Agendamento automático de horário desligado",
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  return (
+    <Panel as="section" aria-labelledby="schedule-heading" className={p.form}>
+      <div className={p.sectionHead}>
+        <h2 id="schedule-heading">Horários agendados da live</h2>
+        <p>
+          Programe os horários em que {channel.name} entra e sai do ar sozinho. Se o TikTok LIVE Studio automático ou a transmissão pela nuvem estiverem ativos, a live abre e fecha junto.
+        </p>
+      </div>
+      <form
+        className={s.form}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void persistSchedule(draftSchedule);
+        }}
+        noValidate
+      >
+        <Switch
+          label="Ligar e encerrar a live automaticamente por horário"
+          hint="Inicia o apresentador no horário de início e finaliza ao atingir o horário de término nos dias marcados."
+          checked={enabled}
+          onChange={(nextEnabled) => {
+            setEnabled(nextEnabled);
+            void persistSchedule({ ...draftSchedule, enabled: nextEnabled });
+          }}
+          disabled={update.isPending}
+        />
+
+        <div className={p.formRow}>
+          <Field label="Horário de início" hint="Formato 24h (ex.: 20:00).">
+            {(props) => <Input {...props} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />}
+          </Field>
+          <Field
+            label="Horário de término"
+            hint={crossesMidnight ? "Termina no dia seguinte (vira a meia-noite)." : "Encerra a transmissão automaticamente neste horário."}
+          >
+            {(props) => <Input {...props} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />}
+          </Field>
+        </div>
+
+        <div className={s.deckSection}>
+          <span className={s.deckTitle}>Dias da semana</span>
+          <div className={s.chipRow}>
+            {WEEKDAYS.map((w) => {
+              const active = days.includes(w.day);
+              return (
+                <Button
+                  key={w.day}
+                  type="button"
+                  size="sm"
+                  variant={active ? "primary" : "ghost"}
+                  aria-pressed={active}
+                  onClick={() => toggleDay(w.day)}
+                >
+                  {w.short}
+                </Button>
+              );
+            })}
+          </div>
+          <div className={s.chipRow}>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setDays([0, 1, 2, 3, 4, 5, 6])}>
+              Todos os dias
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setDays([1, 2, 3, 4, 5])}>
+              Seg a Sex
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setDays([0, 6])}>
+              Fim de semana
+            </Button>
+          </div>
+        </div>
+
+        <Field label="Fuso horário do agendamento" hint={`Agora são ${evalStatus.localTime} nesse fuso.`}>
+          {(props) => (
+            <Select {...props} value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+              {zones.map((z) => (
+                <option key={z.zone} value={z.zone}>
+                  {z.label}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+
+        <p className={s.status} data-ok={enabled && evalStatus.inWindow}>
+          <span className={s.statusDot} aria-hidden />
+          {!enabled
+            ? `Agendamento desligado · Janela configurada: ${startTime}–${endTime}`
+            : evalStatus.inWindow
+              ? `Dentro da janela agendada agora (${startTime}–${endTime} · hora local ${evalStatus.localTime})`
+              : `Aguardando próximo horário agendado (${startTime}–${endTime} · hora local ${evalStatus.localTime})`}
+        </p>
+
+        {error && <p className={s.error}>{error}</p>}
+
+        <div className={p.formActions}>
+          <Button type="submit" variant="primary" icon={<CalendarClock aria-hidden />} busy={update.isPending}>
+            Salvar horários
+          </Button>
+        </div>
+      </form>
     </Panel>
   );
 }
@@ -483,6 +658,7 @@ export default function Setup() {
     <div className={s.layout}>
       <Source />
       <StageLink />
+      <ScheduledStreamHours />
       <TikTokLiveStudio />
       <CloudBroadcast />
     </div>

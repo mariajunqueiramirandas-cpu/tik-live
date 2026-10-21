@@ -71,6 +71,11 @@ export async function listAllChannelOwners(db: Db): Promise<Array<{ id: string; 
   return db.select({ id: channel.id, ownerId: channel.ownerId }).from(channel);
 }
 
+/** Internal (scheduler / runtime manager only): every channel row. */
+export async function listAllChannels(db: Db): Promise<ChannelRow[]> {
+  return db.select().from(channel).orderBy(asc(channel.createdAt));
+}
+
 export async function listDesiredRunning(db: Db): Promise<ChannelRow[]> {
   return db.select().from(channel).where(eq(channel.desiredState, "running")).orderBy(asc(channel.updatedAt));
 }
@@ -79,7 +84,7 @@ export async function setDesiredStateInternal(db: Db, id: string, desiredState: 
   await db.update(channel).set({ desiredState, updatedAt: new Date() }).where(eq(channel.id, id));
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function isUuid(value: string): boolean {
   return UUID.test(value);
 }

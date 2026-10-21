@@ -183,6 +183,13 @@ export function channelRoutes(deps: AppDeps) {
       const broadcast = { ...current.broadcast };
       if (input.enabled !== undefined) broadcast.enabled = input.enabled;
       if (input.liveStudio !== undefined) broadcast.liveStudio = input.liveStudio;
+      if (input.schedule !== undefined) {
+        if (input.schedule === null) {
+          delete broadcast.schedule;
+        } else {
+          broadcast.schedule = input.schedule;
+        }
+      }
       if (input.rtmpUrl !== undefined) broadcast.rtmpUrl = input.rtmpUrl;
       if (input.streamKey !== undefined) {
         broadcast.streamKeyCiphertext = input.streamKey ? await deps.secrets.encrypt("stream-key", input.streamKey) : null;
