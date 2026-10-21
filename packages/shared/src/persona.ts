@@ -43,6 +43,8 @@ export const EFFECTS = [
   "shake",
   "spotlight",
   "rain",
+  // Full hype mode (ADR-0046): RGB lights, lasers, "deal with it" sunglasses, hitmarkers and meme stamps.
+  "mlg",
 ] as const;
 export type Effect = (typeof EFFECTS)[number];
 export const effectSchema = z.enum(EFFECTS);

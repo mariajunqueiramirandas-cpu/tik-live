@@ -238,3 +238,98 @@ export function toBridgeWsUrl(inputUrl: string): string {
   }
   throw new Error("Use o link do palco do apresentador (ex: https://.../s/...)");
 }
+
+// ---------------------------------------------------------------------------
+// Pairing the Local Bridge Agent with a channel (ADR-0047)
+
+/** No 0/O, 1/I/L: a code read off a screen and typed into a terminal. */
+export const PAIRING_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+export const PAIRING_CODE_LENGTH = 8;
+/** How long a pairing code works, and how long a downloaded agent pairs by itself. */
+export const PAIRING_CODE_TTL_MS = 15 * 60_000;
+
+/** `ABCD2345` → `ABCD-2345`, the way the dashboard shows it. */
+export function formatPairingCode(code: string): string {
+  return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
+
+/** Accepts what people type (`abcd 2345`, `ABCD-2345`) and returns the bare code, or null. */
+export function normalizePairingCode(input: string): string | null {
+  const code = input.toUpperCase().replace(/[\s-]/g, "");
+  if (code.length !== PAIRING_CODE_LENGTH) return null;
+  for (const ch of code) if (!PAIRING_CODE_ALPHABET.includes(ch)) return null;
+  return code;
+}
+
+export const bridgePairRequestSchema = z.object({
+  code: z.string().min(1).max(32),
+  /** The PC's name, so the dashboard can list it. */
+  device: z.string().trim().min(1).max(64).optional(),
+});
+export type BridgePairRequest = z.infer<typeof bridgePairRequestSchema>;
+
+export interface BridgePairResponse {
+  token: string;
+  deviceId: string;
+  channelId: string;
+  channelName: string;
+}
+
+/** WebSocket close codes the agent acts on. */
+export const BRIDGE_CLOSE = {
+  /** The stage key changed (legacy stage-link agents). */
+  stageKeyRotated: 4001,
+  /** The device was removed from the dashboard, or its token is unknown: pair again. */
+  unpaired: 4003,
+  channelDeleted: 4004,
+  /** Another paired PC is already connected for this host: retry later. */
+  busy: 4009,
+} as const;
+
+/** Converts the app's address (`https://host`) into the agent's paired WebSocket endpoint. */
+export function bridgeDeviceWsUrl(server: string): string {
+  const parsed = new URL(server.trim());
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Use um endereço http:// ou https://");
+  return `${parsed.origin.replace(/^http/, "ws")}/ws/bridge`;
+}
+
+/**
+ * The dashboard's download stamps each copy of `lantern-bridge.exe` with the
+ * app's address and a fresh pairing code, appended after the last PE section
+ * (where Windows ignores it): `<json><u32 LE json length><magic>`. One build
+ * serves every account, and a copy pairs itself on first run.
+ */
+export const BRIDGE_STAMP_MAGIC = "LANTERN-BRIDGE-STAMP/1";
+
+const bridgeStampSchema = z.object({
+  server: z.string().url().max(500),
+  code: z.string().max(32),
+});
+export type BridgeStamp = z.infer<typeof bridgeStampSchema>;
+
+export function encodeBridgeStamp(stamp: BridgeStamp): Uint8Array {
+  const json = new TextEncoder().encode(JSON.stringify(stamp));
+  const magic = new TextEncoder().encode(BRIDGE_STAMP_MAGIC);
+  const out = new Uint8Array(json.length + 4 + magic.length);
+  out.set(json, 0);
+  new DataView(out.buffer).setUint32(json.length, json.length, true);
+  out.set(magic, json.length + 4);
+  return out;
+}
+
+/** Reads a stamp from the end of a file (pass at least its last few KB); null when there is none. */
+export function decodeBridgeStamp(tail: Uint8Array): BridgeStamp | null {
+  const magic = new TextEncoder().encode(BRIDGE_STAMP_MAGIC);
+  if (tail.length < magic.length + 4) return null;
+  const magicAt = tail.length - magic.length;
+  for (let i = 0; i < magic.length; i++) if (tail[magicAt + i] !== magic[i]) return null;
+  const length = new DataView(tail.buffer, tail.byteOffset, tail.byteLength).getUint32(magicAt - 4, true);
+  const start = magicAt - 4 - length;
+  if (length > 4096 || start < 0) return null;
+  try {
+    const parsed = bridgeStampSchema.safeParse(JSON.parse(new TextDecoder().decode(tail.subarray(start, magicAt - 4))));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}

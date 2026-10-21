@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { toBridgeWsUrl, type BridgeClientMessage, type LiveStudioProbe } from "@tik-live/shared";
+import { encodeBridgeStamp, toBridgeWsUrl, type BridgeClientMessage, type LiveStudioProbe } from "@tik-live/shared";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { BridgeAgent } from "../src/agent";
 import {
@@ -9,6 +9,14 @@ import {
   readLocalTikTokStore,
   type LocalStudioController,
 } from "../src/live-studio";
+import { pairWithCode, readOwnStamp } from "../src/pair";
+
+const idleController: LocalStudioController = {
+  probe: async () => ({ connected: false, port: null, streamStatus: null, scene: null, installed: false, executablePath: null }),
+  launch: async () => ({ ok: true, detail: "" }),
+  start: async () => ({ ok: true, detail: "" }),
+  stop: async () => ({ ok: true, detail: "" }),
+};
 
 describe("BridgeAgent", () => {
   it("converts Stage URLs into bridge WebSocket URLs", () => {
@@ -21,7 +29,7 @@ describe("BridgeAgent", () => {
   });
 
   it("reads logged-in @username and injects 1080x1920 Stage Browser Source into TTStore/services.json", () => {
-    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "lantern-ttstore-"));
+    const tmpDir = mkdtempSync(path.join(tmpdir(), "lantern-ttstore-"));
     try {
       const sceneId = "f9d3a8fc-1463-47c7-91f5-e6441262639e";
       const initialStore = {
@@ -210,6 +218,83 @@ describe("BridgeAgent", () => {
       expect(triggeredVibes).toEqual(["Vitória!"]);
     } finally {
       agent.stop();
+      server.stop(true);
+    }
+  });
+
+  it("connects with its paired device token and stops when the server unpairs it", async () => {
+    let authorization: string | null = null;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(req, srv) {
+        if (new URL(req.url).pathname !== "/ws/bridge") return new Response("not found", { status: 404 });
+        authorization = req.headers.get("authorization");
+        if (srv.upgrade(req)) return;
+        return new Response("no upgrade", { status: 400 });
+      },
+      websocket: {
+        open(ws) {
+          ws.close(4003, "device removed");
+        },
+        message() {},
+      },
+    });
+    let ended: number | null = null;
+    const agent = new BridgeAgent({
+      server: `http://127.0.0.1:${server.port}`,
+      token: "lbt_secret",
+      controller: idleController,
+      onLog: () => undefined,
+      onEnded: (code) => {
+        ended = code;
+      },
+    });
+    try {
+      agent.start();
+      const deadline = Date.now() + 5_000;
+      while (ended === null && Date.now() < deadline) await Bun.sleep(25);
+      expect(authorization as string | null).toBe("Bearer lbt_secret");
+      expect(ended as number | null).toBe(4003);
+    } finally {
+      agent.stop();
+      server.stop(true);
+    }
+  });
+});
+
+describe("pairing", () => {
+  it("reads the app's address and code stamped onto its own executable", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bridge-stamp-"));
+    try {
+      const exe = path.join(dir, "lantern-bridge.exe");
+      writeFileSync(exe, Buffer.concat([Buffer.alloc(50_000, 7), encodeBridgeStamp({ server: "https://lantern.example", code: "ABCD2345" })]));
+      expect(readOwnStamp(exe)).toEqual({ server: "https://lantern.example", code: "ABCD2345" });
+      writeFileSync(exe, Buffer.alloc(50_000, 7));
+      expect(readOwnStamp(exe)).toBeNull();
+      expect(readOwnStamp(path.join(dir, "missing.exe"))).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("trades a code for a token and explains a refusal", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(req) {
+        const body = (await req.json()) as { code: string; device: string };
+        if (body.code === "ABCD2345" && body.device === "PC") {
+          return Response.json({ token: "lbt_x", deviceId: "d1", channelId: "c1", channelName: "Lia" });
+        }
+        return Response.json({ error: { code: "bad_pairing_code", message: "Código vencido." } }, { status: 400 });
+      },
+    });
+    try {
+      const base = `http://127.0.0.1:${server.port}`;
+      expect(await pairWithCode(base, "ABCD2345", "PC")).toEqual({ token: "lbt_x", deviceId: "d1", channelId: "c1", channelName: "Lia" });
+      await expect(pairWithCode(base, "ZZZZ2345", "PC")).rejects.toThrow("Código vencido.");
+    } finally {
       server.stop(true);
     }
   });

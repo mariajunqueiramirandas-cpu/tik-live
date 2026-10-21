@@ -36,6 +36,13 @@
       "when": 1792537858690,
       "tag": "0004_segment_scores",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792551510845,
+      "tag": "0005_bridge_pairing",
+      "breakpoints": true
     }
   ]
 }

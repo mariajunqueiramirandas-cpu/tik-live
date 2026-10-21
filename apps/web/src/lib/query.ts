@@ -24,6 +24,7 @@ export const keys = {
   session: (id: string, sid: string) => ["channels", id, "sessions", sid] as const,
   audience: (id: string) => ["channels", id, "audience"] as const,
   segments: (id: string) => ["channels", id, "segments"] as const,
+  bridgeDevices: (id: string) => ["channels", id, "bridge-devices"] as const,
   billing: ["billing"] as const,
   voices: ["voices"] as const,
 };
@@ -60,6 +61,12 @@ export const queries = {
     queryKey: keys.segments(id),
     queryFn: async () => (await call(api.api.channels[":id"].segments.$get({ param: { id } }))).segments,
   }),
+  bridgeDevices: (id: string) => ({
+    queryKey: keys.bridgeDevices(id),
+    queryFn: async () => (await call(api.api.channels[":id"]["live-studio"].devices.$get({ param: { id } }))).devices,
+    // A PC appears here when the agent pairs; keep looking while the page is open.
+    refetchInterval: 10_000,
+  }),
   billing: () => ({ queryKey: keys.billing, queryFn: () => call(api.api.billing.$get()) }),
   voices: () => ({ queryKey: keys.voices, queryFn: () => call(api.api.voices.$get()), staleTime: 30 * 60_000 }),
 };
@@ -72,6 +79,7 @@ export const useSessions = (id: string) => useQuery(queries.sessions(id));
 export const useSession = (id: string, sid: string) => useQuery({ ...queries.session(id, sid), enabled: Boolean(sid) });
 export const useAudience = (id: string) => useQuery(queries.audience(id));
 export const useSegmentScores = (id: string) => useQuery(queries.segments(id));
+export const useBridgeDevices = (id: string) => useQuery(queries.bridgeDevices(id));
 export const useBilling = () => useQuery(queries.billing());
 export const useVoices = () => useQuery(queries.voices());
 

@@ -67,7 +67,7 @@ describe("game, effect and music messages", () => {
     ];
     for (const message of messages) expect(parseMessage(stageServerMessageSchema, JSON.stringify(message))).toEqual(message as never);
     expect(parseMessage(stageServerMessageSchema, { v: 1, t: "fx", fx: "explode" })).toBeUndefined();
-    expect(parseMessage(stageServerMessageSchema, { v: 1, t: "sfx", sound: "airhorn" })).toBeUndefined();
+    expect(parseMessage(stageServerMessageSchema, { v: 1, t: "sfx", sound: "foghorn" })).toBeUndefined();
   });
 
   it("validates game scenes and studio game and music commands", () => {

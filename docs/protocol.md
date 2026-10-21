@@ -1,11 +1,13 @@
 # Realtime protocol
 
-Two WebSocket endpoints carry everything live ([ADR-0008](adr/0008-realtime-protocol.md)):
+Two WebSocket endpoints carry everything live ([ADR-0008](adr/0008-realtime-protocol.md)),
+and a third talks to the Local Bridge Agent on the creator's PC:
 
 | Endpoint | Who connects | Credential |
 |---|---|---|
 | `/ws/stage/<stageKey>?role=program\|preview\|broadcast` | Stage pages: OBS or TikTok LIVE Studio (`program`), the dashboard's monitor (`preview`), the cloud broadcaster (`broadcast`) | The stage key in the URL |
 | `/ws/studio/<channelId>` | The dashboard's studio page for that host | The signed-in user (same cookie as the API); must own the channel |
+| `/ws/bridge` | The Local Bridge Agent on the creator's PC ([ADR-0047](adr/0047-bridge-agent-pairing-and-distribution.md)) | `Authorization: Bearer <device token>` from pairing. An unknown or removed token is closed with `4003`; a second paired PC while one is connected, with `4009`. `/ws/bridge/<stageKey>` still works for agents from before pairing. |
 
 The schemas live in `packages/shared/src/protocol.ts`. Messages the server
 receives are validated with zod; anything that doesn't parse is dropped
@@ -163,10 +165,13 @@ without reloading.
 
 A reaction on its own, not tied to a line: a game win, the end of a game, a
 like milestone. `fx` is one of `EFFECTS` (particle bursts like `confetti`,
-`hearts`, `fireworks`, `notes`, and character moves like `spin`, `jump`,
-`shake`). Optional `intensity`, 0.25 to 3 (default 1), scales it. Gifts,
-follows, shares and likes don't need this: the stage plays their effects
-from [`alert`](#alert) and [`stats`](#stats) on its own.
+`hearts`, `fireworks`, `notes`, character moves like `spin`, `jump`,
+`shake`, and `mlg`, full hype mode: RGB lights, lasers, "deal with it"
+sunglasses, hitmarkers and meme stamps, [ADR-0046](adr/0046-gifts-first-and-hype-mode.md)).
+Optional `intensity`, 0.25 to 3 (default 1), scales it. Gifts, follows,
+shares and likes don't need this: the stage plays their effects from
+[`alert`](#alert) and [`stats`](#stats) on its own, and every gift alert
+sets off hype mode, longer and louder for bigger gifts and combos.
 
 #### `game`
 
@@ -378,8 +383,9 @@ after `hello`, from the top.
 ```
 
 A short synthesized sound for a show moment (`SOUNDS` in
-`packages/shared/src/music.ts`): gifts, follows and shares, game rounds
-opening and revealing, wins, the end of a game. Not sent when the creator
+`packages/shared/src/music.ts`): gifts (each with an `airhorn` and a
+`hitmarker`), follows and shares, game rounds opening and revealing, wins,
+the end of a game. Not sent when the creator
 turned sound effects off.
 
 #### `dj`

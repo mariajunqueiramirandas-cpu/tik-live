@@ -13,10 +13,11 @@ import { FONT_FAMILY, GOLD as GOLD_HEX, INK, measureWith, roundRect, TextSprite,
 import { GOLD, STAGE_HEIGHT, STAGE_WIDTH } from "./atmosphere";
 import type { CharacterLayer } from "./character";
 import { OFFERINGS_VERTEX, PARTICLE_FRAGMENT, PARTICLE_VERTEX } from "./fx-shaders";
+import { Hype, hypeFor } from "./hype";
 import type { Frame, Layer, StageContext } from "./layer";
 
 /** Particle kinds, as the particle shader knows them. */
-export const KIND = { dot: 0, confetti: 1, heart: 2, star: 3, sparkle: 4, note: 5, bubble: 6, streak: 7, petal: 8 } as const;
+export const KIND = { dot: 0, confetti: 1, heart: 2, star: 3, sparkle: 4, note: 5, bubble: 6, streak: 7, petal: 8, hit: 9 } as const;
 
 const POOL = 720;
 const OFFERING_SLOTS = 192;
@@ -31,6 +32,7 @@ const WARM = palette("#FFD15C", "#FFFFFF", "#FFB347");
 const FIREWORKS = palette("#FF5FA2", "#FFD15C", "#7CF5FF", "#8CFF7A", "#FF6B5C", "#B98CFF");
 const WATER = palette("#BFF6FF", "#9BD8FF", "#E8FBFF");
 const NOTES = palette("#7CF5FF", "#FF5FD2", "#FFFFFF", "#FFD15C");
+const WHITE = hexToRgb("#FFFFFF");
 const BOOST_HEX = "#7CF5FF";
 /** Gifts this close together build a combo. */
 const COMBO_GAP_S = 5;
@@ -54,8 +56,8 @@ export function giftFlavor(giftName: string): "love" | "space" | null {
 
 /**
  * Reactions (ADR-0023): particle bursts from a fixed pool, the character's
- * moves, spotlight and rain, gift tiers with their banner, like hearts and
- * the "now playing" chip. Drawn in two passes: `behind` the character (rain,
+ * moves, spotlight and rain, gift tiers with their banner and hype mode
+ * (ADR-0046), like hearts and the "now playing" chip. Drawn in two passes: `behind` the character (rain,
  * bubbles, gift offerings) and `ahead` of it (everything else, over the game
  * board, under the text).
  */
@@ -76,6 +78,8 @@ export class FxLayer {
   private offeringCursor = 0;
   private readonly arrivals: Array<{ at: number; big: boolean }> = [];
   private readonly shapes: ShapeDrawer;
+  /** RGB lights, lasers, sunglasses and meme stamps for every gift (ADR-0046). */
+  readonly hype: Hype;
 
   private now = 0;
   private scale = 1;
@@ -133,6 +137,7 @@ export class FxLayer {
     this.banner = new TextSprite(ctx.gl);
     this.combo = new TextSprite(ctx.gl);
     this.chip = new TextSprite(ctx.gl);
+    this.hype = new Hype(ctx, random);
     this.behind = { update: (dt, f) => this.update(dt, f), draw: (f) => this.drawBehind(f), repaint: (s) => this.repaint(s) };
     this.ahead = { update: () => {}, draw: (f) => this.drawAhead(f) };
   }
@@ -202,6 +207,16 @@ export class FxLayer {
         this.rainRate = 60 * Math.min(2, n);
         this.rainNext = now;
         break;
+      case "mlg": {
+        // Full hype mode on cue: the host's [mlg] tag.
+        const level = hypeFor(n >= 1.5 ? 3 : 2);
+        this.hype.trigger(level, true, now);
+        this.hitmarkers(level.hits);
+        this.play("confetti", n, now);
+        this.character.move("shake", now, n);
+        this.screenFlash = Math.max(this.screenFlash, 0.35);
+        break;
+      }
     }
   }
 
@@ -238,6 +253,10 @@ export class FxLayer {
     const tier = giftTier(diamonds);
     const flavor = giftFlavor(giftName);
     this.bumpCombo(now);
+    // Every gift goes full hype mode, louder for bigger gifts and combos (ADR-0046).
+    const hype = hypeFor(tier, this.comboCount);
+    this.hype.trigger(hype, tier >= 2, now);
+    this.hitmarkers(hype.hits);
     const count = Math.min(36, 4 + Math.round(Math.log10(diamonds + 1) * 7));
     for (let i = 0; i < count; i++) this.spawnOffering(i * 0.045, tier >= 3);
     if (tier === 0) {
@@ -291,6 +310,7 @@ export class FxLayer {
     if (this.bannerText[0]) this.paintBanner(scale);
     if (this.comboCount >= 2) this.paintCombo(scale);
     if (this.chipTitle) this.paintChip(scale);
+    this.hype.repaint(scale);
   }
 
   // ---- frame ---------------------------------------------------------------------
@@ -359,6 +379,7 @@ export class FxLayer {
     this.chipY.step(dt);
     this.chip.y = this.chipY.value;
     this.chip.update(dt, t);
+    this.hype.update(dt, f);
 
     if (this.dirty) {
       this.dirty = false;
@@ -380,8 +401,12 @@ export class FxLayer {
   }
 
   private drawAhead(f: Frame): void {
+    // Hype's lights under everything ahead, its stamps under the banner, so the gift's name always reads.
+    this.hype.drawLights(f);
+    this.hype.drawGlasses();
     this.drawParticles(f, 0);
     this.ctx.drawSprite(this.combo);
+    this.hype.drawStamps();
     this.ctx.drawSprite(this.banner);
     if (this.chip.visible()) {
       this.ctx.drawSprite(this.chip);
@@ -415,6 +440,16 @@ export class FxLayer {
       const angle = (i / count) * TAU + this.random() * 0.3;
       const speed = 420 + this.random() * 380;
       this.spawn(kind, this.originX + Math.cos(angle) * this.radius * 0.8, this.originY + Math.sin(angle) * this.radius * 0.8, Math.cos(angle) * speed, Math.sin(angle) * speed, this.random() * 0.12, 1.3 + this.random() * 0.5, size * (0.7 + this.random() * 0.6), this.pick(colors));
+    }
+  }
+
+  /** Hitmarkers pop one after another around the character, and now and then somewhere else on stage. */
+  private hitmarkers(count: number): void {
+    for (let i = 0; i < count; i++) {
+      const wide = i % 4 === 3;
+      const angle = this.random() * TAU;
+      const r = wide ? this.radius * (1.6 + this.random() * 1.4) : this.radius * (0.45 + this.random() * 0.9);
+      this.spawn(KIND.hit, this.originX + Math.cos(angle) * r, this.originY + Math.sin(angle) * r, 0, 0, i * 0.075, 0.34, 62 + this.random() * 26, WHITE);
     }
   }
 

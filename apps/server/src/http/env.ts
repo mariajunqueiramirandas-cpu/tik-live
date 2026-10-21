@@ -8,5 +8,7 @@ export type AppEnv = {
     user: UserRow;
     /** Set by realtime routes once the stage key or ownership check passes. */
     channel: ChannelRow;
+    /** Set by `/ws/bridge`: the paired device and its channel, or null when the token is unknown. */
+    bridgeDevice: { id: string; channel: ChannelRow } | null;
   };
 };

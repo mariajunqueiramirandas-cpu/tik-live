@@ -79,7 +79,8 @@ export interface TriageOptions {
 const TTL_MS: Partial<Record<LiveEvent["kind"], number>> = {
   chat: 25_000,
   question: 60_000,
-  gift: 120_000,
+  // A gift waits up to ten minutes for its thank-you: one is never let go just because the host was busy (ADR-0046).
+  gift: 10 * 60_000,
   follow: 60_000,
   share: 60_000,
   join: 20_000,
@@ -92,6 +93,12 @@ const DUPLICATE_WINDOW_MS = 60_000;
 const LAPSED_MAX = 8;
 /** A viewer who shares again this soon isn't thanked again: one thank-you per sharer, not one per tap. */
 const SHARE_THANKS_MS = 5 * 60_000;
+/**
+ * Gifts come first, every time (ADR-0046): their scores start here, above
+ * anything a message can reach (a "dono da live" question to the host by
+ * name tops out under 200), so no chat ever goes ahead of a gift.
+ */
+export const GIFT_PRIORITY = 1_000;
 
 /**
  * Decides which audience events deserve the host's attention, and in what
@@ -266,7 +273,7 @@ export class Triage {
     const memory = this.options.memory;
     switch (event.kind) {
       case "gift":
-        return 100 + 15 * Math.log10(event.diamonds + 1);
+        return GIFT_PRIORITY + 15 * Math.log10(event.diamonds + 1);
       case "share":
         return this.isRepeatShare(event.viewer.id) ? "repeated share" : 50;
       case "follow":
@@ -282,7 +289,7 @@ export class Triage {
         let priority = event.kind === "question" ? 70 : 40;
         // A question without its "?" is still a question.
         if (event.kind === "chat" && !event.text.includes("?") && isQuestion(event)) priority += 15;
-        // A gift power: their messages go before everyone else's chat (gifts still come first).
+        // A gift power: their messages go before everyone else's chat (gifts still come first: GIFT_PRIORITY).
         const rank = this.rankOf(event.viewer.id);
         if (rank) priority += rank === "boss" ? 55 : 45;
         const text = event.text.toLowerCase();

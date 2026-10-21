@@ -106,6 +106,39 @@ export const segmentScores = pgTable("segment_scores", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
+/**
+ * A one-time code that pairs a Local Bridge Agent with a channel (ADR-0047).
+ * Stored by HMAC lookup, like stage keys; claiming deletes the row.
+ */
+export const bridgePairing = pgTable(
+  "bridge_pairing",
+  {
+    codeLookup: text("code_lookup").primaryKey(),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => channel.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("bridge_pairing_expires_idx").on(t.expiresAt)],
+);
+
+/** A PC paired with a channel; its agent connects with the token whose HMAC is `tokenLookup`. */
+export const bridgeDevice = pgTable(
+  "bridge_device",
+  {
+    id: uuid("id").primaryKey(),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => channel.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenLookup: text("token_lookup").notNull().unique(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("bridge_device_channel_idx").on(t.channelId)],
+);
+
 export const streamSession = pgTable(
   "stream_session",
   {
@@ -245,6 +278,8 @@ export const schema = {
   subscription,
   billingEvent,
   auditLog,
+  bridgePairing,
+  bridgeDevice,
 } as const;
 
 export type Schema = typeof schema;

@@ -2,6 +2,7 @@ import {
   broadcastUpdateSchema,
   DEFAULT_STREAM_SCHEDULE,
   evaluateStreamSchedule,
+  formatPairingCode,
   PLANS,
   PRODUCT_NAME,
   streamScheduleSchema,
@@ -10,11 +11,12 @@ import {
   type LiveStudioProbe,
   type StreamSchedule,
 } from "@tik-live/shared";
-import { CalendarClock, Download, Film, RefreshCw, Sparkles, Video, Wand2 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { CalendarClock, Download, Film, KeyRound, RefreshCw, Sparkles, Trash2, Video, Wand2 } from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, call, errorMessage } from "../../lib/api";
-import { putChannel, useConfig, useMe, useRotateStageKey, useUpdateBroadcast, useUpdateChannel } from "../../lib/query";
+import { ago, time } from "../../lib/format";
+import { keys, putChannel, useBridgeDevices, useConfig, useMe, useRotateStageKey, useUpdateBroadcast, useUpdateChannel } from "../../lib/query";
 import { useStudio } from "../../lib/studio";
 import { browserTimeZone, timeZoneLabel, timeZoneOptions } from "../../lib/timezone";
 import { Button, ButtonLink } from "../../ui/Button";
@@ -308,8 +310,94 @@ function ScheduledStreamHours() {
   );
 }
 
+/** A code for an agent downloaded elsewhere (the GitHub release) or a PC paired again (ADR-0047). */
+function PairingCode() {
+  const { channel } = useHost();
+  const client = useQueryClient();
+  const [code, setCode] = useState<{ code: string; expiresAt: string } | null>(null);
+  const create = useMutation({
+    mutationFn: () => call(api.api.channels[":id"]["live-studio"].pairing.$post({ param: { id: channel.id } })),
+    onSuccess: (result) => {
+      setCode(result);
+      void client.invalidateQueries({ queryKey: keys.bridgeDevices(channel.id) });
+    },
+    onError: (err) => toast.error("Não deu para gerar o código", err),
+  });
+  const [, setTick] = useState(0);
+  // Swap the code for the button once it stops working.
+  useEffect(() => {
+    if (!code) return;
+    const timer = setTimeout(() => setTick((n) => n + 1), Math.max(0, Date.parse(code.expiresAt) - Date.now()) + 500);
+    return () => clearTimeout(timer);
+  }, [code]);
+  const expired = code ? Date.parse(code.expiresAt) <= Date.now() : false;
+
+  if (!code || expired) {
+    return (
+      <div className={p.formActions}>
+        <Button variant="ghost" icon={<KeyRound aria-hidden />} busy={create.isPending} onClick={() => create.mutate()}>
+          {expired ? "Gerar outro código" : "Parear com código"}
+        </Button>
+        <span className={s.note}>Para um agente que já está no PC, ou baixado das releases.</span>
+      </div>
+    );
+  }
+  return (
+    <div className={s.pairing} role="status">
+      <span className={s.note}>Digite este código no agente do seu PC:</span>
+      <span className={s.pairingCode} aria-label={`Código de pareamento ${code.code.split("").join(" ")}`}>
+        {formatPairingCode(code.code)}
+      </span>
+      <span className={s.note}>Vale uma vez, até {time(code.expiresAt)}. Ou rode: lantern-bridge.exe --pair {formatPairingCode(code.code)}</span>
+    </div>
+  );
+}
+
+function PairedDevices() {
+  const { channel } = useHost();
+  const client = useQueryClient();
+  const { data: devices } = useBridgeDevices(channel.id);
+  const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
+  if (!devices?.length) return <p className={s.note}>Nenhum computador pareado ainda.</p>;
+  return (
+    <>
+      <ul className={s.devices} aria-label="Computadores pareados">
+        {devices.map((device) => (
+          <li key={device.id} className={s.device}>
+            <div>
+              <div className={s.deviceName}>{device.name}</div>
+              <div className={s.status} data-ok={device.connected}>
+                <span className={s.statusDot} aria-hidden />
+                {device.connected ? "Conectado agora" : device.lastSeenAt ? `Visto ${ago(device.lastSeenAt)}` : `Pareado ${ago(device.createdAt)}`}
+              </div>
+            </div>
+            <Button variant="quietDanger" size="sm" icon={<Trash2 aria-hidden />} onClick={() => setRemoving(device)}>
+              Remover
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <Confirm
+        open={removing !== null}
+        onOpenChange={(open) => !open && setRemoving(null)}
+        title={`Remover ${removing?.name ?? "este computador"}?`}
+        description="O agente nesse PC desconecta na hora e só volta com um novo código de pareamento."
+        confirmLabel="Remover"
+        danger
+        onConfirm={async () => {
+          if (!removing) return;
+          await call(api.api.channels[":id"]["live-studio"].devices[":deviceId"].$delete({ param: { id: channel.id, deviceId: removing.id } }));
+          await client.invalidateQueries({ queryKey: keys.bridgeDevices(channel.id) });
+          toast.success("Computador removido");
+        }}
+      />
+    </>
+  );
+}
+
 function TikTokLiveStudio() {
   const { channel, store } = useHost();
+  const { data: config } = useConfig();
   const update = useUpdateBroadcast(channel.id);
   const liveStudio = useStudio(store, (st) => st.snapshot?.health.liveStudio ?? null);
   const [checked, setChecked] = useState<{
@@ -363,6 +451,8 @@ function TikTokLiveStudio() {
   const probe = checked?.probe ?? liveStudio?.probe ?? null;
   const detectedHandle = probe?.tiktokUsername ?? null;
   const currentSceneItem = probe?.sceneList?.find((sc) => sc.name === probe.scene) ?? probe?.sceneList?.[0] ?? null;
+  const download = config?.bridge.download ?? false;
+  const megabytes = config?.bridge.bytes ? Math.round(config.bridge.bytes / 1_000_000) : null;
 
   return (
     <Panel as="section" aria-labelledby="live-studio-heading" className={p.form}>
@@ -378,9 +468,33 @@ function TikTokLiveStudio() {
           onChange={(enabled) => void toggle(enabled)}
           disabled={update.isPending}
         />
-        <Field label="Comando do agente local (Windows)" hint="Baixe o lantern-bridge.exe para o seu PC e abra-o colando o link do palco, ou rode este comando no terminal.">
-          {(props) => <CopyField {...props} value={`lantern-bridge.exe --url ${channel.stageUrl}`} label="Comando do agente local" />}
-        </Field>
+        <h3 className={s.subhead}>Agente no seu PC (Windows)</h3>
+        {download ? (
+          <ol className={s.steps}>
+            <li>
+              Baixe o agente no PC onde o TikTok LIVE Studio roda. Cada download já vem pareado com {channel.name}: abra em até 15 minutos.
+            </li>
+            <li>
+              Se o Windows avisar que protegeu o computador, clique em <strong>Mais informações</strong> e depois em <strong>Executar assim mesmo</strong>.
+            </li>
+            <li>Deixe a janela do agente aberta durante a live. Nas próximas vezes, é só abrir o mesmo arquivo.</li>
+          </ol>
+        ) : (
+          <p className={s.note}>Este servidor não tem o lantern-bridge.exe para baixar. Use o da página de releases do {PRODUCT_NAME} e pareie com um código.</p>
+        )}
+        {download && (
+          <div className={p.formActions}>
+            <a href={`/api/channels/${channel.id}/live-studio/bridge.exe`} download="lantern-bridge.exe">
+              <Button type="button" variant="primary" icon={<Download aria-hidden />}>
+                Baixar lantern-bridge.exe
+              </Button>
+            </a>
+            {megabytes && <span className={s.note}>{megabytes} MB</span>}
+          </div>
+        )}
+        <PairingCode />
+        <h3 className={s.subhead}>Computadores pareados</h3>
+        <PairedDevices />
         {liveStudio && (
           <p className={s.status} data-ok={liveStudio.state === "live" || Boolean(liveStudio.bridgeConnected)}>
             <span className={s.statusDot} aria-hidden />
@@ -427,11 +541,6 @@ function TikTokLiveStudio() {
               {detectedHandle ? `Usar @${detectedHandle}` : "Detectar @usuário logado"}
             </Button>
           )}
-          <a href={`/api/channels/${channel.id}/live-studio/bridge.exe`} download="lantern-bridge.exe">
-            <Button type="button" variant="ghost" icon={<Download aria-hidden />}>
-              Baixar lantern-bridge.exe
-            </Button>
-          </a>
         </div>
 
         {probe?.connected && (

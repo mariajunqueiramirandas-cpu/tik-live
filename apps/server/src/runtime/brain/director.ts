@@ -329,16 +329,17 @@ export const TURN_PRIORITY: Record<TurnKind, number> = {
   opening: 40,
   game: 45,
   request: 45,
-  // A gifter's anthem plays to the end: a new gift waits for it.
-  perk: 45,
   react: 50,
+  // Gifts come first (ADR-0046): a gifter's anthem and a gift's thank-you play to the end; a new gift gets the next turn.
+  perk: 95,
+  thanks: 100,
 };
 
-/** How urgently a queued event wants the floor: gifts cut short anything but a reaction or the opening; chat only cuts filler. */
+/** How urgently a queued event wants the floor: gifts cut short anything but another gift's moment (ADR-0046); chat only cuts filler. */
 export function eventUrgency(event: LiveEvent): number {
   switch (event.kind) {
     case "gift":
-      return 35;
+      return 90;
     case "chat":
     case "question":
       return 15;
@@ -403,15 +404,16 @@ export interface DirectorState {
  *
  * What comes next, each tick (ADR-0026):
  * 1. the opening, once per stream;
- * 2. game moments, in the order they happened (a round, its answer, the next round);
- * 3. what the channel owner asked for from the studio;
- * 4. a segment change that is overdue (a busy chat can't hold the show in one segment forever),
+ * 2. gifts, on a turn of their own, ahead of everything else (ADR-0046);
+ * 3. game moments, in the order they happened (a round, its answer, the next round);
+ * 4. what the channel owner asked for from the studio;
+ * 5. a segment change that is overdue (a busy chat can't hold the show in one segment forever),
  *    and after a few reactions to chat in a row, a turn that moves the show along;
- * 5. reactions: gifts and follows first, then messages oldest first; a like milestone rides along;
- * 6. a like milestone on its own;
- * 7. a question the host moved past, or that expired while it was busy;
- * 8. the segment change, on time, in a quiet moment;
- * 9. dead-air filler.
+ * 6. reactions: follows first, then messages oldest first; a like milestone rides along;
+ * 7. a like milestone on its own;
+ * 8. a question the host moved past, or that expired while it was busy;
+ * 9. the segment change, on time, in a quiet moment;
+ * 10. dead-air filler.
  *
  * Not every message is for the host: viewers talking to each other (an
  * @mention) and laughs are in the room it sees but never queued for a reply,
@@ -769,6 +771,9 @@ export class Director {
         this.options.games?.handleGift(event);
         this.options.stage.alert(event);
         this.sound(event.diamonds >= 1_000 ? "fanfare" : event.diamonds >= 100 ? "levelup" : event.diamonds >= 10 ? "chime" : "pop");
+        // The stage goes full hype mode for every gift (ADR-0046): air horn and hitmarkers to go with it.
+        this.sound("airhorn");
+        this.sound("hitmarker");
         this.remember({ at: event.at, kind: "support", event });
         break;
       }
@@ -1034,8 +1039,8 @@ export class Director {
     // Start the next turn while the last sentence is still playing, but never
     // stack up more than one turn of queued speech.
     if (this.options.speech.pending() > 0) return;
-    // A game round goes up as soon as the host stops talking: don't start something else first.
-    if (this.options.games?.wantsFloor()) return;
+    // A game round goes up as soon as the host stops talking: don't start something else first (but a gift's thank-you).
+    if (this.options.games?.wantsFloor() && !this.giftsWaiting()) return;
 
     const plan = this.chooseTurn(now);
     if (plan) await this.runTurn(plan);
@@ -1105,6 +1110,19 @@ export class Director {
       const focus = this.takeFocus();
       const insight = this.insight(this.segmentIndex);
       return { ...base, kind: "opening", items: focus.items, ...(insight ? { insight } : {}) };
+    }
+
+    // Gifts come first, every time (ADR-0046): their own turn, before game moments, the owner's requests and the segments.
+    const gifts = triage.takeKinds(["gift"], REACT_SUPPORT);
+    if (gifts.length) {
+      const also = this.takeMilestone();
+      return {
+        ...base,
+        kind: "thanks",
+        items: gifts,
+        ...(also ? { also: `${also.note}: celebrate it in a few words.` } : {}),
+        originAt: Math.min(...gifts.map((item) => item.event.at)),
+      };
     }
 
     // Game moments are time-bound (a question just went up, an answer is being revealed, a podium place).
@@ -1300,6 +1318,11 @@ export class Director {
     if (this.hookHideAt === Infinity) return;
     this.hookHideAt = Infinity;
     this.options.stage.hook?.(null);
+  }
+
+  /** A gift is waiting for its thank-you: it goes ahead of everything (ADR-0046). */
+  private giftsWaiting(): boolean {
+    return this.options.triage.peek().some((item) => item.event.kind === "gift");
   }
 
   /** Something just moved on stage (a gift, a follow): the next flourish can wait. */
@@ -2026,7 +2049,7 @@ export class Director {
     this.lastTurnAt = this.now();
     this.skipGap = false;
     const answersChat = plan.kind === "react" && plan.items.some((item) => item.event.kind === "chat" || item.event.kind === "question");
-    this.chatStreak = answersChat ? this.chatStreak + 1 : plan.kind === "react" ? this.chatStreak : 0;
+    this.chatStreak = answersChat ? this.chatStreak + 1 : plan.kind === "react" || plan.kind === "thanks" ? this.chatStreak : 0;
     const result = await this.engine.run(plan);
     if (result.scrolledBy.length) {
       // The host never saw these, so no later turn may ask it to answer them.

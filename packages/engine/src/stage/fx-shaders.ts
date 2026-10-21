@@ -16,11 +16,11 @@ out vec3 v_color;
 out float v_alpha;
 out float v_shade;
 flat out int v_kind;
-//                           dot  confetti heart star sparkle note bubble streak petal
-const float GRAVITY[9] = float[9](180.0, 640.0, -40.0, 140.0, 0.0, -30.0, -50.0, 0.0, 170.0);
-const float DRAG[9] = float[9](2.6, 2.3, 1.3, 2.2, 3.0, 1.0, 0.7, 0.05, 1.9);
-const float SWAY[9] = float[9](0.0, 46.0, 22.0, 0.0, 0.0, 30.0, 24.0, 0.0, 52.0);
-const float SPIN[9] = float[9](0.0, 9.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 4.0);
+//                             dot  confetti heart star sparkle note bubble streak petal hitmarker
+const float GRAVITY[10] = float[10](180.0, 640.0, -40.0, 140.0, 0.0, -30.0, -50.0, 0.0, 170.0, 0.0);
+const float DRAG[10] = float[10](2.6, 2.3, 1.3, 2.2, 3.0, 1.0, 0.7, 0.05, 1.9, 1.0);
+const float SWAY[10] = float[10](0.0, 46.0, 22.0, 0.0, 0.0, 30.0, 24.0, 0.0, 52.0, 0.0);
+const float SPIN[10] = float[10](0.0, 9.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0);
 void main() {
   int kind = int(a_instance2.w + 0.5);
   float age = u_time - a_instance2.x;
@@ -38,8 +38,11 @@ void main() {
   pos.x += sin(age * 2.7 + seed * 6.283) * SWAY[kind] * min(1.0, age * 2.0);
   float size = a_instance2.z * smoothstep(0.0, 0.1, p);
   if (kind == 4) size *= sin(3.14159 * p) * (0.8 + 0.4 * sin(age * 18.0 + seed * 9.0));
+  // A hitmarker lands big and settles.
+  if (kind == 9) size *= 1.35 - 0.35 * p;
   float angle = seed * 6.283 + age * SPIN[kind] * (seed - 0.5) * 2.0;
   if (kind == 2 || kind == 5) angle = sin(age * 3.0 + seed * 6.0) * 0.3;
+  if (kind == 9) angle = 0.0;
   vec2 c = (a_corner - 0.5);
   vec2 scaleXY = vec2(size);
   v_shade = 1.0;
@@ -137,6 +140,14 @@ void main() {
     col = mix(v_color, vec3(1.0), 0.4);
   } else if (k == 7) {
     glow = exp(-abs(p.x) * 4.0) * (1.0 - abs(p.y)) * 0.55;
+  } else if (k == 9) {
+    // A hitmarker: four white ticks on the diagonals around an empty middle, outlined dark.
+    vec2 q = abs(p);
+    float d = sdSegment(q, vec2(0.26), vec2(0.78));
+    float outer = fill(d - 0.15);
+    float inner = fill(d - 0.075);
+    a = outer;
+    col = vec3(inner / max(outer, 0.001));
   } else {
     a = fill(length(p / vec2(0.6, 0.95)) - 1.0);
     col *= 0.9 + 0.2 * (1.0 - abs(p.x));
@@ -177,3 +188,60 @@ void main() {
   gl_Position = vec4(q.x / u_res.x * 2.0 - 1.0, 1.0 - q.y / u_res.y * 2.0, 0.0, 1.0);
 }`;
 
+
+/**
+ * Hype mode (ADR-0046): an RGB LED strip around the stage's edge, like a
+ * gaming setup. Drawn as four strips along the edges (never the whole
+ * screen), added to what's below. The rainbow runs around the stage and
+ * light chases along the strip.
+ */
+export const RGB_EDGE_FRAGMENT = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 o;
+uniform vec2 u_res;
+uniform vec4 u_rect;
+uniform float u_time;
+uniform float u_amount;
+vec3 hue(float h) { return clamp(abs(fract(h + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0); }
+void main() {
+  vec2 px = u_rect.xy + v_uv * u_rect.zw;
+  float d = min(min(px.x, px.y), min(u_res.x - px.x, u_res.y - px.y));
+  vec2 c = px - u_res * 0.5;
+  // Once around the stage is 1; whole turns keep the seam invisible.
+  float around = atan(c.y, c.x) / 6.28318;
+  vec3 col = hue(around * 2.0 - u_time * 0.45);
+  float chase = 0.62 + 0.38 * sin(around * 6.28318 * 28.0 - u_time * 14.0);
+  float strip = smoothstep(16.0, 3.0, d) * chase;
+  float glow = exp(-d / 46.0) * 0.8;
+  o = vec4(col * (strip * 1.15 + glow) * u_amount, 0.0);
+}`;
+
+/** A laser beam from a point in a direction (ADR-0046): one quad, `u_size` long and wide. */
+export const LASER_VERTEX = /* glsl */ `#version 300 es
+layout(location = 0) in vec2 a_corner;
+uniform vec2 u_res;
+uniform vec2 u_origin;
+uniform vec2 u_dir;
+uniform vec2 u_size;
+out vec2 v_uv;
+void main() {
+  vec2 n = vec2(-u_dir.y, u_dir.x);
+  vec2 p = u_origin + u_dir * a_corner.x * u_size.x + n * (a_corner.y - 0.5) * u_size.y;
+  v_uv = a_corner;
+  gl_Position = vec4(p.x / u_res.x * 2.0 - 1.0, 1.0 - p.y / u_res.y * 2.0, 0.0, 1.0);
+}`;
+
+export const LASER_FRAGMENT = /* glsl */ `#version 300 es
+precision mediump float;
+in vec2 v_uv;
+out vec4 o;
+uniform vec3 u_color;
+uniform float u_amount;
+void main() {
+  float across = abs(v_uv.y - 0.5) * 2.0;
+  float core = exp(-across * across * 90.0);
+  float halo = exp(-across * 5.0) * 0.3;
+  float along = smoothstep(0.0, 0.03, v_uv.x) * pow(1.0 - v_uv.x, 0.7);
+  o = vec4((u_color * (core * 0.9 + halo) + vec3(core * 0.5)) * along * u_amount, 0.0);
+}`;
