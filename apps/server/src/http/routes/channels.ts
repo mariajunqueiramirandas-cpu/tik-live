@@ -11,6 +11,8 @@ import {
   type VoiceSettings,
 } from "@tik-live/shared";
 import { Hono } from "hono";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { randomToken } from "../../crypto/secrets";
 import type { AppDeps } from "../../deps";
@@ -37,6 +39,18 @@ import { valid } from "../validate";
 
 const idParam = z.object({ id: z.string() });
 const sessionParam = z.object({ id: z.string(), sid: z.string() });
+const BRIDGE_EXE_CANDIDATES = [
+  path.resolve(import.meta.dir, "../../../../bridge/dist/lantern-bridge.exe"),
+  path.resolve(import.meta.dir, "../../../bridge/dist/lantern-bridge.exe"),
+  path.resolve(process.cwd(), "apps/bridge/dist/lantern-bridge.exe"),
+];
+
+function findBridgeExePath(): string | null {
+  for (const candidate of BRIDGE_EXE_CANDIDATES) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
 
 export function channelRoutes(deps: AppDeps) {
   const owned = async (userId: string, id: string): Promise<ChannelRow> => {
@@ -166,6 +180,7 @@ export function channelRoutes(deps: AppDeps) {
       }
       const broadcast = { ...current.broadcast };
       if (input.enabled !== undefined) broadcast.enabled = input.enabled;
+      if (input.liveStudio !== undefined) broadcast.liveStudio = input.liveStudio;
       if (input.rtmpUrl !== undefined) broadcast.rtmpUrl = input.rtmpUrl;
       if (input.streamKey !== undefined) {
         broadcast.streamKeyCiphertext = input.streamKey ? await deps.secrets.encrypt("stream-key", input.streamKey) : null;
@@ -186,6 +201,26 @@ export function channelRoutes(deps: AppDeps) {
       if (!rtmpUrl) return problem(c, 400, "broadcast_incomplete", "Adicione o endereço do servidor primeiro.");
       if (!deps.broadcasts) return problem(c, 409, "broadcast_disabled", "A transmissão pela nuvem não está ligada neste servidor.");
       return c.json(await deps.broadcasts.check(rtmpUrl));
+    })
+    .post("/:id/live-studio/check", valid("param", idParam), valid("json", z.object({ launch: z.boolean().optional() })), async (c) => {
+      const row = await owned(c.get("user").id, c.req.valid("param").id);
+      const { launch } = c.req.valid("json");
+      return c.json(await deps.liveStudio.check({ channelId: row.id, ...(launch !== undefined ? { launch } : {}) }));
+    })
+    .get("/:id/live-studio/bridge.exe", valid("param", idParam), async (c) => {
+      await owned(c.get("user").id, c.req.valid("param").id);
+      const exePath = findBridgeExePath();
+      if (!exePath) {
+        return problem(c, 404, "bridge_exe_not_built", "O executável lantern-bridge.exe ainda não foi compilado neste servidor.");
+      }
+      const file = Bun.file(exePath);
+      return new Response(file, {
+        status: 200,
+        headers: {
+          "content-type": "application/vnd.microsoft.portable-executable",
+          "content-disposition": 'attachment; filename="lantern-bridge.exe"',
+        },
+      });
     })
     .post(
       "/:id/start",
@@ -289,4 +324,3 @@ export function channelRoutes(deps: AppDeps) {
       });
     });
 }
-

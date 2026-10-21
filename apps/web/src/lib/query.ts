@@ -109,7 +109,7 @@ export function useUpdateChannel(id: string) {
     },
     onError: (error, _patch, context) => {
       context?.restore();
-      toast.error("Não deu para salvar", error);
+      toast.error("N\u00e3o deu para salvar", error);
     },
     onSuccess: (channel) => putChannel(channel),
   });
@@ -168,7 +168,7 @@ export function useRunChannel(id: string) {
     },
     onError: (error, action, context) => {
       context?.restore();
-      toast.error(action === "start" ? "Não deu para entrar ao vivo" : "Não deu para parar", error);
+      toast.error(action === "start" ? "N\u00e3o deu para entrar ao vivo" : "N\u00e3o deu para parar", error);
     },
     onSuccess: (channel) => putChannel(channel),
   });
@@ -178,13 +178,13 @@ export function useRotateStageKey(id: string) {
   return useMutation({
     mutationFn: async () => (await call(api.api.channels[":id"]["stage-key"].$post({ param: { id } }))).channel as ChannelDto,
     onSuccess: (channel) => putChannel(channel),
-    onError: (error) => toast.error("Não deu para trocar o link", error),
+    onError: (error) => toast.error("N\u00e3o deu para trocar o link", error),
   });
 }
 
 export function useUpdateBroadcast(id: string) {
   return useMutation({
-    mutationFn: async (input: { enabled?: boolean; rtmpUrl?: string | null; streamKey?: string | null }) =>
+    mutationFn: async (input: { enabled?: boolean; liveStudio?: boolean; rtmpUrl?: string | null; streamKey?: string | null }) =>
       (await call(api.api.channels[":id"].broadcast.$put({ param: { id }, json: input }))).channel as ChannelDto,
     onSuccess: (channel) => putChannel(channel),
   });

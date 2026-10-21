@@ -1,5 +1,5 @@
 import { broadcastUpdateSchema, PLANS, PRODUCT_NAME, tiktokHandleSchema } from "@tik-live/shared";
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api, call, errorMessage } from "../../lib/api";
@@ -126,6 +126,87 @@ function StageLink() {
   );
 }
 
+function TikTokLiveStudio() {
+  const { channel, store } = useHost();
+  const update = useUpdateBroadcast(channel.id);
+  const liveStudio = useStudio(store, (st) => st.snapshot?.health.liveStudio ?? null);
+  const [checked, setChecked] = useState<{
+    ok: boolean;
+    detail: string;
+    connected?: boolean;
+    installed?: boolean;
+    bridgeConnected?: boolean;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const check = useMutation({
+    mutationFn: (launch: boolean) => call(api.api.channels[":id"]["live-studio"].check.$post({ param: { id: channel.id }, json: { launch } })),
+    onSuccess: (result) => setChecked(result),
+    onError: (err) => setChecked({ ok: false, detail: errorMessage(err) }),
+  });
+
+  const toggle = async (enabled: boolean) => {
+    setError(null);
+    try {
+      await update.mutateAsync({ liveStudio: enabled });
+      toast.success(enabled ? "TikTok LIVE Studio automático ligado" : "TikTok LIVE Studio automático desligado");
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const bridgeConnected = checked?.bridgeConnected ?? liveStudio?.bridgeConnected ?? false;
+
+  return (
+    <Panel as="section" aria-labelledby="live-studio-heading" className={p.form}>
+      <div className={p.sectionHead}>
+        <h2 id="live-studio-heading">TikTok LIVE Studio automático</h2>
+        <p>O agente local do {PRODUCT_NAME} roda no seu PC e comanda o aplicativo do TikTok LIVE Studio para iniciar e encerrar a live automaticamente junto com o apresentador.</p>
+      </div>
+      <div className={s.form}>
+        <Switch
+          label="Iniciar e encerrar a live no TikTok LIVE Studio"
+          hint="Usa a cena, o título e as configurações que já estão prontos no seu TikTok LIVE Studio."
+          checked={Boolean(channel.broadcast.liveStudio)}
+          onChange={(enabled) => void toggle(enabled)}
+          disabled={update.isPending}
+        />
+        <Field label="Comando do agente local (Windows)" hint="Baixe o lantern-bridge.exe para o seu PC e abra-o colando o link do palco, ou rode este comando no terminal.">
+          {(props) => <CopyField {...props} value={`lantern-bridge.exe --url ${channel.stageUrl}`} label="Comando do agente local" />}
+        </Field>
+        {liveStudio && (
+          <p className={s.status} data-ok={liveStudio.state === "live" || Boolean(liveStudio.bridgeConnected)}>
+            <span className={s.statusDot} aria-hidden />
+            {liveStudio.detail}
+          </p>
+        )}
+        {error && <p className={s.error}>{error}</p>}
+        {checked && (
+          <p className={s.status} data-ok={checked.ok} role="status">
+            <span className={s.statusDot} aria-hidden />
+            {checked.detail}
+          </p>
+        )}
+        <div className={p.formActions}>
+          <Button variant="ghost" busy={check.isPending} onClick={() => check.mutate(false)}>
+            {bridgeConnected ? "Testar agente no PC" : "Testar conexão"}
+          </Button>
+          {checked && !checked.connected && checked.installed && (
+            <Button variant="ghost" busy={check.isPending} onClick={() => check.mutate(true)}>
+              Abrir TikTok LIVE Studio
+            </Button>
+          )}
+          <a href={`/api/channels/${channel.id}/live-studio/bridge.exe`} download="lantern-bridge.exe">
+            <Button type="button" variant="ghost" icon={<Download aria-hidden />}>
+              Baixar lantern-bridge.exe
+            </Button>
+          </a>
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function CloudBroadcast() {
   const { channel } = useHost();
   const { data: me } = useMe();
@@ -227,6 +308,7 @@ export default function Setup() {
     <div className={s.layout}>
       <Source />
       <StageLink />
+      <TikTokLiveStudio />
       <CloudBroadcast />
     </div>
   );

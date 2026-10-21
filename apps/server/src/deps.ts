@@ -5,6 +5,7 @@ import { Entitlements } from "./billing/entitlements";
 import type { MercadoPagoClient } from "./billing/mercadopago";
 import { BillingService } from "./billing/service";
 import { HttpBroadcasterClient, type BroadcasterClient } from "./broadcast/client";
+import { LiveStudioSupervisor, LocalLiveStudioClient, type LiveStudioClient } from "./broadcast/live-studio";
 import { BROADCAST_VIDEO, BroadcastSupervisor } from "./broadcast/supervisor";
 import type { AppConfig } from "./config";
 import { Secrets } from "./crypto/secrets";
@@ -35,6 +36,8 @@ export interface AppDeps {
   manager: RuntimeManager;
   /** Present when cloud broadcast is on for this server. */
   broadcasts: BroadcastSupervisor | null;
+  /** Controls the local TikTok LIVE Studio desktop app on this machine. */
+  liveStudio: LiveStudioSupervisor;
   now: () => number;
 }
 
@@ -46,6 +49,8 @@ export interface DepsOverrides {
   runtimeOverrides?: Pick<ChannelRuntimeOptions, "makeSource" | "makeHost" | "makeTts">;
   /** Tests: a fake broadcaster (turns cloud broadcast on). */
   broadcaster?: BroadcasterClient;
+  /** Tests: a fake TikTok LIVE Studio client. */
+  liveStudio?: LiveStudioClient;
   now?: () => number;
 }
 
@@ -96,16 +101,25 @@ export async function createDeps(config: AppConfig, database: Database, override
         now,
       })
     : undefined;
+  const liveStudioClient =
+    overrides.liveStudio ??
+    (config.NODE_ENV === "test" ? new LocalLiveStudioClient({ ports: [], executablePath: null }) : new LocalLiveStudioClient());
+  const liveStudio = new LiveStudioSupervisor({
+    client: liveStudioClient,
+    log: createLogger("live-studio"),
+    now,
+  });
   const manager = new RuntimeManager({
     ctx: { db, config, anthropic, log: createLogger("runtime"), now, djCache },
     secrets,
     entitlements,
     audio,
     ...(broadcasts ? { broadcasts } : {}),
+    liveStudio,
     ...(overrides.runtimeOverrides ? { runtimeOverrides: overrides.runtimeOverrides } : {}),
   });
   managerRef = manager;
-  return { config, database, db, log, secrets, identity, entitlements, billing, voices, audio, djCache, manager, broadcasts: broadcasts ?? null, now };
+  return { config, database, db, log, secrets, identity, entitlements, billing, voices, audio, djCache, manager, broadcasts: broadcasts ?? null, liveStudio, now };
 }
 
 /** Picks the identity provider for AUTH_MODE (ADR-0018). */

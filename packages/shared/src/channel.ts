@@ -59,6 +59,8 @@ export interface BroadcastDto {
   rtmpUrl: string | null;
   hasStreamKey: boolean;
   streamKeyLast4: string | null;
+  /** Start and stop the stream automatically in the local TikTok LIVE Studio app. */
+  liveStudio?: boolean;
 }
 
 export const broadcastUpdateSchema = z.object({
@@ -72,6 +74,8 @@ export const broadcastUpdateSchema = z.object({
     .optional(),
   /** Write-only. Send null to clear. */
   streamKey: z.string().trim().min(4).max(300).nullable().optional(),
+  /** Start and stop the stream automatically in the local TikTok LIVE Studio app. */
+  liveStudio: z.boolean().optional(),
 });
 export type BroadcastUpdate = z.infer<typeof broadcastUpdateSchema>;
 

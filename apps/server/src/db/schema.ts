@@ -32,6 +32,8 @@ export interface StoredBroadcast {
   rtmpUrl: string | null;
   streamKeyCiphertext: string | null;
   streamKeyLast4: string | null;
+  /** Start and stop the stream automatically in the local TikTok LIVE Studio app. */
+  liveStudio?: boolean;
 }
 
 export const channel = pgTable(

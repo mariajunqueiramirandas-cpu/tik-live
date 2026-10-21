@@ -1,0 +1,17 @@
+{
+  "name": "@tik-live/bridge",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile=dist/lantern-bridge.exe",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@tik-live/shared": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

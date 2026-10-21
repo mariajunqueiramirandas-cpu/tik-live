@@ -8,6 +8,7 @@ import {
   type StudioCommand,
 } from "@tik-live/shared";
 import type { Entitlements, EntitlementCheck } from "../billing/entitlements";
+import type { LiveStudioSupervisor } from "../broadcast/live-studio";
 import type { BroadcastSupervisor } from "../broadcast/supervisor";
 import type { Secrets } from "../crypto/secrets";
 import { getChannelById, listDesiredRunning, setDesiredStateInternal, type ChannelRow } from "../repos/channels";
@@ -35,6 +36,8 @@ export interface RuntimeManagerOptions {
   audio: AudioStore;
   /** Cloud broadcast (ADR-0014); absent when the server has it turned off. */
   broadcasts?: BroadcastSupervisor;
+  /** Local TikTok LIVE Studio desktop starter; starts and stops the app stream with the host. */
+  liveStudio?: LiveStudioSupervisor;
   runtimeOverrides?: Pick<ChannelRuntimeOptions, "makeSource" | "makeHost" | "makeTts">;
 }
 
@@ -110,6 +113,7 @@ export class RuntimeManager {
       slot.runtime = null;
     }
     await this.options.broadcasts?.stop(channelId);
+    await this.options.liveStudio?.stop(channelId);
     slot.channel = { ...slot.channel, desiredState: "stopped" };
     this.prune(slot);
   }
@@ -133,6 +137,7 @@ export class RuntimeManager {
   }
 
   async rotateStageKey(channel: ChannelRow, stageKey: string): Promise<void> {
+    this.options.liveStudio?.closeBridge(channel.id, 4001, "stage key rotated");
     const slot = this.slots.get(channel.id);
     if (!slot) return;
     slot.channel = channel;
@@ -144,11 +149,13 @@ export class RuntimeManager {
   }
 
   async remove(channelId: string): Promise<void> {
+    this.options.liveStudio?.closeBridge(channelId, 4004, "channel deleted");
     const slot = this.slots.get(channelId);
     if (!slot) return;
     if (slot.failure?.timer) clearTimeout(slot.failure.timer);
     await slot.runtime?.stop("channel deleted");
     await this.options.broadcasts?.stop(channelId);
+    await this.options.liveStudio?.stop(channelId);
     slot.stage.closeAll(4004, "channel deleted");
     this.slots.delete(channelId);
   }
@@ -184,10 +191,32 @@ export class RuntimeManager {
       if (broadcast) {
         snapshot.health.broadcast = { state: broadcast.state, detail: broadcast.detail, bitrateKbps: broadcast.stats?.bitrateKbps ?? null };
       }
+      const liveStudio = this.options.liveStudio?.current(channel.id);
+      if (liveStudio) {
+        snapshot.health.liveStudio = {
+          state: liveStudio.state,
+          detail: liveStudio.detail,
+          bridgeConnected: liveStudio.bridgeConnected,
+        };
+      } else if (this.options.liveStudio?.isBridgeConnected(channel.id)) {
+        snapshot.health.liveStudio = {
+          state: "stopped",
+          detail: "Agente conectado no seu PC",
+          bridgeConnected: true,
+        };
+      }
       return snapshot;
     }
     const summary = this.summary(channel);
-    return stoppedSnapshot(channel, slot?.stage.counts() ?? { program: 0, preview: 0, broadcast: 0 }, summary.status, summary.detail);
+    const snap = stoppedSnapshot(channel, slot?.stage.counts() ?? { program: 0, preview: 0, broadcast: 0 }, summary.status, summary.detail);
+    if (this.options.liveStudio?.isBridgeConnected(channel.id)) {
+      snap.health.liveStudio = {
+        state: "stopped",
+        detail: "Agente conectado no seu PC",
+        bridgeConnected: true,
+      };
+    }
+    return snap;
   }
 
   // ---- realtime attachments -------------------------------------------------
@@ -231,6 +260,7 @@ export class RuntimeManager {
     // Cloud broadcasts keep running through an app restart: the stage page
     // holds its last frame and reconnects, and the next boot resyncs.
     this.options.broadcasts?.close();
+    this.options.liveStudio?.close();
     for (const slot of this.slots.values()) {
       slot.stage.hold();
       if (slot.failure?.timer) clearTimeout(slot.failure.timer);
@@ -352,11 +382,16 @@ export class RuntimeManager {
   }
 
   private async syncBroadcast(slot: Slot): Promise<void> {
-    const broadcasts = this.options.broadcasts;
-    if (!broadcasts) return;
     const running = Boolean(slot.runtime && isActive(slot.runtime.getStatus().status));
-    const plan = running ? await this.options.entitlements.planFor(slot.ownerId) : null;
-    await broadcasts.sync(slot.channel, slot.stage.stageKey, running && Boolean(plan?.limits.cloudBroadcast));
+    const broadcasts = this.options.broadcasts;
+    if (broadcasts) {
+      const plan = running ? await this.options.entitlements.planFor(slot.ownerId) : null;
+      await broadcasts.sync(slot.channel, slot.stage.stageKey, running && Boolean(plan?.limits.cloudBroadcast));
+    }
+    const liveStudio = this.options.liveStudio;
+    if (liveStudio) {
+      await liveStudio.sync(slot.channel, running);
+    }
   }
 
   /** Drops slots nobody uses so memory doesn't grow with every channel ever viewed. */

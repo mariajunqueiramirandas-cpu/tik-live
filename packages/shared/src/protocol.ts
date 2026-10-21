@@ -326,6 +326,8 @@ export interface RuntimeSnapshot {
     budget: { usedPct: number; limitTokensPerHour: number | null };
     /** Cloud broadcast, when it's turned on for this channel. */
     broadcast?: { state: "starting" | "live" | "retrying" | "failed" | "stopped"; detail: string; bitrateKbps: number | null } | null;
+    /** Local TikTok LIVE Studio automation, when turned on for this channel. */
+    liveStudio?: { state: "starting" | "live" | "retrying" | "failed" | "stopped"; detail: string; bridgeConnected?: boolean } | null;
   };
   session: { id: string; startedAt: string } | null;
 }
