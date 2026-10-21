@@ -394,6 +394,7 @@ export function stoppedSnapshot(
     goals: [],
     vote: null,
     music: null,
+    dj: null,
     stats: { viewers: 0, likes: 0, diamonds: 0, messages: 0, follows: 0, uptimeSec: 0 },
     nowSaying: null,
     queue: [],

@@ -1,5 +1,9 @@
 import { BOOST_LABELS, type AlertKind, type BoostKind, type Effect } from "@tik-live/shared";
-import type { MusicPlayer } from "../audio/music";
+/** What the "now playing" chip shows: the host's piece or the DJ's track, with its credit (ADR-0045). */
+export interface NowPlayingSource {
+  nowPlaying(): { title: string; credit?: string; endsAt: number } | null;
+  bands(out: Float32Array): Float32Array;
+}
 import { Spring, SPRINGS } from "../anim/spring";
 import { hexToRgb, type Rgb } from "../color";
 import type { Program, QuadGeometry } from "../gl/gl";
@@ -102,13 +106,14 @@ export class FxLayer {
 
   private readonly chip: TextSprite;
   private chipTitle = "";
+  private chipCredit = "";
   private readonly eq = new Float32Array(4);
   private readonly chipY = new Spring(600, SPRINGS.snappy);
 
   constructor(
     private readonly ctx: StageContext,
     private readonly character: CharacterLayer,
-    private readonly player: Pick<MusicPlayer, "nowPlaying" | "bands">,
+    private readonly player: NowPlayingSource,
     private readonly random: () => number,
   ) {
     this.particles = ctx.program("particles", PARTICLE_VERTEX, PARTICLE_FRAGMENT);
@@ -342,8 +347,9 @@ export class FxLayer {
     this.combo.update(dt, t);
     // "Now playing": the music player knows the track and when it ends.
     const playing = this.player.nowPlaying();
-    if (playing && playing.title !== this.chipTitle) {
+    if (playing && (playing.title !== this.chipTitle || (playing.credit ?? "") !== this.chipCredit)) {
       this.chipTitle = playing.title;
+      this.chipCredit = playing.credit ?? "";
       this.paintChip(f.scale);
     }
     this.chip.opacity.target = playing ? 1 : 0;
@@ -383,7 +389,7 @@ export class FxLayer {
       const alpha = Math.min(1, this.chip.opacity.value);
       for (let i = 0; i < 4; i++) {
         const h = 10 + 26 * Math.min(1, (this.eq[i] as number) * 1.4);
-        this.shapes.box(this.chip.x + 30 + i * 11, this.chip.y + 46 - h / 2, 7, h, 3.5, EQ, alpha, undefined, undefined, 0, 0, -1, f.scale);
+        this.shapes.box(this.chip.x + 30 + i * 11, this.chip.y + (this.chipCredit ? 56 : 46) - h / 2, 7, h, 3.5, EQ, alpha, undefined, undefined, 0, 0, -1, f.scale);
       }
     }
   }
@@ -539,21 +545,32 @@ export class FxLayer {
 
   private paintChip(scale: number): void {
     const font = `700 30px ${FONT_FAMILY}`;
+    const creditFont = `500 20px ${FONT_FAMILY}`;
     const text = truncate(this.chipTitle, 28);
-    const width = measureWith(font)(text) + 104;
-    const height = 92;
+    const credit = truncate(this.chipCredit, 44);
+    // A credited track (the DJ's) gets a second line: the license asks for it on screen.
+    const lines = credit ? 2 : 1;
+    const width = Math.max(measureWith(font)(text), credit ? measureWith(creditFont)(credit) : 0) + 104;
+    const height = lines === 2 ? 112 : 92;
+    const box = lines === 2 ? 72 : 52;
     this.chip.x = 1016 - width;
     this.chip.draw(width, height, scale, (ctx) => {
       ctx.fillStyle = "rgba(14,6,34,0.72)";
       ctx.strokeStyle = "rgba(163,151,214,0.55)";
       ctx.lineWidth = 2;
-      roundRect(ctx, 2, 20, width - 4, 52, 26);
+      roundRect(ctx, 2, 20, width - 4, box, 26);
       ctx.fill();
       ctx.stroke();
       ctx.font = font;
       ctx.textBaseline = "middle";
       ctx.fillStyle = INK;
-      ctx.fillText(text, 84, 47);
+      ctx.fillText(text, 84, lines === 2 ? 42 : 47);
+      if (credit) {
+        ctx.font = creditFont;
+        ctx.globalAlpha = 0.72;
+        ctx.fillText(credit, 84, 72);
+        ctx.globalAlpha = 1;
+      }
     });
   }
 }

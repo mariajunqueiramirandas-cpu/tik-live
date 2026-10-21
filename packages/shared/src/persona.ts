@@ -149,13 +149,15 @@ export const personaSchema = z.object({
     })
     .optional(),
   look: lookSchema.default({ ...DEFAULT_LOOK }),
-  /** What the stage may play besides the voice. Both are on when unset. */
+  /** What the stage may play besides the voice. Music and effects are on when unset; the DJ is off. */
   sound: z
     .object({
       /** The host may compose and play short pieces of music (ADR-0024). */
       music: z.boolean(),
       /** Short sounds for gifts, follows and games. */
       effects: z.boolean(),
+      /** The automatic DJ plays recorded Creative Commons electronic tracks non-stop under the voice (ADR-0045). Off when unset. */
+      dj: z.boolean().optional(),
     })
     .optional(),
   /** Where the host "lives" (IANA time zone), so it knows the local time. */

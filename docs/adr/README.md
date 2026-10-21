@@ -29,7 +29,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0021](0021-self-hosted-tts.md) | A self-hosted Brazilian Portuguese voice | Proposed (default voice amended by 0030) |
 | [0022](0022-host-turn-taking.md) | Host turn-taking and speech pacing | Proposed (scheduling amended by 0026) |
 | [0023](0023-chat-minigames.md) | Chat minigames, game scenes and stage reactions | Proposed |
-| [0024](0024-music-as-code.md) | Music as code | Proposed |
+| [0024](0024-music-as-code.md) | Music as code | Proposed (recorded tracks for the DJ allowed by 0045) |
 | [0025](0025-host-context-and-memory.md) | What the host knows each turn | Proposed (amended by 0026 and 0033) |
 | [0026](0026-turn-engine-and-context-cache.md) | A turn engine over one cached conversation, on Claude Haiku 5.5 | Proposed (head and folding amended by 0033) |
 | [0027](0027-brazilian-portuguese-product.md) | The product is in Brazilian Portuguese | Accepted |
@@ -50,6 +50,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0042](0042-dashboard-visual-refresh.md) | Dashboard visual refresh | Proposed |
 | [0043](0043-remove-betting-games.md) | Take out the betting games | Proposed |
 | [0044](0044-segments-that-work.md) | The show leans toward the segments that work | Proposed |
+| [0045](0045-automatic-dj.md) | An automatic DJ with Creative Commons tracks | Proposed |
 
 ## Evidence used
 
