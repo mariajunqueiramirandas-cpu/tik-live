@@ -41,7 +41,7 @@ export interface TestServer {
   sources: Map<string, ManualSource>;
   api(pathname: string, init?: RequestInit & { user?: string; json?: unknown }): Promise<Response>;
   json<T = any>(pathname: string, init?: RequestInit & { user?: string; json?: unknown }): Promise<{ status: number; body: T }>;
-  socket(pathname: string, user?: string): Promise<TestSocket>;
+  socket(pathname: string, user?: string, headers?: Record<string, string>): Promise<TestSocket>;
   close(): Promise<void>;
 }
 
@@ -102,7 +102,8 @@ export async function startTestServer(
       const text = await res.text();
       return { status: res.status, body: text ? JSON.parse(text) : null };
     },
-    socket: (pathname, user) => openSocket(`${base.replace("http", "ws")}${pathname}${user ? `${pathname.includes("?") ? "&" : "?"}devUser=${user}` : ""}`),
+    socket: (pathname, user, headers) =>
+      openSocket(`${base.replace("http", "ws")}${pathname}${user ? `${pathname.includes("?") ? "&" : "?"}devUser=${user}` : ""}`, headers),
     async close() {
       await deps.manager.shutdown();
       server.stop(true);
@@ -161,9 +162,9 @@ export class TestSocket {
   }
 }
 
-function openSocket(url: string): Promise<TestSocket> {
+function openSocket(url: string, headers?: Record<string, string>): Promise<TestSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const ws = headers ? new WebSocket(url, { headers }) : new WebSocket(url);
     const socket = new TestSocket(ws);
     ws.addEventListener("open", () => resolve(socket), { once: true });
     ws.addEventListener("error", () => reject(new Error(`could not open ${url}`)), { once: true });

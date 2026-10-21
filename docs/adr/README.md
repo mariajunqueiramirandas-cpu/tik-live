@@ -52,6 +52,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0044](0044-segments-that-work.md) | The show leans toward the segments that work | Proposed |
 | [0045](0045-automatic-dj.md) | An automatic DJ with Creative Commons tracks | Proposed |
 | [0046](0046-gifts-first-and-hype-mode.md) | Gifts first, every time, and hype mode on stage | Proposed |
+| [0047](0047-bridge-agent-pairing-and-distribution.md) | Pairing and handing out the Local Bridge Agent | Proposed |
 
 ## Evidence used
 

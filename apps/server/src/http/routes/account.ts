@@ -1,6 +1,7 @@
 import { PRODUCT_NAME, limitsToWire } from "@tik-live/shared";
 import { Hono } from "hono";
 import { z } from "zod";
+import { findBridgeExe } from "../../broadcast/bridge-pairing";
 import type { AppDeps } from "../../deps";
 import { DEV_USER_COOKIE } from "../../identity/dev";
 import { listChannels } from "../../repos/channels";
@@ -13,6 +14,7 @@ import { valid } from "../validate";
 
 /** Public, unauthenticated settings the dashboard needs before anything else. */
 export function publicConfig(deps: AppDeps) {
+  const bridgeExe = findBridgeExe(deps.config.BRIDGE_EXE_PATH);
   return {
     productName: PRODUCT_NAME,
     authMode: deps.config.AUTH_MODE,
@@ -20,6 +22,8 @@ export function publicConfig(deps: AppDeps) {
     clerkPublishableKey: deps.config.AUTH_MODE === "clerk" ? (deps.config.CLERK_PUBLISHABLE_KEY ?? null) : null,
     billing: { enabled: deps.billing.enabled, currency: deps.config.BILLING_CURRENCY },
     broadcast: { enabled: deps.config.BROADCAST_ENABLED },
+    /** Whether this server has the Local Bridge Agent's Windows build to hand out (ADR-0047). */
+    bridge: { download: bridgeExe !== null, bytes: bridgeExe ? Bun.file(bridgeExe).size : null },
     ai: { enabled: deps.config.aiEnabled },
     voice: { enabled: deps.config.ttsEnabled },
     pricing: publicPrices(deps),

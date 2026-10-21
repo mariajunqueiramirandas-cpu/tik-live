@@ -1,11 +1,13 @@
 # Realtime protocol
 
-Two WebSocket endpoints carry everything live ([ADR-0008](adr/0008-realtime-protocol.md)):
+Two WebSocket endpoints carry everything live ([ADR-0008](adr/0008-realtime-protocol.md)),
+and a third talks to the Local Bridge Agent on the creator's PC:
 
 | Endpoint | Who connects | Credential |
 |---|---|---|
 | `/ws/stage/<stageKey>?role=program\|preview\|broadcast` | Stage pages: OBS or TikTok LIVE Studio (`program`), the dashboard's monitor (`preview`), the cloud broadcaster (`broadcast`) | The stage key in the URL |
 | `/ws/studio/<channelId>` | The dashboard's studio page for that host | The signed-in user (same cookie as the API); must own the channel |
+| `/ws/bridge` | The Local Bridge Agent on the creator's PC ([ADR-0047](adr/0047-bridge-agent-pairing-and-distribution.md)) | `Authorization: Bearer <device token>` from pairing. An unknown or removed token is closed with `4003`; a second paired PC while one is connected, with `4009`. `/ws/bridge/<stageKey>` still works for agents from before pairing. |
 
 The schemas live in `packages/shared/src/protocol.ts`. Messages the server
 receives are validated with zod; anything that doesn't parse is dropped

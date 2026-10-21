@@ -7,6 +7,8 @@ export type AuditAction =
   | "channel.deleted"
   | "channel.stage_key_rotated"
   | "channel.stream_key_changed"
+  | "channel.bridge_paired"
+  | "channel.bridge_removed"
   | "channel.started"
   | "channel.stopped"
   | "billing.checkout_started"
