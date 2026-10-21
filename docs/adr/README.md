@@ -27,8 +27,8 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0019](0019-dokploy.md) | Deploy with Dokploy | Proposed |
 | [0020](0020-broadcast-pipeline-avx2.md) | Broadcast pipeline for CPU-only AVX2 hosts | Proposed |
 | [0021](0021-self-hosted-tts.md) | A self-hosted Brazilian Portuguese voice | Proposed (default voice amended by 0030) |
-| [0022](0022-host-turn-taking.md) | Host turn-taking and speech pacing | Proposed (scheduling amended by 0026) |
-| [0023](0023-chat-minigames.md) | Chat minigames, game scenes and stage reactions | Proposed |
+| [0022](0022-host-turn-taking.md) | Host turn-taking and speech pacing | Proposed (scheduling amended by 0026, gift urgency by 0046) |
+| [0023](0023-chat-minigames.md) | Chat minigames, game scenes and stage reactions | Proposed (gift reactions amended by 0046) |
 | [0024](0024-music-as-code.md) | Music as code | Proposed (recorded tracks for the DJ allowed by 0045) |
 | [0025](0025-host-context-and-memory.md) | What the host knows each turn | Proposed (amended by 0026 and 0033) |
 | [0026](0026-turn-engine-and-context-cache.md) | A turn engine over one cached conversation, on Claude Haiku 5.5 | Proposed (head and folding amended by 0033) |
@@ -37,7 +37,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0029](0029-gifts-power-ups-and-final-vote.md) | A gift ranking, gift combos and power-ups, and chat's vote on the last segment | Proposed |
 | [0030](0030-fish-audio-default-voice.md) | Fish Audio Drama 3, through OpenRouter, is the default voice | Proposed |
 | [0031](0031-not-every-message-needs-an-answer.md) | Not every message needs an answer, and chat can't hold the show | Proposed |
-| [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed (on-screen support amended by 0041) |
+| [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed (on-screen support amended by 0041, gift moments by 0046) |
 | [0033](0033-host-memory.md) | Host memory that's cheap, fast and accurate | Proposed |
 | [0034](0034-names-that-sound-rude.md) | Names that sound rude out loud | Proposed |
 | [0035](0035-automatic-run-of-show.md) | A run of show the host plans by itself | Proposed (segment draw amended by 0044) |
@@ -51,6 +51,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0043](0043-remove-betting-games.md) | Take out the betting games | Proposed |
 | [0044](0044-segments-that-work.md) | The show leans toward the segments that work | Proposed |
 | [0045](0045-automatic-dj.md) | An automatic DJ with Creative Commons tracks | Proposed |
+| [0046](0046-gifts-first-and-hype-mode.md) | Gifts first, every time, and hype mode on stage | Proposed |
 
 ## Evidence used
 

@@ -161,8 +161,9 @@ describe("gift powers", () => {
     const { director, games, step } = setup();
     await step();
     director.handleEvent(gift("ana", "Rosquinha", 30));
-    await step(31_000);
-    await step(9_000);
+    await step(31_000); // the gift's thank-you goes first (ADR-0046)
+    await step(9_000); // then the draw is announced
+    await step(2_000);
     expect(games.isActive()).toBe(true);
   });
 
@@ -177,8 +178,11 @@ describe("gift powers", () => {
     expect(triage.peek()[1]?.event).toMatchObject({ viewer: { handle: "ana" } }); // only her gift is ahead of her
     await step(2_000);
     const thanks = host.turns.find((turn) => turn.items.some((item) => item.event.kind === "gift"));
-    expect(thanks?.context.brief).toContain("the dono da live");
+    expect(thanks?.kind).toBe("thanks"); // the gift gets its own turn (ADR-0046)
     expect(thanks?.game).toContain("Dono da live: ana");
+    await step(2_000);
+    const answer = host.turns.find((turn) => turn.items.some((item) => item.event.kind === "chat" && item.event.viewer.handle === "ana"));
+    expect(answer?.context.brief).toContain("the dono da live");
     await step(BOSS_MS);
     expect(got.boss.at(-1)).toBeNull();
   });

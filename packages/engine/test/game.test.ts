@@ -280,8 +280,8 @@ describe("gift effects", () => {
   });
 
   it("knows a particle kind for every particle effect", () => {
-    expect(EFFECTS.length).toBe(12);
-    expect(Object.keys(KIND)).toEqual(["dot", "confetti", "heart", "star", "sparkle", "note", "bubble", "streak", "petal"]);
+    expect(EFFECTS.length).toBe(13);
+    expect(Object.keys(KIND)).toEqual(["dot", "confetti", "heart", "star", "sparkle", "note", "bubble", "streak", "petal", "hit"]);
   });
 });
 
