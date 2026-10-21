@@ -57,7 +57,7 @@ and the apps never import each other.
 | `bun test` | Unit and integration tests (server, engine, broadcaster, shared) |
 | `bun test apps/server/test/api` | One directory, or `bun test -t "name"` for one test |
 | `bun run typecheck` | `tsc` in every workspace, plus the e2e and script files |
-| `bun run build` | Builds the web app (prerender included), the server and the broadcaster |
+| `bun run build` | Builds the web app (prerender included), the server, the broadcaster and the Windows bridge agent (`bun run build:bridge` for just the agent) |
 | `bun run e2e` | Playwright against a built app; run `bun run --filter @tik-live/web build` first |
 | `bun scripts/load-test.ts --channels 50 --seconds 120` | Simulated hosts against a running server; reports event-loop lag, memory and CPU. Offline host and captions by default; `--allow-ai` makes real, paid Claude and voice calls. |
 | `bun run --filter @tik-live/server db:generate` | Generates a migration after a schema change in `apps/server/src/db/schema.ts` |

@@ -65,7 +65,7 @@ describe("staging gate (ADR-0018)", () => {
     await server.close();
   });
 
-  it("requires the gate password for the dashboard and API, but not for stage links or health", async () => {
+  it("requires the gate password for the dashboard and API, but not for stage links, the bridge agent or health", async () => {
     const denied = await server.api("/api/config");
     expect(denied.status).toBe(401);
     expect(denied.headers.get("www-authenticate")).toContain("Basic");
@@ -79,6 +79,14 @@ describe("staging gate (ADR-0018)", () => {
     const stage = await server.socket(`/ws/stage/${key}`);
     expect((await stage.next((m) => m.t === "hello")).t).toBe("hello");
     stage.close();
+
+    // The bridge agent can't send the gate password: it pairs with a code and connects with its token (ADR-0047).
+    const { code } = (await server.json(`/api/channels/${created.body.channel.id}/live-studio/pairing`, { method: "POST", headers: auth })).body;
+    const paired = await server.json("/api/bridge/pair", { method: "POST", json: { code } });
+    expect(paired.status).toBe(200);
+    const bridge = await server.socket("/ws/bridge", undefined, { authorization: `Bearer ${paired.body.token}` });
+    expect((await bridge.next((m) => m.t === "hello")).t).toBe("hello");
+    bridge.close();
   });
 });
 

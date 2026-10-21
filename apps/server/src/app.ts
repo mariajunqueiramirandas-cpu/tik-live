@@ -7,6 +7,7 @@ import { clientIp, configureProxyTrust, csrfGuard, devGate, rateLimit, requestLo
 import { mountRealtime } from "./http/realtime";
 import { configRoutes, meRoutes } from "./http/routes/account";
 import { billingRoutes, billingWebhookRoutes, voiceRoutes } from "./http/routes/billing";
+import { bridgeRoutes } from "./http/routes/bridge";
 import { channelRoutes } from "./http/routes/channels";
 import { stageApiRoutes } from "./http/routes/stage";
 import { lagMonitor } from "./http/lag";
@@ -21,7 +22,8 @@ export function buildApi(deps: AppDeps) {
     .route("/api/voices", voiceRoutes(deps))
     .route("/api/billing/webhook", billingWebhookRoutes(deps))
     .route("/api/billing", billingRoutes(deps))
-    .route("/api/stage", stageApiRoutes(deps));
+    .route("/api/stage", stageApiRoutes(deps))
+    .route("/api/bridge", bridgeRoutes(deps));
 }
 
 export type AppType = ReturnType<typeof buildApi>;

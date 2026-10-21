@@ -1,4 +1,5 @@
 import {
+  BRIDGE_CLOSE,
   broadcastUpdateSchema,
   channelCreateSchema,
   channelUpdateSchema,
@@ -11,12 +12,12 @@ import {
   type VoiceSettings,
 } from "@tik-live/shared";
 import { Hono } from "hono";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { z } from "zod";
+import { findBridgeExe, newPairingCode, stampedBridgeExe } from "../../broadcast/bridge-pairing";
 import { randomToken } from "../../crypto/secrets";
 import type { AppDeps } from "../../deps";
 import { audit } from "../../repos/audit";
+import { deleteDevice, listDevices } from "../../repos/bridge";
 import {
   countChannels,
   createChannel,
@@ -39,18 +40,7 @@ import { valid } from "../validate";
 
 const idParam = z.object({ id: z.string() });
 const sessionParam = z.object({ id: z.string(), sid: z.string() });
-const BRIDGE_EXE_CANDIDATES = [
-  path.resolve(import.meta.dir, "../../../../bridge/dist/lantern-bridge.exe"),
-  path.resolve(import.meta.dir, "../../../bridge/dist/lantern-bridge.exe"),
-  path.resolve(process.cwd(), "apps/bridge/dist/lantern-bridge.exe"),
-];
-
-function findBridgeExePath(): string | null {
-  for (const candidate of BRIDGE_EXE_CANDIDATES) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
-}
+const deviceParam = z.object({ id: z.string(), deviceId: z.string() });
 
 export function channelRoutes(deps: AppDeps) {
   const owned = async (userId: string, id: string): Promise<ChannelRow> => {
@@ -207,20 +197,49 @@ export function channelRoutes(deps: AppDeps) {
       const { launch } = c.req.valid("json");
       return c.json(await deps.liveStudio.check({ channelId: row.id, ...(launch !== undefined ? { launch } : {}) }));
     })
-    .get("/:id/live-studio/bridge.exe", valid("param", idParam), async (c) => {
-      await owned(c.get("user").id, c.req.valid("param").id);
-      const exePath = findBridgeExePath();
-      if (!exePath) {
-        return problem(c, 404, "bridge_exe_not_built", "O executável lantern-bridge.exe ainda não foi compilado neste servidor.");
-      }
-      const file = Bun.file(exePath);
-      return new Response(file, {
-        status: 200,
-        headers: {
-          "content-type": "application/vnd.microsoft.portable-executable",
-          "content-disposition": 'attachment; filename="lantern-bridge.exe"',
-        },
+    // Each download carries a fresh pairing code, so the copy pairs itself on first run (ADR-0047).
+    .get(
+      "/:id/live-studio/bridge.exe",
+      rateLimit({ windowMs: 60_000, max: 10, key: (c) => `bridge-exe:${c.get("user").id}` }),
+      valid("param", idParam),
+      async (c) => {
+        const row = await owned(c.get("user").id, c.req.valid("param").id);
+        const exePath = findBridgeExe(deps.config.BRIDGE_EXE_PATH);
+        if (!exePath) return problem(c, 404, "bridge_exe_not_built", "O lantern-bridge.exe não está disponível neste servidor.");
+        return stampedBridgeExe(deps, exePath, row.id);
+      },
+    )
+    .post(
+      "/:id/live-studio/pairing",
+      rateLimit({ windowMs: 60_000, max: 10, key: (c) => `bridge-pairing:${c.get("user").id}` }),
+      valid("param", idParam),
+      async (c) => {
+        const row = await owned(c.get("user").id, c.req.valid("param").id);
+        return c.json(await newPairingCode(deps, row.id));
+      },
+    )
+    .get("/:id/live-studio/devices", valid("param", idParam), async (c) => {
+      const row = await owned(c.get("user").id, c.req.valid("param").id);
+      const connected = deps.liveStudio.connectedDevice(row.id);
+      const devices = await listDevices(deps.db, row.id);
+      return c.json({
+        devices: devices.map((device) => ({
+          id: device.id,
+          name: device.name,
+          createdAt: device.createdAt.toISOString(),
+          lastSeenAt: device.lastSeenAt?.toISOString() ?? null,
+          connected: device.id === connected,
+        })),
       });
+    })
+    .delete("/:id/live-studio/devices/:deviceId", valid("param", deviceParam), async (c) => {
+      const user = c.get("user");
+      const { id, deviceId } = c.req.valid("param");
+      const row = await owned(user.id, id);
+      if (!(await deleteDevice(deps.db, row.id, deviceId))) throw notFound("Esse computador");
+      deps.liveStudio.closeBridgeDevice(row.id, deviceId, BRIDGE_CLOSE.unpaired, "device removed");
+      await audit(deps.db, { userId: user.id, action: "channel.bridge_removed", target: row.id, meta: { deviceId }, ip: clientIp(c) });
+      return c.body(null, 204);
     })
     .post(
       "/:id/start",

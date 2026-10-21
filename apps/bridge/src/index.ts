@@ -1,64 +1,140 @@
-import { toBridgeWsUrl } from "@tik-live/shared";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { BRIDGE_CLOSE, formatPairingCode, normalizePairingCode, toBridgeWsUrl } from "@tik-live/shared";
+import os from "node:os";
 import readline from "node:readline/promises";
-import { BridgeAgent } from "./agent";
+import { BridgeAgent, type BridgeConnection } from "./agent";
+import { loadConfig, saveConfig } from "./config";
 import { LocalLiveStudioController } from "./live-studio";
+import { pairWithCode, readOwnStamp } from "./pair";
 
-interface SavedBridgeConfig {
-  url?: string;
-}
+const TITLE = "=== Lantern — Agente Local do TikTok LIVE Studio ===";
 
-function configFilePaths(): string[] {
-  const localPath = path.join(path.dirname(process.execPath), "lantern-bridge.json");
-  const appData = process.env.APPDATA ? path.join(process.env.APPDATA, "Lantern", "bridge.json") : null;
-  return appData ? [localPath, appData] : [localPath];
-}
-
-function loadSavedUrl(): string | null {
-  for (const file of configFilePaths()) {
-    if (!existsSync(file)) continue;
-    try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as SavedBridgeConfig;
-      if (parsed.url?.trim()) return parsed.url.trim();
-    } catch {
-      // Ignore invalid config files.
-    }
-  }
-  return null;
-}
-
-function saveUrl(url: string): void {
-  const targets = configFilePaths();
-  for (const target of targets) {
-    try {
-      mkdirSync(path.dirname(target), { recursive: true });
-      writeFileSync(target, JSON.stringify({ url }, null, 2), "utf8");
-      return;
-    } catch {
-      // Try next candidate path.
-    }
-  }
-}
-
-async function promptForStageUrl(): Promise<string> {
+async function ask(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    while (true) {
-      const answer = (await rl.question("Cole o link do palco do apresentador (ex: https://.../s/...): ")).trim();
-      try {
-        toBridgeWsUrl(answer);
-        return answer;
-      } catch (err) {
-        console.error(err instanceof Error ? err.message : String(err));
-      }
-    }
+    return (await rl.question(question)).trim();
   } finally {
     rl.close();
   }
 }
 
+/** Keeps a double-clicked console window open long enough to read the last message. */
+async function pauseBeforeExit(): Promise<void> {
+  if (process.platform === "win32" && process.stdin.isTTY) await ask("Pressione Enter para fechar.");
+}
+
+function argValue(args: string[], name: string): string | null {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === name && args[i + 1]) return args[i + 1]!;
+    if (arg.startsWith(`${name}=`)) return arg.slice(name.length + 1);
+  }
+  return null;
+}
+
+function isStageLink(input: string): boolean {
+  try {
+    toBridgeWsUrl(input);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function askServer(): Promise<string> {
+  for (;;) {
+    const answer = await ask("Endereço do Lantern (o mesmo do painel, ex: https://lantern.exemplo.com): ");
+    try {
+      const url = new URL(answer.includes("://") ? answer : `https://${answer}`);
+      if (url.protocol === "http:" || url.protocol === "https:") return url.origin;
+    } catch {
+      // Ask again.
+    }
+    console.error("Isso não parece um endereço. Copie da barra do navegador, com o painel aberto.");
+  }
+}
+
+/**
+ * Pairs this PC with a host (ADR-0047): the stamped or given code first,
+ * then asks until a code works. Returns how to connect; pasting a stage link
+ * at the prompt still works for setups from before pairing.
+ */
+async function pair(options: { code: string | null; server: string | null }): Promise<BridgeConnection> {
+  let code = options.code;
+  let server = options.server;
+  for (;;) {
+    if (!code) {
+      const answer = await ask("Digite o código de pareamento que aparece no painel (ex: ABCD-2345): ");
+      if (isStageLink(answer)) {
+        saveConfig({ url: answer });
+        return { url: answer };
+      }
+      code = normalizePairingCode(answer);
+      if (!code) {
+        console.error("O código tem 8 letras e números, como ABCD-2345.");
+        continue;
+      }
+    }
+    server ??= await askServer();
+    try {
+      console.log(`Pareando com o código ${formatPairingCode(code)}...`);
+      const paired = await pairWithCode(server, code, os.hostname());
+      saveConfig({ server, token: paired.token, channelName: paired.channelName, usedCode: code });
+      console.log(`Pareado com o apresentador "${paired.channelName}".`);
+      return { server, token: paired.token };
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
+      saveConfig({ ...loadConfig(), usedCode: code });
+      code = null;
+    }
+  }
+}
+
+function forgetPairing(): void {
+  const { token: _token, channelName: _channel, url: _url, ...rest } = loadConfig();
+  saveConfig(rest);
+}
+
+let current: BridgeAgent | null = null;
+
+async function run(connection: BridgeConnection, controller: LocalLiveStudioController): Promise<void> {
+  const initialProbe = await controller.probe();
+  const server = "token" in connection ? connection.server : new URL(toBridgeWsUrl(connection.url).replace(/^ws/, "http")).origin;
+  console.log(TITLE);
+  console.log(`Servidor: ${server}`);
+  console.log(
+    initialProbe.connected
+      ? `TikTok LIVE Studio: aberto na porta ${initialProbe.port} (${initialProbe.streamStatus ?? "carregando"})`
+      : initialProbe.installed
+        ? `TikTok LIVE Studio: instalado (${initialProbe.executablePath})`
+        : "TikTok LIVE Studio: não encontrado neste computador",
+  );
+
+  // The server let go for good: forget what no longer works and pair again.
+  const ended = async (code: number) => {
+    forgetPairing();
+    console.log(
+      code === BRIDGE_CLOSE.unpaired
+        ? "Este computador foi removido no painel. Gere um novo código de pareamento para conectar de novo."
+        : code === BRIDGE_CLOSE.channelDeleted
+          ? "O apresentador foi excluído. Gere um código de pareamento em outro apresentador."
+          : "O link do palco mudou. Gere um código de pareamento no painel para conectar de novo.",
+    );
+    await run(await pair({ code: null, server }), controller);
+  };
+
+  current = new BridgeAgent({ ...connection, controller, onEnded: (code) => void ended(code).catch(fail) });
+  current.start();
+}
+
+function shutdown(): void {
+  console.log("\nEncerrando agente local...");
+  current?.stop();
+  process.exit(0);
+}
+
 async function main(): Promise<void> {
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
   const args = process.argv.slice(2);
   const controller = new LocalLiveStudioController();
 
@@ -82,60 +158,46 @@ async function main(): Promise<void> {
     console.log(res.detail);
     process.exit(res.ok ? 0 : 1);
   }
-
-  let urlArg: string | null = null;
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]!;
-    if (arg === "--url" && args[i + 1]) {
-      urlArg = args[i + 1]!;
-      break;
-    }
-    if (arg.startsWith("--url=")) {
-      urlArg = arg.slice("--url=".length);
-      break;
-    }
-    if (!arg.startsWith("-")) {
-      urlArg = arg;
-      break;
-    }
-  }
-
-  let targetUrl = urlArg ?? process.env.LANTERN_STAGE_URL ?? loadSavedUrl();
-  if (!targetUrl) {
-    console.log("=== Lantern — Agente Local do TikTok LIVE Studio ===");
-    targetUrl = await promptForStageUrl();
-  }
-
-  // Validate and persist for future double-click runs.
-  const wsUrl = toBridgeWsUrl(targetUrl);
-  saveUrl(targetUrl);
-
-  const initialProbe = await controller.probe();
-  console.log("=== Lantern — Agente Local do TikTok LIVE Studio ===");
-  console.log(`Servidor: ${wsUrl}`);
-  console.log(
-    initialProbe.connected
-      ? `TikTok LIVE Studio: aberto na porta ${initialProbe.port} (${initialProbe.streamStatus ?? "carregando"})`
-      : initialProbe.installed
-        ? `TikTok LIVE Studio: instalado (${initialProbe.executablePath})`
-        : "TikTok LIVE Studio: não encontrado neste computador",
-  );
-
-  const agent = new BridgeAgent({ url: targetUrl, controller });
-  agent.start();
-
-  const shutdown = () => {
-    console.log("\nEncerrando agente local...");
-    agent.stop();
+  if (args.includes("--unpair")) {
+    forgetPairing();
+    console.log("Pareamento apagado deste computador. Remova-o também no painel, se quiser.");
     process.exit(0);
-  };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  }
+
+  // Stage link mode, from before pairing: `--url <link>` or a bare link argument.
+  const stageUrl = argValue(args, "--url") ?? args.find((arg) => !arg.startsWith("-") && isStageLink(arg)) ?? process.env.LANTERN_STAGE_URL ?? null;
+  if (stageUrl) {
+    toBridgeWsUrl(stageUrl);
+    saveConfig({ url: stageUrl });
+    return run({ url: stageUrl }, controller);
+  }
+
+  const saved = loadConfig();
+  const stamp = readOwnStamp();
+  const pairArg = argValue(args, "--pair");
+  const server = argValue(args, "--server") ?? stamp?.server ?? saved.server ?? process.env.LANTERN_SERVER_URL ?? null;
+
+  if (pairArg) {
+    const code = normalizePairingCode(pairArg);
+    if (!code) throw new Error("O código de pareamento tem 8 letras e números, como ABCD-2345.");
+    return run(await pair({ code, server }), controller);
+  }
+  // A fresh download pairs itself with the code the dashboard stamped on it.
+  if (stamp && stamp.code !== saved.usedCode) {
+    console.log(TITLE);
+    return run(await pair({ code: stamp.code, server: stamp.server }), controller);
+  }
+  if (saved.token && saved.server) return run({ server: saved.server, token: saved.token }, controller);
+  if (saved.url) return run({ url: saved.url }, controller);
+
+  console.log(TITLE);
+  return run(await pair({ code: null, server }), controller);
 }
 
-if (import.meta.main) {
-  main().catch((err) => {
-    console.error("[lantern-bridge] erro:", err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  });
+async function fail(err: unknown): Promise<void> {
+  console.error("[lantern-bridge] erro:", err instanceof Error ? err.message : String(err));
+  await pauseBeforeExit();
+  process.exit(1);
 }
+
+if (import.meta.main) main().catch(fail);

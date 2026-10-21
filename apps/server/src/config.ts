@@ -113,6 +113,13 @@ const envSchema = z.object({
    */
   DJ_CACHE_DIR: z.string().optional(),
 
+  /**
+   * The Windows build of the Local Bridge Agent (ADR-0047) the dashboard
+   * hands out, stamped per download. Set in the app image; in development the
+   * workspace build (`bun run build:bridge`) is used.
+   */
+  BRIDGE_EXE_PATH: z.string().optional(),
+
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 

@@ -128,11 +128,12 @@ export function csrfGuard(deps: AppDeps): MiddlewareHandler<AppEnv> {
   };
 }
 
-const GATE_EXEMPT = [/^\/s\//, /^\/api\/stage\//, /^\/ws\/stage\//, /^\/api\/billing\/webhook$/, /^\/healthz$/, /^\/readyz$/, /^\/assets\//, /^\/fonts\//];
+// The bridge agent's endpoints carry their own credential (a pairing code, a device token or a stage key).
+const GATE_EXEMPT = [/^\/s\//, /^\/api\/stage\//, /^\/ws\/stage\//, /^\/api\/bridge\/pair$/, /^\/ws\/bridge(\/|$)/, /^\/api\/billing\/webhook$/, /^\/healthz$/, /^\/readyz$/, /^\/assets\//, /^\/fonts\//];
 
 /**
  * ADR-0018 staging gate: with no sign-in (AUTH_MODE=dev) on a public server,
- * everything except stage links, webhooks and health checks needs the gate
+ * everything except stage links, the bridge agent, webhooks and health checks needs the gate
  * password (HTTP Basic auth; any username).
  */
 export function devGate(password: string): MiddlewareHandler<AppEnv> {

@@ -137,7 +137,7 @@ export class RuntimeManager {
   }
 
   async rotateStageKey(channel: ChannelRow, stageKey: string): Promise<void> {
-    this.options.liveStudio?.closeBridge(channel.id, 4001, "stage key rotated");
+    this.options.liveStudio?.closeStageLinkBridge(channel.id, 4001, "stage key rotated");
     const slot = this.slots.get(channel.id);
     if (!slot) return;
     slot.channel = channel;

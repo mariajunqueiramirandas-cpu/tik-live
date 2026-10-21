@@ -392,7 +392,8 @@ export class LocalLiveStudioClient implements LiveStudioClient {
 }
 
 /**
- * A remote Bridge Agent running on the user's Windows PC and connected over
+ * A remote Bridge Agent running on the user's Windows PC, connected over
+ * `/ws/bridge` with a paired device token (ADR-0047) or, for older agents,
  * `/ws/bridge/:stageKey`. Forwards `probe`, `launch`, `start`, and `stop`
  * commands to the user's PC.
  */
@@ -407,7 +408,11 @@ class RemoteBridgeSession implements LiveStudioClient {
     }
   >();
 
-  constructor(readonly peer: Peer) {}
+  constructor(
+    readonly peer: Peer,
+    /** The paired device, or null for a stage-link agent. */
+    readonly deviceId: string | null,
+  ) {}
 
   private request(action: BridgeAction, timeoutMs: number): Promise<{ probe?: LiveStudioProbe; result?: { ok: boolean; detail: string } }> {
     const id = crypto.randomUUID();
@@ -526,12 +531,23 @@ export class LiveStudioSupervisor {
     return this.bridges.has(channelId);
   }
 
-  attachBridge(channel: ChannelRow, peer: Peer): void {
+  /** The paired device whose agent is connected for this channel, if any. */
+  connectedDevice(channelId: string): string | null {
+    return this.bridges.get(channelId)?.deviceId ?? null;
+  }
+
+  /**
+   * One agent per channel. The same PC reconnecting (or a stage-link agent)
+   * replaces the old socket; a different paired PC is turned away while one
+   * is connected, so two PCs left open don't keep kicking each other off.
+   */
+  attachBridge(channel: ChannelRow, peer: Peer, deviceId: string | null = null): boolean {
     const existing = this.bridges.get(channel.id);
+    if (existing && existing.deviceId !== null && deviceId !== null && existing.deviceId !== deviceId) return false;
     if (existing && existing.peer.id !== peer.id) {
       existing.close(4000, "replaced by new bridge connection");
     }
-    const session = new RemoteBridgeSession(peer);
+    const session = new RemoteBridgeSession(peer, deviceId);
     this.bridges.set(channel.id, session);
     try {
       peer.send(JSON.stringify({ v: 1, t: "hello", channelId: channel.id, channelName: channel.name }));
@@ -545,6 +561,7 @@ export class LiveStudioSupervisor {
     if (this.wanted.has(channel.id) && status?.state !== "live") {
       void this.ensure(channel.id);
     }
+    return true;
   }
 
   detachBridge(channelId: string, peerId: string): void {
@@ -563,6 +580,15 @@ export class LiveStudioSupervisor {
     if (!existing) return;
     existing.close(code, reason);
     this.bridges.delete(channelId);
+  }
+
+  /** Disconnects a stage-link agent only: paired agents don't use the stage key. */
+  closeStageLinkBridge(channelId: string, code: number, reason: string): void {
+    if (this.bridges.get(channelId)?.deviceId === null) this.closeBridge(channelId, code, reason);
+  }
+
+  closeBridgeDevice(channelId: string, deviceId: string, code: number, reason: string): void {
+    if (this.bridges.get(channelId)?.deviceId === deviceId) this.closeBridge(channelId, code, reason);
   }
 
   handleBridgeMessage(channelId: string, peerId: string, raw: string): void {

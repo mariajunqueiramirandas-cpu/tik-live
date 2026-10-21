@@ -81,6 +81,7 @@ the dashboard's HTML so the first paint doesn't wait for it.
   "clerkPublishableKey": null,
   "billing": { "enabled": false, "currency": "BRL" },
   "broadcast": { "enabled": false },
+  "bridge": { "download": true, "bytes": 86214144 },
   "ai": { "enabled": true },
   "voice": { "enabled": false },
   "pricing": { "free": "Free", "creator": "R$ 49,90", "pro": "R$ 149,90" }
@@ -144,6 +145,20 @@ TikTok account to go live; no AI calls), `live`, `stopping`, `failed`.
 | `POST /api/channels/:id/stop` | | `{ channel }` |
 | `PUT /api/channels/:id/broadcast` | `broadcastUpdateSchema`: `{ enabled?, rtmpUrl?, streamKey? }` | `{ channel }`. `streamKey` is write-only (send `null` to clear); only its last 4 characters come back. `402 plan_no_broadcast`, `409 broadcast_disabled`, `400 broadcast_incomplete`. |
 | `POST /api/channels/:id/broadcast/check` | `{ rtmpUrl? }` (defaults to the saved one) | The broadcaster's reachability check: `{ ok, detail }`. Doesn't send video. |
+
+### TikTok LIVE Studio and the Local Bridge Agent
+
+The agent on the creator's PC pairs with a host by a one-time code
+([ADR-0047](adr/0047-bridge-agent-pairing-and-distribution.md)).
+
+| Method and path | Body | Returns |
+|---|---|---|
+| `POST /api/channels/:id/live-studio/check` | `{ launch? }` | `{ ok, detail, connected, installed, bridgeConnected }` from the paired agent, or from this machine without one. `launch: true` opens TikTok LIVE Studio first. |
+| `GET /api/channels/:id/live-studio/bridge.exe` | | The Windows agent with this app's address and a fresh pairing code added after the executable, so the copy pairs itself within 15 minutes. Streamed (no `Content-Length`; `GET /api/config` has the size). `404 bridge_exe_not_built` when the server has no build (`BRIDGE_EXE_PATH`). At most 10 a minute. |
+| `POST /api/channels/:id/live-studio/pairing` | | `{ code, expiresAt }`: 8 characters, shown as `ABCD-2345`, single use, 15 minutes. At most 10 a minute. |
+| `GET /api/channels/:id/live-studio/devices` | | `{ devices }`: each paired PC's `id`, `name`, `createdAt`, `lastSeenAt` (or `null`) and `connected`. |
+| `DELETE /api/channels/:id/live-studio/devices/:deviceId` | | `204`. The agent's token stops working and its connection is closed with `4003`. |
+| `POST /api/bridge/pair` | `{ code, device? }` | Unauthenticated: the agent trades a code for `{ token, deviceId, channelId, channelName }`. `400 bad_pairing_code` for a wrong, used or expired code. At most 20 attempts per address every 10 minutes. |
 
 ### Streams and audience
 
