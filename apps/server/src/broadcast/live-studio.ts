@@ -5,12 +5,18 @@ import {
   LIVE_STUDIO_SUBPROTOCOL,
   parseMessage,
   type BridgeAction,
+  type BridgeActionParams,
   type BroadcastState,
+  type LiveStudioActionRequest,
+  type LiveStudioCameraEffects,
   type LiveStudioProbe,
+  type LiveStudioSceneItem,
   type LiveStudioStreamStatus,
+  type LiveStudioVibeItem,
 } from "@tik-live/shared";
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import crypto from "node:crypto";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import type { Logger } from "../log";
@@ -31,6 +37,7 @@ export interface LiveStudioStatus {
   detail: string;
   since: string;
   bridgeConnected: boolean;
+  probe?: LiveStudioProbe | null;
 }
 
 export interface LiveStudioClient {
@@ -38,11 +45,40 @@ export interface LiveStudioClient {
   start(): Promise<{ ok: boolean; detail: string }>;
   stop(): Promise<{ ok: boolean; detail: string }>;
   launch?(): Promise<{ ok: boolean; detail: string }>;
+  highlight?(): Promise<{ ok: boolean; detail: string }>;
+  toggleRecording?(): Promise<{ ok: boolean; detail: string }>;
+  switchScene?(scene: string): Promise<{ ok: boolean; detail: string }>;
+  toggleSource?(sourceId: string, scene?: string): Promise<{ ok: boolean; detail: string }>;
+  triggerVibe?(vibeId: string): Promise<{ ok: boolean; detail: string }>;
+  setCameraEffect?(params: {
+    cameraSource?: string;
+    cameraEffectType: string;
+    cameraEffectId: string;
+  }): Promise<{ ok: boolean; detail: string }>;
+  injectStage?(stageUrl: string): Promise<{ ok: boolean; detail: string }>;
 }
 
 interface SyncSettingsPayload {
   stream_status?: number;
+  recording?: boolean;
+  highlight_able?: boolean;
   scene?: string;
+  scene_list?: Array<{
+    name?: string;
+    sources?: Array<{ label?: string; value?: string }>;
+    visible_sources?: Array<{ label?: string; value?: string }>;
+  }>;
+  vibeList?: Array<{ id?: string; name?: string }>;
+  playingVibe?: string;
+  camera_effect?: {
+    sourceList?: Array<{ label?: string; value?: string; isDefault?: boolean; effectId?: string }>;
+    typeList?: string[];
+    effectList?: Array<{
+      key?: string;
+      name?: string;
+      effects?: Array<{ label?: string; value?: string }>;
+    }>;
+  };
 }
 
 function toStreamStatus(code: number | undefined): LiveStudioStreamStatus | null {
@@ -50,6 +86,299 @@ function toStreamStatus(code: number | undefined): LiveStudioStreamStatus | null
   if (code === 1) return "paused";
   if (code === 0) return "stopped";
   return null;
+}
+
+function parseSceneList(raw: SyncSettingsPayload["scene_list"]): LiveStudioSceneItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item) => item && typeof item.name === "string" && item.name.trim())
+    .map((item) => {
+      const visibleIds = new Set(
+        (item.visible_sources ?? [])
+          .map((s) => (s && typeof s.value === "string" ? s.value : ""))
+          .filter(Boolean),
+      );
+      const sources = (item.sources ?? [])
+        .filter((s) => s && typeof s.value === "string" && s.value.trim())
+        .map((s) => ({
+          id: String(s.value),
+          label: String(s.label ?? s.value),
+          visible: visibleIds.has(String(s.value)),
+        }));
+      return {
+        name: String(item.name),
+        sources,
+      };
+    });
+}
+
+function parseVibeList(raw: SyncSettingsPayload["vibeList"]): LiveStudioVibeItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((v) => v && typeof v.id === "string" && v.id.trim())
+    .map((v) => ({
+      id: String(v.id),
+      name: String(v.name ?? v.id),
+    }));
+}
+
+function parseCameraEffects(raw: SyncSettingsPayload["camera_effect"]): LiveStudioCameraEffects | null {
+  if (!raw || typeof raw !== "object") return null;
+  const sources = (raw.sourceList ?? [])
+    .filter((s) => s && typeof s.value === "string" && s.value.trim())
+    .map((s) => ({
+      id: String(s.value),
+      label: String(s.label ?? s.value),
+      ...(s.isDefault !== undefined ? { isDefault: Boolean(s.isDefault) } : {}),
+      effectId: typeof s.effectId === "string" && s.effectId ? s.effectId : null,
+    }));
+  const types = Array.isArray(raw.typeList) ? raw.typeList.filter((t): t is string => typeof t === "string") : [];
+  const categories = (raw.effectList ?? [])
+    .filter((c) => c && typeof c.key === "string" && c.key.trim())
+    .map((c) => ({
+      key: String(c.key),
+      name: String(c.name ?? c.key),
+      effects: (c.effects ?? [])
+        .filter((e) => e && typeof e.value === "string" && e.value.trim())
+        .map((e) => ({
+          id: String(e.value),
+          label: String(e.label ?? e.value),
+        })),
+    }));
+  return { sources, types, categories };
+}
+
+export function findDefaultTTStoreDir(customDir?: string | null): string | null {
+  if (customDir !== undefined) return customDir;
+  if (process.env.TIKTOK_LIVE_STUDIO_STORE_DIR) return process.env.TIKTOK_LIVE_STUDIO_STORE_DIR;
+  if (process.env.APPDATA) return path.join(process.env.APPDATA, "TikTok LIVE Studio", "TTStore");
+  return null;
+}
+
+interface TTStoreServicesShape {
+  UserService?: {
+    state?: {
+      userInfo?: {
+        username?: string;
+        display_id?: string;
+      };
+    };
+  };
+  AccountService?: {
+    state?: {
+      accountList?: Array<{
+        displayId?: string;
+      }>;
+    };
+  };
+  SourceService?: {
+    state?: {
+      currentScene?: string;
+      currentSceneNew?: string;
+      scenes?: Array<{ id?: string; name?: string }>;
+      sceneSource?: Record<
+        string,
+        {
+          order?: string[];
+          data?: Record<string, Record<string, unknown>>;
+          theme?: string;
+        }
+      >;
+    };
+  };
+}
+
+export function readLocalTikTokStore(customDir?: string | null): {
+  tiktokUsername: string | null;
+  stageInjected: boolean;
+} {
+  const dir = findDefaultTTStoreDir(customDir);
+  if (!dir) return { tiktokUsername: null, stageInjected: false };
+  const servicesPath = path.join(dir, "services.json");
+  if (!existsSync(servicesPath)) return { tiktokUsername: null, stageInjected: false };
+
+  try {
+    const raw = readFileSync(servicesPath, "utf8");
+    const parsed = JSON.parse(raw) as TTStoreServicesShape & { services?: TTStoreServicesShape };
+    const root: TTStoreServicesShape = parsed.services ?? parsed;
+
+    const userInfo = root.UserService?.state?.userInfo;
+    const accountDisplayId = root.AccountService?.state?.accountList?.[0]?.displayId;
+    let tiktokUsername: string | null =
+      (typeof userInfo?.username === "string" && userInfo.username.trim()) ||
+      (typeof userInfo?.display_id === "string" && userInfo.display_id.trim()) ||
+      (typeof accountDisplayId === "string" && accountDisplayId.trim()) ||
+      null;
+
+    let stageInjected = false;
+    const sceneSource = root.SourceService?.state?.sceneSource ?? {};
+    for (const sceneEntry of Object.values(sceneSource)) {
+      const data = sceneEntry?.data ?? {};
+      for (const source of Object.values(data)) {
+        const payload = source?.payload as { url?: string } | undefined;
+        const url = payload?.url;
+        if (typeof url === "string") {
+          if (/\/s\/[A-Za-z0-9_-]{16,64}/.test(url)) {
+            stageInjected = true;
+          }
+          if (!tiktokUsername) {
+            const match = url.match(/[?&]ttDisplayId=([A-Za-z0-9._-]+)/);
+            if (match?.[1]) tiktokUsername = decodeURIComponent(match[1]);
+          }
+        }
+      }
+    }
+
+    return { tiktokUsername, stageInjected };
+  } catch {
+    return { tiktokUsername: null, stageInjected: false };
+  }
+}
+
+export function injectStageIntoTikTokStore(
+  stageUrl: string,
+  customDir?: string | null,
+): { ok: boolean; detail: string; sceneName?: string; updatedExisting?: boolean } {
+  const dir = findDefaultTTStoreDir(customDir);
+  if (!dir) {
+    return {
+      ok: false,
+      detail: "A pasta de configuração do TikTok LIVE Studio (TTStore) não foi localizada neste computador.",
+    };
+  }
+  const servicesPath = path.join(dir, "services.json");
+  if (!existsSync(servicesPath)) {
+    return {
+      ok: false,
+      detail: "O arquivo TTStore/services.json do TikTok LIVE Studio não foi encontrado. Abra o TikTok LIVE Studio pelo menos uma vez.",
+    };
+  }
+
+  try {
+    const raw = readFileSync(servicesPath, "utf8");
+    const parsed = JSON.parse(raw) as TTStoreServicesShape & { services?: TTStoreServicesShape };
+    const root: TTStoreServicesShape = parsed.services ?? parsed;
+
+    const state = root.SourceService?.state;
+    if (!state) {
+      return {
+        ok: false,
+        detail: "A estrutura de cenas do TikTok LIVE Studio não foi encontrada em services.json.",
+      };
+    }
+
+    const sceneId = state.currentSceneNew || state.currentScene || state.scenes?.[0]?.id;
+    if (!sceneId) {
+      return {
+        ok: false,
+        detail: "Nenhuma cena ativa foi encontrada no TikTok LIVE Studio.",
+      };
+    }
+
+    const sceneObj = state.scenes?.find((s) => s.id === sceneId);
+    const sceneName = sceneObj?.name ?? "Cena atual";
+
+    if (!state.sceneSource) state.sceneSource = {};
+    if (!state.sceneSource[sceneId]) {
+      state.sceneSource[sceneId] = { order: [], data: {}, theme: "Default" };
+    }
+    const sceneData = state.sceneSource[sceneId]!;
+    if (!Array.isArray(sceneData.order)) sceneData.order = [];
+    if (!sceneData.data || typeof sceneData.data !== "object") sceneData.data = {};
+
+    let targetSourceId: string | null = null;
+    for (const [id, src] of Object.entries(sceneData.data)) {
+      if (!src || typeof src !== "object") continue;
+      const type = src.type;
+      const name = typeof src.name === "string" ? src.name.toLowerCase() : "";
+      const payload = src.payload as { url?: string } | undefined;
+      const url = typeof payload?.url === "string" ? payload.url : "";
+      if (type === "browser" && (/\/s\/[A-Za-z0-9_-]{16,64}/.test(url) || name === "vincular" || name.includes("lantern"))) {
+        targetSourceId = id;
+        break;
+      }
+    }
+
+    const updatedExisting = Boolean(targetSourceId);
+    if (targetSourceId) {
+      const existing = sceneData.data[targetSourceId]!;
+      const existingPayload = (existing.payload as Record<string, unknown> | undefined) ?? {};
+      existing.visible = true;
+      existing.payload = {
+        ...existingPayload,
+        url: stageUrl,
+        cx: 1080,
+        cy: 1920,
+        enableAudio: true,
+        enableCustomResolution: true,
+      };
+      if (!sceneData.order.includes(targetSourceId)) {
+        sceneData.order.push(targetSourceId);
+      }
+    } else {
+      const newId = crypto.randomUUID();
+      const visualId = crypto.randomUUID();
+      sceneData.data[newId] = {
+        id: newId,
+        name: "Vincular",
+        type: "browser",
+        track: 0,
+        lock: false,
+        visualId,
+        visible: true,
+        payload: {
+          url: stageUrl,
+          cx: 1080,
+          cy: 1920,
+          enableAudio: true,
+          enableCustomResolution: true,
+          zoom: 3.8017840169239308,
+        },
+        clip: { x: 0, y: 0, z: 0, w: 0 },
+        alwaysTop: false,
+        advancedFilters: [],
+        sourceId: `${Date.now()}${Math.floor(Math.random() * 900000 + 100000)}`,
+        transform: {
+          translateX: 0,
+          translateY: 0,
+          rotateAngle: 0,
+          scaleX: 0.42500001192092896,
+          scaleY: 0.42500001192092896,
+          flipH: false,
+          flipV: false,
+          size: { cx: 1080, cy: 1920 },
+          preview_cx: 459,
+          preview_cy: 816,
+          layout: 1,
+        },
+        schemaVersion: 1,
+        effectiveClip: { x: 0, y: 0, z: 0, w: 0 },
+        deactiveWhenNotShow: true,
+        stateData: {
+          isPlaceholder: false,
+          state: true,
+          bizState: true,
+          bizStateErrType: "none",
+        },
+      };
+      sceneData.order.push(newId);
+    }
+
+    writeFileSync(servicesPath, JSON.stringify(parsed, null, 2), "utf8");
+    return {
+      ok: true,
+      detail: updatedExisting
+        ? `Fonte "Vincular" (1080×1920, com áudio) atualizada na cena "${sceneName}".`
+        : `Fonte "Vincular" (1080×1920, com áudio) adicionada na cena "${sceneName}".`,
+      sceneName,
+      updatedExisting,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      detail: `Não foi possível atualizar a cena no TikTok LIVE Studio: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
 }
 
 /**
@@ -118,17 +447,20 @@ export class LocalLiveStudioClient implements LiveStudioClient {
   private readonly ports: readonly number[];
   private readonly host: string;
   private readonly executablePath: string | null;
+  private readonly ttStoreDir: string | null | undefined;
 
   constructor(
     options: {
       host?: string;
       ports?: readonly number[];
       executablePath?: string | null;
+      ttStoreDir?: string | null;
     } = {},
   ) {
     this.host = options.host ?? "127.0.0.1";
     this.ports = options.ports ?? LIVE_STUDIO_PORTS;
     this.executablePath = options.executablePath !== undefined ? options.executablePath : findLiveStudioExecutable(process.env.TIKTOK_LIVE_STUDIO_PATH);
+    this.ttStoreDir = options.ttStoreDir;
   }
 
   private async findOpenPort(): Promise<number | null> {
@@ -140,6 +472,7 @@ export class LocalLiveStudioClient implements LiveStudioClient {
 
   async probe(): Promise<LiveStudioProbe> {
     const installed = Boolean(this.executablePath);
+    const localStore = readLocalTikTokStore(this.ttStoreDir);
     const port = await this.findOpenPort();
     if (!port) {
       return {
@@ -149,11 +482,19 @@ export class LocalLiveStudioClient implements LiveStudioClient {
         scene: null,
         installed,
         executablePath: this.executablePath,
+        ...(localStore.tiktokUsername ? { tiktokUsername: localStore.tiktokUsername } : {}),
+        ...(localStore.stageInjected ? { stageInjected: true } : {}),
       };
     }
 
     try {
       const settings = await this.readSettings(port, 3_000);
+      const sceneList = parseSceneList(settings.scene_list);
+      const vibeList = parseVibeList(settings.vibeList);
+      const cameraEffects = parseCameraEffects(settings.camera_effect);
+      const hasVincularSource = sceneList.some((sc) =>
+        sc.sources.some((src) => src.label.toLowerCase() === "vincular" || src.label.toLowerCase().includes("lantern")),
+      );
       return {
         connected: true,
         port,
@@ -161,6 +502,14 @@ export class LocalLiveStudioClient implements LiveStudioClient {
         scene: settings.scene ?? null,
         installed,
         executablePath: this.executablePath,
+        recording: Boolean(settings.recording),
+        highlightAble: Boolean(settings.highlight_able),
+        sceneList,
+        vibeList,
+        playingVibe: settings.playingVibe ?? null,
+        cameraEffects,
+        tiktokUsername: localStore.tiktokUsername,
+        stageInjected: localStore.stageInjected || hasVincularSource,
       };
     } catch {
       return {
@@ -170,6 +519,8 @@ export class LocalLiveStudioClient implements LiveStudioClient {
         scene: null,
         installed,
         executablePath: this.executablePath,
+        ...(localStore.tiktokUsername ? { tiktokUsername: localStore.tiktokUsername } : {}),
+        ...(localStore.stageInjected ? { stageInjected: true } : {}),
       };
     }
   }
@@ -264,6 +615,127 @@ export class LocalLiveStudioClient implements LiveStudioClient {
       return { ok: true, detail: "Desligada" };
     }
     return { ok: false, detail: "Não foi possível encerrar a live no TikTok LIVE Studio." };
+  }
+
+  async highlight(): Promise<{ ok: boolean; detail: string }> {
+    const port = await this.findOpenPort();
+    if (!port) return { ok: false, detail: "O TikTok LIVE Studio não está aberto." };
+    const res = await this.emitCommand(port, LIVE_STUDIO_ACTIONS.highlight, {}, 8_000);
+    if (res.ok) {
+      return { ok: true, detail: "Clipe de destaque (60s) salvo no TikTok LIVE Studio!" };
+    }
+    return {
+      ok: false,
+      detail: "Não foi possível salvar o clipe agora. O destaque fica disponível enquanto a live está no ar.",
+    };
+  }
+
+  async toggleRecording(): Promise<{ ok: boolean; detail: string }> {
+    const probe = await this.probe();
+    if (!probe.connected || !probe.port) {
+      return { ok: false, detail: "O TikTok LIVE Studio não está aberto." };
+    }
+    const wasRecording = Boolean(probe.recording);
+    const res = await this.emitCommand(probe.port, LIVE_STUDIO_ACTIONS.recording, {}, 10_000);
+    if (res.ok) {
+      return {
+        ok: true,
+        detail: wasRecording ? "Gravação local encerrada no TikTok LIVE Studio." : "Gravação local em MP4 iniciada no TikTok LIVE Studio.",
+      };
+    }
+    return { ok: false, detail: "Não foi possível alternar a gravação local no TikTok LIVE Studio." };
+  }
+
+  async switchScene(scene: string): Promise<{ ok: boolean; detail: string }> {
+    const port = await this.findOpenPort();
+    if (!port) return { ok: false, detail: "O TikTok LIVE Studio não está aberto." };
+    const res = await this.emitCommand(port, LIVE_STUDIO_ACTIONS.scene, { settings: { scene } }, 6_000);
+    if (res.ok) {
+      return { ok: true, detail: `Cena alterada para "${scene}".` };
+    }
+    return { ok: false, detail: `Não foi possível mudar para a cena "${scene}".` };
+  }
+
+  async toggleSource(sourceId: string, scene?: string): Promise<{ ok: boolean; detail: string }> {
+    const probe = await this.probe();
+    if (!probe.connected || !probe.port) {
+      return { ok: false, detail: "O TikTok LIVE Studio não está aberto." };
+    }
+    const targetScene = scene || probe.scene;
+    if (!targetScene) {
+      return { ok: false, detail: "Nenhuma cena ativa identificada no TikTok LIVE Studio." };
+    }
+    const res = await this.emitCommand(
+      probe.port,
+      LIVE_STUDIO_ACTIONS.source,
+      { settings: { scene: targetScene, source: sourceId } },
+      6_000,
+    );
+    if (res.ok) {
+      return { ok: true, detail: "Visibilidade da fonte atualizada no TikTok LIVE Studio." };
+    }
+    return { ok: false, detail: "Não foi possível alternar a fonte na cena atual." };
+  }
+
+  async triggerVibe(vibeId: string): Promise<{ ok: boolean; detail: string }> {
+    const probe = await this.probe();
+    if (!probe.connected || !probe.port) {
+      return { ok: false, detail: "O TikTok LIVE Studio não está aberto." };
+    }
+    let resolvedId = vibeId;
+    const matchByName = probe.vibeList?.find(
+      (v) => v.id === vibeId || v.name.toLowerCase() === vibeId.toLowerCase(),
+    );
+    if (matchByName) resolvedId = matchByName.id;
+    const label = matchByName?.name ?? vibeId;
+
+    const res = await this.emitCommand(
+      probe.port,
+      LIVE_STUDIO_ACTIONS.vibe,
+      { settings: { currentVibeId: resolvedId } },
+      5_000,
+      true,
+    );
+    if (res.ok) {
+      return { ok: true, detail: `Vibe "${label}" acionada no TikTok LIVE Studio!` };
+    }
+    return { ok: false, detail: `Não foi possível acionar a Vibe "${label}".` };
+  }
+
+  async setCameraEffect(params: {
+    cameraSource?: string;
+    cameraEffectType: string;
+    cameraEffectId: string;
+  }): Promise<{ ok: boolean; detail: string }> {
+    const probe = await this.probe();
+    if (!probe.connected || !probe.port) {
+      return { ok: false, detail: "O TikTok LIVE Studio não está aberto." };
+    }
+    const defaultSource =
+      params.cameraSource ||
+      probe.cameraEffects?.sources.find((s) => s.isDefault)?.id ||
+      probe.cameraEffects?.sources[0]?.id ||
+      "all";
+    const res = await this.emitCommand(
+      probe.port,
+      LIVE_STUDIO_ACTIONS.cameraEffects,
+      {
+        settings: {
+          cameraSource: defaultSource,
+          cameraEffectType: params.cameraEffectType,
+          cameraEffectId: params.cameraEffectId,
+        },
+      },
+      6_000,
+    );
+    if (res.ok) {
+      return { ok: true, detail: "Efeito de câmera aplicado no TikTok LIVE Studio." };
+    }
+    return { ok: false, detail: "Não foi possível aplicar o efeito de câmera." };
+  }
+
+  async injectStage(stageUrl: string): Promise<{ ok: boolean; detail: string }> {
+    return injectStageIntoTikTokStore(stageUrl, this.ttStoreDir);
   }
 
   private readSettings(port: number, timeoutMs: number): Promise<SyncSettingsPayload> {
@@ -389,13 +861,90 @@ export class LocalLiveStudioClient implements LiveStudioClient {
       ws.addEventListener("close", () => finish({ ok: false, code: -1 }));
     });
   }
+
+  private emitCommand(
+    port: number,
+    action: string,
+    actionPayload: Record<string, unknown>,
+    timeoutMs: number,
+    resolveWithoutAck = false,
+  ): Promise<{ ok: boolean; code: number }> {
+    return new Promise((resolve) => {
+      const ws = new WebSocket(`ws://${this.host}:${port}/socket.io/?EIO=4&transport=websocket`, [LIVE_STUDIO_SUBPROTOCOL]);
+      const contextId = `lantern_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      let settled = false;
+      let actionSent = false;
+      let ackFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const finish = (result: { ok: boolean; code: number }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (ackFallbackTimer) clearTimeout(ackFallbackTimer);
+        try {
+          ws.close();
+        } catch {
+          // Ignore close errors.
+        }
+        resolve(result);
+      };
+
+      const timer = setTimeout(() => finish({ ok: false, code: -1 }), timeoutMs);
+
+      ws.addEventListener("message", (event) => {
+        const data = String(event.data);
+        if (data.startsWith("0")) {
+          ws.send("40");
+          return;
+        }
+        if (data === "2") {
+          ws.send("3");
+          return;
+        }
+        if (data.startsWith("40")) {
+          ws.send('42["stream_deck/join_room"]');
+          ws.send('42["stream_deck/sync_settings"]');
+          return;
+        }
+        if (data.startsWith("42")) {
+          try {
+            const [name, rawPayload] = JSON.parse(data.slice(2)) as [string, unknown];
+            if (name === "stream_deck/sync_settings" && typeof rawPayload === "string") {
+              if (!actionSent) {
+                actionSent = true;
+                const packet = JSON.stringify({ action, context: contextId, payload: actionPayload });
+                ws.send(`42${JSON.stringify(["stream_deck/action_emit", packet])}`);
+                if (resolveWithoutAck) {
+                  ackFallbackTimer = setTimeout(() => finish({ ok: true, code: 0 }), 300);
+                }
+              } else if (resolveWithoutAck) {
+                finish({ ok: true, code: 0 });
+              }
+              return;
+            }
+            if (name === `stream_deck/${contextId}` && typeof rawPayload === "string") {
+              const parsed = JSON.parse(rawPayload) as { code?: number };
+              const code = typeof parsed.code === "number" ? parsed.code : -1;
+              finish({ ok: code === 0, code });
+            }
+          } catch {
+            // Ignore malformed packets.
+          }
+        }
+      });
+
+      ws.addEventListener("error", () => finish({ ok: false, code: -1 }));
+      ws.addEventListener("close", () => finish({ ok: false, code: -1 }));
+    });
+  }
 }
 
 /**
  * A remote Bridge Agent running on the user's Windows PC, connected over
  * `/ws/bridge` with a paired device token (ADR-0047) or, for older agents,
- * `/ws/bridge/:stageKey`. Forwards `probe`, `launch`, `start`, and `stop`
- * commands to the user's PC.
+ * `/ws/bridge/:stageKey`. Forwards `probe`, `launch`, `start`, `stop`,
+ * `highlight`, `recording`, `scene`, `source`, `vibe`, `camera_effect`, and
+ * `inject_stage` commands to the user's PC.
  */
 class RemoteBridgeSession implements LiveStudioClient {
   lastProbe: LiveStudioProbe | null = null;
@@ -414,7 +963,11 @@ class RemoteBridgeSession implements LiveStudioClient {
     readonly deviceId: string | null,
   ) {}
 
-  private request(action: BridgeAction, timeoutMs: number): Promise<{ probe?: LiveStudioProbe; result?: { ok: boolean; detail: string } }> {
+  private request(
+    action: BridgeAction,
+    timeoutMs: number,
+    params?: BridgeActionParams,
+  ): Promise<{ probe?: LiveStudioProbe; result?: { ok: boolean; detail: string } }> {
     const id = crypto.randomUUID();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -423,7 +976,7 @@ class RemoteBridgeSession implements LiveStudioClient {
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       try {
-        this.peer.send(JSON.stringify({ v: 1, t: "request", id, action }));
+        this.peer.send(JSON.stringify({ v: 1, t: "request", id, action, ...(params ? { params } : {}) }));
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -487,7 +1040,49 @@ class RemoteBridgeSession implements LiveStudioClient {
     const res = await this.request("stop", 25_000);
     return res.result ?? { ok: false, detail: "Sem resposta do agente local ao encerrar a live." };
   }
+
+  async highlight(): Promise<{ ok: boolean; detail: string }> {
+    const res = await this.request("highlight", 12_000);
+    return res.result ?? { ok: false, detail: "Sem resposta do agente local ao salvar o clipe." };
+  }
+
+  async toggleRecording(): Promise<{ ok: boolean; detail: string }> {
+    const res = await this.request("recording", 12_000);
+    return res.result ?? { ok: false, detail: "Sem resposta do agente local ao alternar a gravação." };
+  }
+
+  async switchScene(scene: string): Promise<{ ok: boolean; detail: string }> {
+    const res = await this.request("scene", 10_000, { scene });
+    return res.result ?? { ok: false, detail: "Sem resposta do agente local ao trocar de cena." };
+  }
+
+  async toggleSource(sourceId: string, scene?: string): Promise<{ ok: boolean; detail: string }> {
+    const res = await this.request("source", 10_000, { sourceId, ...(scene ? { scene } : {}) });
+    return res.result ?? { ok: false, detail: "Sem resposta do agente local ao alternar a fonte." };
+  }
+
+  async triggerVibe(vibeId: string): Promise<{ ok: boolean; detail: string }> {
+    const res = await this.request("vibe", 10_000, { vibeId });
+    return res.result ?? { ok: false, detail: "Sem resposta do agente local ao acionar a Vibe." };
+  }
+
+  async setCameraEffect(params: {
+    cameraSource?: string;
+    cameraEffectType: string;
+    cameraEffectId: string;
+  }): Promise<{ ok: boolean; detail: string }> {
+    const res = await this.request("camera_effect", 10_000, params);
+    return res.result ?? { ok: false, detail: "Sem resposta do agente local ao aplicar efeito de câmera." };
+  }
+
+  async injectStage(stageUrl: string): Promise<{ ok: boolean; detail: string }> {
+    const res = await this.request("inject_stage", 12_000, { stageUrl });
+    return res.result ?? { ok: false, detail: "Sem resposta do agente local ao configurar a cena." };
+  }
 }
+
+const AUTO_HIGHLIGHT_COOLDOWN_MS = 60_000;
+const AUTO_VIBE_COOLDOWN_MS = 20_000;
 
 /**
  * Supervises automatic TikTok LIVE Studio streaming for channels that have
@@ -499,8 +1094,11 @@ class RemoteBridgeSession implements LiveStudioClient {
 export class LiveStudioSupervisor {
   private readonly wanted = new Map<string, ChannelRow>();
   private readonly statuses = new Map<string, LiveStudioStatus>();
+  private readonly lastProbes = new Map<string, LiveStudioProbe>();
   private readonly inflight = new Set<string>();
   private readonly bridges = new Map<string, RemoteBridgeSession>();
+  private readonly lastAutoHighlightAt = new Map<string, number>();
+  private readonly lastAutoVibeAt = new Map<string, number>();
   private readonly timer: ReturnType<typeof setInterval>;
 
   constructor(
@@ -515,8 +1113,12 @@ export class LiveStudioSupervisor {
     (this.timer as { unref?: () => void }).unref?.();
   }
 
+  private nowMs(): number {
+    return this.options.now?.() ?? Date.now();
+  }
+
   private nowIso(): string {
-    return new Date(this.options.now?.() ?? Date.now()).toISOString();
+    return new Date(this.nowMs()).toISOString();
   }
 
   private clientFor(channelId?: string): LiveStudioClient {
@@ -529,6 +1131,10 @@ export class LiveStudioSupervisor {
 
   isBridgeConnected(channelId: string): boolean {
     return this.bridges.has(channelId);
+  }
+
+  latestProbe(channelId: string): LiveStudioProbe | null {
+    return this.bridges.get(channelId)?.lastProbe ?? this.lastProbes.get(channelId) ?? null;
   }
 
   /** The paired device whose agent is connected for this channel, if any. */
@@ -597,6 +1203,7 @@ export class LiveStudioSupervisor {
     const message = parseMessage(bridgeClientMessageSchema, raw);
     if (!message) return;
     if (message.t === "response") {
+      if (message.probe) this.lastProbes.set(channelId, message.probe);
       session.handleResponse(message.id, {
         ...(message.probe ? { probe: message.probe } : {}),
         ...(message.result ? { result: message.result } : {}),
@@ -605,11 +1212,13 @@ export class LiveStudioSupervisor {
     }
     if (message.t === "status") {
       session.lastProbe = message.probe;
+      this.lastProbes.set(channelId, message.probe);
       this.applyProbeToChannel(channelId, message.probe);
     }
   }
 
   private applyProbeToChannel(channelId: string, probe: LiveStudioProbe): void {
+    this.lastProbes.set(channelId, probe);
     if (!this.wanted.has(channelId) || this.inflight.has(channelId)) return;
     const bridgeConnected = this.bridges.has(channelId);
     if (probe.connected && probe.streamStatus === "live") {
@@ -619,6 +1228,7 @@ export class LiveStudioSupervisor {
         detail: "Transmitindo pelo TikTok LIVE Studio",
         since: this.statuses.get(channelId)?.since ?? this.nowIso(),
         bridgeConnected,
+        probe,
       });
     } else if (probe.connected && probe.streamStatus === "paused") {
       this.statuses.set(channelId, {
@@ -627,6 +1237,7 @@ export class LiveStudioSupervisor {
         detail: "Live pausada no TikTok LIVE Studio",
         since: this.statuses.get(channelId)?.since ?? this.nowIso(),
         bridgeConnected,
+        probe,
       });
     } else {
       void this.ensure(channelId);
@@ -656,10 +1267,11 @@ export class LiveStudioSupervisor {
   }
 
   current(channelId: string): LiveStudioStatus | null {
+    const probe = this.latestProbe(channelId);
     if (!this.wanted.has(channelId)) return null;
     const status = this.statuses.get(channelId);
     if (!status) return null;
-    return { ...status, bridgeConnected: this.bridges.has(channelId) };
+    return { ...status, bridgeConnected: this.bridges.has(channelId), probe };
   }
 
   isLive(channelId: string): boolean {
@@ -679,6 +1291,7 @@ export class LiveStudioSupervisor {
     installed: boolean;
     streamStatus: LiveStudioStreamStatus | null;
     bridgeConnected: boolean;
+    probe: LiveStudioProbe;
   }> {
     const client = this.clientFor(options.channelId);
     const bridgeConnected = options.channelId ? this.bridges.has(options.channelId) : false;
@@ -687,6 +1300,7 @@ export class LiveStudioSupervisor {
       const launched = await client.launch();
       if (!launched.ok) {
         const probe = await client.probe();
+        if (options.channelId) this.lastProbes.set(options.channelId, probe);
         return {
           ok: false,
           detail: launched.detail,
@@ -694,10 +1308,12 @@ export class LiveStudioSupervisor {
           installed: probe.installed,
           streamStatus: probe.streamStatus,
           bridgeConnected,
+          probe,
         };
       }
     }
     const probe = await client.probe();
+    if (options.channelId) this.lastProbes.set(options.channelId, probe);
     if (probe.connected) {
       const statusText =
         probe.streamStatus === "live"
@@ -716,6 +1332,7 @@ export class LiveStudioSupervisor {
         installed: probe.installed,
         streamStatus: probe.streamStatus,
         bridgeConnected,
+        probe,
       };
     }
     if (probe.installed) {
@@ -728,6 +1345,7 @@ export class LiveStudioSupervisor {
         installed: true,
         streamStatus: null,
         bridgeConnected,
+        probe,
       };
     }
     return {
@@ -739,7 +1357,134 @@ export class LiveStudioSupervisor {
       installed: false,
       streamStatus: null,
       bridgeConnected,
+      probe,
     };
+  }
+
+  async executeAction(
+    channelId: string,
+    req: Exclude<LiveStudioActionRequest, { action: "sync_handle" }>,
+    stageUrl?: string,
+  ): Promise<{ ok: boolean; detail: string; probe: LiveStudioProbe }> {
+    const client = this.clientFor(channelId);
+    let result: { ok: boolean; detail: string };
+
+    switch (req.action) {
+      case "highlight":
+        result = client.highlight
+          ? await client.highlight()
+          : { ok: false, detail: "Ação de destaque não disponível neste cliente." };
+        break;
+      case "recording":
+        result = client.toggleRecording
+          ? await client.toggleRecording()
+          : { ok: false, detail: "Controle de gravação não disponível neste cliente." };
+        break;
+      case "scene":
+        result = client.switchScene
+          ? await client.switchScene(req.scene)
+          : { ok: false, detail: "Troca de cena não disponível neste cliente." };
+        break;
+      case "source":
+        result = client.toggleSource
+          ? await client.toggleSource(req.sourceId, req.scene)
+          : { ok: false, detail: "Controle de fonte não disponível neste cliente." };
+        break;
+      case "vibe":
+        result = client.triggerVibe
+          ? await client.triggerVibe(req.vibeId)
+          : { ok: false, detail: "Vibes não disponíveis neste cliente." };
+        break;
+      case "camera_effect":
+        result = client.setCameraEffect
+          ? await client.setCameraEffect({
+              ...(req.cameraSource ? { cameraSource: req.cameraSource } : {}),
+              cameraEffectType: req.cameraEffectType,
+              cameraEffectId: req.cameraEffectId,
+            })
+          : { ok: false, detail: "Efeitos de câmera não disponíveis neste cliente." };
+        break;
+      case "inject_stage":
+        if (!stageUrl) {
+          result = { ok: false, detail: "Link do palco não disponível." };
+          break;
+        }
+        result = client.injectStage
+          ? await client.injectStage(stageUrl)
+          : { ok: false, detail: "Configuração automática de cena não disponível neste cliente." };
+        break;
+    }
+
+    const probe = await client.probe();
+    this.lastProbes.set(channelId, probe);
+    return { ok: result.ok, detail: result.detail, probe };
+  }
+
+  /**
+   * Automatically triggers a 60-second highlight clip in TikTok LIVE Studio
+   * when a peak moment happens (big gift, minigame win, or spicy roast),
+   * rate-limited to once per minute per channel.
+   */
+  async autoHighlight(channelId: string, reason: string): Promise<boolean> {
+    if (!this.wanted.has(channelId) && !this.bridges.has(channelId)) return false;
+    const now = this.nowMs();
+    const last = this.lastAutoHighlightAt.get(channelId) ?? -Infinity;
+    if (now - last < AUTO_HIGHLIGHT_COOLDOWN_MS) return false;
+    const client = this.clientFor(channelId);
+    if (!client.highlight) return false;
+
+    this.lastAutoHighlightAt.set(channelId, now);
+    try {
+      const res = await client.highlight();
+      if (res.ok) {
+        this.options.log.info("saved TikTok LIVE Studio highlight clip", { channelId, reason });
+      }
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Automatically fires a matching visual Vibe macro in TikTok LIVE Studio
+   * (`"Vitória!"` on wins, `"Essa doeu!"` on roasts, `"Como assim?"` on surprises),
+   * rate-limited to once every 20 seconds per channel.
+   */
+  async autoVibe(channelId: string, kind: "victory" | "roast" | "surprise"): Promise<boolean> {
+    if (!this.wanted.has(channelId) && !this.bridges.has(channelId)) return false;
+    const now = this.nowMs();
+    const last = this.lastAutoVibeAt.get(channelId) ?? -Infinity;
+    if (now - last < AUTO_VIBE_COOLDOWN_MS) return false;
+    const client = this.clientFor(channelId);
+    if (!client.triggerVibe) return false;
+
+    const probe = this.latestProbe(channelId) ?? (await client.probe().catch(() => null));
+    const vibes = probe?.vibeList ?? [];
+    let targetId: string | null = null;
+    if (vibes.length > 0) {
+      const patterns =
+        kind === "victory"
+          ? ["vitória", "vitoria", "victory", "win"]
+          : kind === "roast"
+            ? ["doeu", "ouch", "roast"]
+            : ["como assim", "what", "surprise"];
+      const matched = vibes.find((v) => patterns.some((p) => v.name.toLowerCase().includes(p)));
+      if (matched) targetId = matched.id;
+    } else {
+      targetId = kind === "victory" ? "Vitória!" : kind === "roast" ? "Essa doeu!" : "Como assim?";
+    }
+    if (!targetId) return false;
+
+    this.lastAutoVibeAt.set(channelId, now);
+    try {
+      const res = await client.triggerVibe(targetId);
+      if (res.ok) {
+        this.options.log.info("triggered TikTok LIVE Studio vibe", { channelId, kind, vibeId: targetId });
+      }
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   private async ensure(channelId: string): Promise<void> {
@@ -751,6 +1496,7 @@ export class LiveStudioSupervisor {
       detail: "Iniciando a live no TikTok LIVE Studio",
       since: this.nowIso(),
       bridgeConnected: this.bridges.has(channelId),
+      probe: this.latestProbe(channelId),
     });
     try {
       const result = await this.clientFor(channelId).start();
@@ -761,6 +1507,7 @@ export class LiveStudioSupervisor {
         detail: result.detail,
         since: this.nowIso(),
         bridgeConnected: this.bridges.has(channelId),
+        probe: this.latestProbe(channelId),
       });
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Não foi possível iniciar o TikTok LIVE Studio.";
@@ -772,6 +1519,7 @@ export class LiveStudioSupervisor {
           detail,
           since: this.nowIso(),
           bridgeConnected: this.bridges.has(channelId),
+          probe: this.latestProbe(channelId),
         });
       }
     } finally {

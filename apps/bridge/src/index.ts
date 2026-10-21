@@ -97,13 +97,21 @@ function forgetPairing(): void {
 let current: BridgeAgent | null = null;
 
 async function run(connection: BridgeConnection, controller: LocalLiveStudioController): Promise<void> {
+  // Stage link mode: point the "Vincular" Browser Source in TikTok LIVE Studio at it automatically.
+  if ("url" in connection && /^https?:\/\/.+\/s\/[A-Za-z0-9_-]{16,64}/.test(connection.url.trim())) {
+    const injected = await controller.injectStage(connection.url.trim());
+    if (injected.ok) console.log(`[lantern-bridge] ${injected.detail}`);
+  }
   const initialProbe = await controller.probe();
   const server = "token" in connection ? connection.server : new URL(toBridgeWsUrl(connection.url).replace(/^ws/, "http")).origin;
   console.log(TITLE);
   console.log(`Servidor: ${server}`);
+  if (initialProbe.tiktokUsername) {
+    console.log(`Conta logada no TikTok LIVE Studio: @${initialProbe.tiktokUsername}`);
+  }
   console.log(
     initialProbe.connected
-      ? `TikTok LIVE Studio: aberto na porta ${initialProbe.port} (${initialProbe.streamStatus ?? "carregando"})`
+      ? `TikTok LIVE Studio: aberto na porta ${initialProbe.port} (${initialProbe.streamStatus ?? "carregando"})${initialProbe.scene ? ` — cena "${initialProbe.scene}"` : ""}`
       : initialProbe.installed
         ? `TikTok LIVE Studio: instalado (${initialProbe.executablePath})`
         : "TikTok LIVE Studio: não encontrado neste computador",
@@ -155,6 +163,34 @@ async function main(): Promise<void> {
   }
   if (args.includes("--stop")) {
     const res = await controller.stop();
+    console.log(res.detail);
+    process.exit(res.ok ? 0 : 1);
+  }
+  if (args.includes("--highlight")) {
+    const res = await controller.highlight();
+    console.log(res.detail);
+    process.exit(res.ok ? 0 : 1);
+  }
+  if (args.includes("--record")) {
+    const res = await controller.toggleRecording();
+    console.log(res.detail);
+    process.exit(res.ok ? 0 : 1);
+  }
+  const sceneFlag = argValue(args, "--scene");
+  if (sceneFlag) {
+    const res = await controller.switchScene(sceneFlag);
+    console.log(res.detail);
+    process.exit(res.ok ? 0 : 1);
+  }
+  const vibeFlag = argValue(args, "--vibe");
+  if (vibeFlag) {
+    const res = await controller.triggerVibe(vibeFlag);
+    console.log(res.detail);
+    process.exit(res.ok ? 0 : 1);
+  }
+  const injectStageFlag = argValue(args, "--inject-stage");
+  if (injectStageFlag) {
+    const res = await controller.injectStage(injectStageFlag);
     console.log(res.detail);
     process.exit(res.ok ? 0 : 1);
   }

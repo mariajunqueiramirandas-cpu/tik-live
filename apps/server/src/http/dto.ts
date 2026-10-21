@@ -22,6 +22,7 @@ export async function toChannelDto(deps: AppDeps, row: ChannelRow): Promise<Chan
       hasStreamKey: Boolean(row.broadcast.streamKeyCiphertext),
       streamKeyLast4: row.broadcast.streamKeyLast4,
       ...(row.broadcast.liveStudio ? { liveStudio: true } : {}),
+      ...(row.broadcast.schedule ? { schedule: row.broadcast.schedule } : {}),
     },
     desiredState: row.desiredState,
     runtime: deps.manager.summary(row),

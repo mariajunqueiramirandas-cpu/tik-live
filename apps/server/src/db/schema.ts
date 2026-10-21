@@ -1,4 +1,4 @@
-import type { ChannelSource, Persona, SafetySettings, VoiceSettings } from "@tik-live/shared";
+import type { ChannelSource, Persona, SafetySettings, StreamSchedule, VoiceSettings } from "@tik-live/shared";
 import type { SegmentScore } from "../runtime/segment-scores";
 import {
   bigserial,
@@ -34,6 +34,8 @@ export interface StoredBroadcast {
   streamKeyLast4: string | null;
   /** Start and stop the stream automatically in the local TikTok LIVE Studio app. */
   liveStudio?: boolean;
+  /** Optional recurring stream hours schedule. */
+  schedule?: StreamSchedule;
 }
 
 export const channel = pgTable(

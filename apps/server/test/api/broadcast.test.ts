@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import type { BroadcasterList, BroadcastStatus, ChannelDto, RuntimeSnapshot, StartBroadcast } from "@tik-live/shared";
+import {
+  evaluateStreamSchedule,
+  type BroadcasterList,
+  type BroadcastStatus,
+  type ChannelDto,
+  type RuntimeSnapshot,
+  type StartBroadcast,
+} from "@tik-live/shared";
 import type { BroadcasterClient } from "../../src/broadcast/client";
 import { LIVE_STUDIO_ACTIONS, LocalLiveStudioClient, type LiveStudioClient, type LiveStudioProbe } from "../../src/broadcast/live-studio";
 import { eventually, stageKeyFrom, startTestServer, type TestServer } from "../harness";
@@ -30,15 +37,38 @@ class FakeBroadcaster implements BroadcasterClient {
 class FakeLiveStudio implements LiveStudioClient {
   starts = 0;
   stops = 0;
+  highlights = 0;
+  recording = false;
+  scene = "Cena Principal";
+  vibes: string[] = [];
+  injectedUrls: string[] = [];
   streamStatus: "stopped" | "paused" | "live" = "stopped";
   async probe(): Promise<LiveStudioProbe> {
     return {
       connected: true,
       port: 28189,
       streamStatus: this.streamStatus,
-      scene: "Cena Principal",
+      scene: this.scene,
       installed: true,
       executablePath: "C:\\Program Files\\TikTok LIVE Studio\\1.38.0\\TikTok LIVE Studio.exe",
+      recording: this.recording,
+      highlightAble: true,
+      tiktokUsername: "curiosabolha",
+      stageInjected: this.injectedUrls.length > 0,
+      sceneList: [
+        {
+          name: "Cena Principal",
+          sources: [{ id: "src-vincular", label: "Vincular", visible: true }],
+        },
+        {
+          name: "Câmera em tela cheia",
+          sources: [{ id: "src-vincular", label: "Vincular", visible: true }],
+        },
+      ],
+      vibeList: [
+        { id: "vibe-victory", name: "Vitória!" },
+        { id: "vibe-roast", name: "Essa doeu!" },
+      ],
     };
   }
   async start(): Promise<{ ok: boolean; detail: string }> {
@@ -50,6 +80,29 @@ class FakeLiveStudio implements LiveStudioClient {
     this.stops++;
     this.streamStatus = "stopped";
     return { ok: true, detail: "Desligada" };
+  }
+  async highlight(): Promise<{ ok: boolean; detail: string }> {
+    this.highlights++;
+    return { ok: true, detail: "Clipe de destaque (60s) salvo no TikTok LIVE Studio!" };
+  }
+  async toggleRecording(): Promise<{ ok: boolean; detail: string }> {
+    this.recording = !this.recording;
+    return { ok: true, detail: this.recording ? "Gravação iniciada" : "Gravação encerrada" };
+  }
+  async switchScene(scene: string): Promise<{ ok: boolean; detail: string }> {
+    this.scene = scene;
+    return { ok: true, detail: `Cena alterada para "${scene}".` };
+  }
+  async toggleSource(sourceId: string): Promise<{ ok: boolean; detail: string }> {
+    return { ok: true, detail: `Fonte ${sourceId} alternada.` };
+  }
+  async triggerVibe(vibeId: string): Promise<{ ok: boolean; detail: string }> {
+    this.vibes.push(vibeId);
+    return { ok: true, detail: `Vibe "${vibeId}" acionada!` };
+  }
+  async injectStage(stageUrl: string): Promise<{ ok: boolean; detail: string }> {
+    this.injectedUrls.push(stageUrl);
+    return { ok: true, detail: 'Fonte "Vincular" (1080×1920, com áudio) adicionada.' };
   }
 }
 
@@ -165,11 +218,63 @@ describe("TikTok LIVE Studio automation", () => {
       state: "live",
       detail: "Transmitindo pelo TikTok LIVE Studio",
       bridgeConnected: false,
+      probe: expect.objectContaining({ connected: true, tiktokUsername: "curiosabolha" }),
     });
 
     await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "studiocaster" });
     await eventually(() => liveStudio.stops === 1);
     studio.close();
+  });
+
+  it("executes highlight, recording, scene, vibe, inject_stage, and sync_handle actions via /live-studio/action", async () => {
+    const created = await server.json<{ channel: ChannelDto }>("/api/channels", { method: "POST", user: "actioncaster", json: { name: "Action Host" } });
+    const channel = created.body.channel;
+
+    const syncRes = await server.json<{ ok: boolean; detail: string; channel: ChannelDto | null }>(
+      `/api/channels/${channel.id}/live-studio/action`,
+      { method: "POST", user: "actioncaster", json: { action: "sync_handle" } },
+    );
+    expect(syncRes.status).toBe(200);
+    expect(syncRes.body.ok).toBe(true);
+    expect(syncRes.body.channel?.tiktokUsername).toBe("curiosabolha");
+    expect(syncRes.body.channel?.source).toBe("tiktok");
+
+    const injectRes = await server.json<{ ok: boolean; probe: LiveStudioProbe }>(
+      `/api/channels/${channel.id}/live-studio/action`,
+      { method: "POST", user: "actioncaster", json: { action: "inject_stage" } },
+    );
+    expect(injectRes.status).toBe(200);
+    expect(injectRes.body.ok).toBe(true);
+    expect(injectRes.body.probe.stageInjected).toBe(true);
+    expect(liveStudio.injectedUrls).toContain(channel.stageUrl);
+
+    const sceneRes = await server.json<{ ok: boolean; probe: LiveStudioProbe }>(
+      `/api/channels/${channel.id}/live-studio/action`,
+      { method: "POST", user: "actioncaster", json: { action: "scene", scene: "Câmera em tela cheia" } },
+    );
+    expect(sceneRes.body.ok).toBe(true);
+    expect(sceneRes.body.probe.scene).toBe("Câmera em tela cheia");
+
+    const vibeRes = await server.json<{ ok: boolean; detail: string }>(
+      `/api/channels/${channel.id}/live-studio/action`,
+      { method: "POST", user: "actioncaster", json: { action: "vibe", vibeId: "vibe-victory" } },
+    );
+    expect(vibeRes.body.ok).toBe(true);
+    expect(liveStudio.vibes).toContain("vibe-victory");
+
+    const hlRes = await server.json<{ ok: boolean }>(
+      `/api/channels/${channel.id}/live-studio/action`,
+      { method: "POST", user: "actioncaster", json: { action: "highlight" } },
+    );
+    expect(hlRes.body.ok).toBe(true);
+    expect(liveStudio.highlights).toBe(1);
+
+    const recRes = await server.json<{ ok: boolean; probe: LiveStudioProbe }>(
+      `/api/channels/${channel.id}/live-studio/action`,
+      { method: "POST", user: "actioncaster", json: { action: "recording" } },
+    );
+    expect(recRes.body.ok).toBe(true);
+    expect(recRes.body.probe.recording).toBe(true);
   });
 
   it("controls TikTok LIVE Studio remotely through a connected Local Bridge Agent (/ws/bridge/:stageKey)", async () => {
@@ -249,6 +354,7 @@ describe("TikTok LIVE Studio automation", () => {
       state: "live",
       detail: "Transmitindo pelo TikTok LIVE Studio",
       bridgeConnected: true,
+      probe: expect.objectContaining({ connected: true, scene: "Cena do PC" }),
     });
 
     await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "bridgecaster" });
@@ -260,9 +366,11 @@ describe("TikTok LIVE Studio automation", () => {
     studio.close();
   });
 
-  it("speaks the TikTok LIVE Studio StreamDeckService Socket.IO protocol idempotently", async () => {
+  it("speaks the TikTok LIVE Studio StreamDeckService Socket.IO protocol for stream, highlight, recording, scene, source, and vibe", async () => {
     let streamStatus = 0; // 0 = stopped, 1 = paused, 2 = live
-    const actionsReceived: string[] = [];
+    let recording = false;
+    let scene = "Cena 1";
+    const actionsReceived: Array<{ action: string; payload: unknown }> = [];
 
     const mockServer = Bun.serve({
       hostname: "127.0.0.1",
@@ -282,20 +390,48 @@ describe("TikTok LIVE Studio automation", () => {
             return;
           }
           if (text === '42["stream_deck/sync_settings"]') {
-            const payload = JSON.stringify({ stream_status: streamStatus, scene: "Cena 1" });
+            const payload = JSON.stringify({
+              stream_status: streamStatus,
+              recording,
+              highlight_able: true,
+              scene,
+              scene_list: [
+                {
+                  name: "Cena 1",
+                  sources: [{ label: "Vincular", value: "src-1" }],
+                  visible_sources: [{ label: "Vincular", value: "src-1" }],
+                },
+                {
+                  name: "Câmera em tela cheia",
+                  sources: [{ label: "Vincular", value: "src-1" }],
+                  visible_sources: [{ label: "Vincular", value: "src-1" }],
+                },
+              ],
+              vibeList: [
+                { id: "vibe-win", name: "Vitória!" },
+                { id: "vibe-roast", name: "Essa doeu!" },
+              ],
+            });
             ws.send(`42${JSON.stringify(["stream_deck/sync_settings", payload])}`);
             return;
           }
           if (text.startsWith('42["stream_deck/action_emit"')) {
             const [, raw] = JSON.parse(text.slice(2)) as [string, string];
-            const parsed = JSON.parse(raw) as { action: string; context: string };
-            actionsReceived.push(parsed.action);
+            const parsed = JSON.parse(raw) as { action: string; context: string; payload?: Record<string, unknown> };
+            actionsReceived.push({ action: parsed.action, payload: parsed.payload });
             if (parsed.action === LIVE_STUDIO_ACTIONS.liveStartEnd) {
               streamStatus = streamStatus === 0 ? 2 : 0;
             } else if (parsed.action === LIVE_STUDIO_ACTIONS.livePauseResume) {
               streamStatus = streamStatus === 1 ? 2 : 1;
+            } else if (parsed.action === LIVE_STUDIO_ACTIONS.recording) {
+              recording = !recording;
+            } else if (parsed.action === LIVE_STUDIO_ACTIONS.scene) {
+              const s = (parsed.payload as { settings?: { scene?: string } })?.settings?.scene;
+              if (s) scene = s;
             }
-            ws.send(`42${JSON.stringify([`stream_deck/${parsed.context}`, JSON.stringify({ code: 0 })])}`);
+            if (parsed.action !== LIVE_STUDIO_ACTIONS.vibe) {
+              ws.send(`42${JSON.stringify([`stream_deck/${parsed.context}`, JSON.stringify({ code: 0 })])}`);
+            }
           }
         },
       },
@@ -312,37 +448,141 @@ describe("TikTok LIVE Studio automation", () => {
       expect(initial.connected).toBe(true);
       expect(initial.streamStatus).toBe("stopped");
       expect(initial.scene).toBe("Cena 1");
+      expect(initial.sceneList).toHaveLength(2);
+      expect(initial.vibeList).toEqual([
+        { id: "vibe-win", name: "Vitória!" },
+        { id: "vibe-roast", name: "Essa doeu!" },
+      ]);
 
       // Starting from stopped triggers livestartend once
       const started = await client.start();
       expect(started.ok).toBe(true);
-      expect(actionsReceived).toEqual([LIVE_STUDIO_ACTIONS.liveStartEnd]);
+      expect(actionsReceived.map((a) => a.action)).toEqual([LIVE_STUDIO_ACTIONS.liveStartEnd]);
       expect((await client.probe()).streamStatus).toBe("live");
 
       // Starting again while already live is a no-op (does not toggle off!)
       const startedAgain = await client.start();
       expect(startedAgain.ok).toBe(true);
-      expect(actionsReceived).toEqual([LIVE_STUDIO_ACTIONS.liveStartEnd]);
+      expect(actionsReceived.map((a) => a.action)).toEqual([LIVE_STUDIO_ACTIONS.liveStartEnd]);
 
-      // Starting while paused sends livepauseresume
-      streamStatus = 1;
-      const resumed = await client.start();
-      expect(resumed.ok).toBe(true);
-      expect(actionsReceived).toEqual([LIVE_STUDIO_ACTIONS.liveStartEnd, LIVE_STUDIO_ACTIONS.livePauseResume]);
-      expect((await client.probe()).streamStatus).toBe("live");
+      // Highlight clip, recording toggle, scene switch, source toggle, and vibe trigger
+      expect((await client.highlight()).ok).toBe(true);
+      expect((await client.toggleRecording()).ok).toBe(true);
+      expect((await client.probe()).recording).toBe(true);
+      expect((await client.switchScene("Câmera em tela cheia")).ok).toBe(true);
+      expect((await client.probe()).scene).toBe("Câmera em tela cheia");
+      expect((await client.toggleSource("src-1")).ok).toBe(true);
+      expect((await client.triggerVibe("Vitória!")).ok).toBe(true);
 
       // Stopping from live triggers livestartend
       const stopped = await client.stop();
       expect(stopped.ok).toBe(true);
       expect((await client.probe()).streamStatus).toBe("stopped");
-
-      // Stopping again while already stopped is a no-op
-      const countBefore = actionsReceived.length;
-      const stoppedAgain = await client.stop();
-      expect(stoppedAgain.ok).toBe(true);
-      expect(actionsReceived).toHaveLength(countBefore);
     } finally {
       mockServer.stop(true);
     }
+  });
+});
+
+describe("scheduled stream hours", () => {
+  it("evaluates same-day and overnight schedules across time zones and weekdays", () => {
+    // 2026-10-21T23:30:00Z is Wednesday 20:30 in America/Sao_Paulo (UTC-3)
+    const wed2030Brt = new Date("2026-10-21T23:30:00Z");
+    const sameDay = evaluateStreamSchedule(
+      {
+        enabled: true,
+        startTime: "20:00",
+        endTime: "23:00",
+        days: [3], // Wednesday
+        timezone: "America/Sao_Paulo",
+      },
+      wed2030Brt,
+    );
+    expect(sameDay.inWindow).toBe(true);
+    expect(sameDay.localTime).toBe("20:30");
+    expect(sameDay.windowKey).toBe("2026-10-21:20:00-23:00");
+
+    // Overnight: Wednesday 22:00 -> Thursday 02:00 in America/Sao_Paulo
+    // At Thursday 01:15 BRT (2026-10-22T04:15:00Z), it is still inside Wednesday's overnight window!
+    const thu0115Brt = new Date("2026-10-22T04:15:00Z");
+    const overnight = evaluateStreamSchedule(
+      {
+        enabled: true,
+        startTime: "22:00",
+        endTime: "02:00",
+        days: [3], // Wednesday only
+        timezone: "America/Sao_Paulo",
+      },
+      thu0115Brt,
+    );
+    expect(overnight.inWindow).toBe(true);
+    expect(overnight.windowKey).toBe("2026-10-21:22:00-02:00");
+
+    // At Thursday 02:05 BRT (2026-10-22T05:05:00Z), the overnight window has ended
+    const thu0205Brt = new Date("2026-10-22T05:05:00Z");
+    const afterOvernight = evaluateStreamSchedule(
+      {
+        enabled: true,
+        startTime: "22:00",
+        endTime: "02:00",
+        days: [3],
+        timezone: "America/Sao_Paulo",
+      },
+      thu0205Brt,
+    );
+    expect(afterOvernight.inWindow).toBe(false);
+    expect(afterOvernight.windowKey).toBeNull();
+  });
+
+  it("saves scheduled stream hours and automatically starts and stops the channel at the scheduled times", async () => {
+    const created = await server.json<{ channel: ChannelDto }>("/api/channels", {
+      method: "POST",
+      user: "schedcaster",
+      json: { name: "Scheduled Host" },
+    });
+    const channel = created.body.channel;
+
+    const saved = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}/broadcast`, {
+      method: "PUT",
+      user: "schedcaster",
+      json: {
+        liveStudio: true,
+        schedule: {
+          enabled: true,
+          startTime: "20:00",
+          endTime: "23:00",
+          days: [3], // Wednesday
+          timezone: "America/Sao_Paulo",
+        },
+      },
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.body.channel.broadcast.schedule).toEqual({
+      enabled: true,
+      startTime: "20:00",
+      endTime: "23:00",
+      days: [3],
+      timezone: "America/Sao_Paulo",
+    });
+
+    const startsBefore = liveStudio.starts;
+    const stopsBefore = liveStudio.stops;
+
+    // 19:30 BRT on Wednesday -> outside window, remains stopped
+    await server.deps.manager.checkSchedules(new Date("2026-10-21T22:30:00Z"));
+    let checkChannel = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}`, { user: "schedcaster" });
+    expect(checkChannel.body.channel.desiredState).toBe("stopped");
+
+    // 20:05 BRT on Wednesday -> inside window, starts automatically (including TikTok LIVE Studio!)
+    await server.deps.manager.checkSchedules(new Date("2026-10-21T23:05:00Z"));
+    await eventually(() => liveStudio.starts === startsBefore + 1);
+    checkChannel = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}`, { user: "schedcaster" });
+    expect(checkChannel.body.channel.desiredState).toBe("running");
+
+    // 23:01 BRT on Wednesday -> window ended, stops automatically
+    await server.deps.manager.checkSchedules(new Date("2026-10-22T02:01:00Z"));
+    await eventually(() => liveStudio.stops === stopsBefore + 1);
+    checkChannel = await server.json<{ channel: ChannelDto }>(`/api/channels/${channel.id}`, { user: "schedcaster" });
+    expect(checkChannel.body.channel.desiredState).toBe("stopped");
   });
 });

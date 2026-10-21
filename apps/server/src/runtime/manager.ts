@@ -1,4 +1,5 @@
 import {
+  evaluateStreamSchedule,
   isUnlimited,
   runOfShow,
   type ChannelRuntimeSummary,
@@ -11,7 +12,13 @@ import type { Entitlements, EntitlementCheck } from "../billing/entitlements";
 import type { LiveStudioSupervisor } from "../broadcast/live-studio";
 import type { BroadcastSupervisor } from "../broadcast/supervisor";
 import type { Secrets } from "../crypto/secrets";
-import { getChannelById, listDesiredRunning, setDesiredStateInternal, type ChannelRow } from "../repos/channels";
+import {
+  getChannelById,
+  listAllChannels,
+  listDesiredRunning,
+  setDesiredStateInternal,
+  type ChannelRow,
+} from "../repos/channels";
 import type { AudioStore } from "./audio-store";
 import { ChannelRuntime, type ChannelRuntimeOptions, type CommandResult, type RuntimeContext } from "./channel-runtime";
 import type { Peer } from "./peer";
@@ -27,6 +34,12 @@ interface Slot {
   /** Last known channel row, for snapshots while stopped. */
   channel: ChannelRow;
   failure: { count: number; timer: ReturnType<typeof setTimeout> | null; message: string } | null;
+}
+
+interface ChannelScheduleState {
+  lastWindowKey: string | null;
+  manualStopWindowKey: string | null;
+  startedBySchedule: boolean;
 }
 
 export interface RuntimeManagerOptions {
@@ -55,6 +68,7 @@ const SWEEP_MS = 5_000;
  */
 export class RuntimeManager {
   private readonly slots = new Map<string, Slot>();
+  private readonly scheduleState = new Map<string, ChannelScheduleState>();
   private accepting = true;
   private readonly patchTimer: ReturnType<typeof setInterval>;
   private readonly minuteTimer: ReturnType<typeof setInterval>;
@@ -72,13 +86,18 @@ export class RuntimeManager {
     return this.options.ctx.log;
   }
 
-  /** Starts every channel whose desired state is "running", a few at a time. */
+  private nowDate(): Date {
+    return new Date(this.options.ctx.now ? this.options.ctx.now() : Date.now());
+  }
+
+  /** Starts every channel whose desired state is "running", a few at a time, and reconciles scheduled hours. */
   async boot(): Promise<number> {
     const rows = await listDesiredRunning(this.options.ctx.db);
     for (let i = 0; i < rows.length; i += BOOT_BATCH) {
       await Promise.allSettled(rows.slice(i, i + BOOT_BATCH).map((row) => this.startRow(row, false)));
     }
     if (rows.length) this.log.info(`resumed ${rows.length} running channel${rows.length === 1 ? "" : "s"}`);
+    await this.checkSchedules().catch(() => undefined);
     return rows.length;
   }
 
@@ -105,6 +124,22 @@ export class RuntimeManager {
   async stop(channelId: string, reason = "stopped by owner"): Promise<void> {
     await setDesiredStateInternal(this.options.ctx.db, channelId, "stopped");
     const slot = this.slots.get(channelId);
+    if (reason === "stopped by owner") {
+      const ch = slot?.channel ?? (await getChannelById(this.options.ctx.db, channelId).catch(() => undefined));
+      if (ch?.broadcast.schedule?.enabled) {
+        const evalResult = evaluateStreamSchedule(ch.broadcast.schedule, this.nowDate(), ch.persona.timezone);
+        if (evalResult.inWindow && evalResult.windowKey) {
+          const prev = this.scheduleState.get(channelId) ?? {
+            lastWindowKey: evalResult.windowKey,
+            manualStopWindowKey: null,
+            startedBySchedule: false,
+          };
+          prev.manualStopWindowKey = evalResult.windowKey;
+          prev.startedBySchedule = false;
+          this.scheduleState.set(channelId, prev);
+        }
+      }
+    }
     if (!slot) return;
     if (slot.failure?.timer) clearTimeout(slot.failure.timer);
     slot.failure = null;
@@ -118,22 +153,29 @@ export class RuntimeManager {
     this.prune(slot);
   }
 
-  /** The owner edited the channel: update stages and the running show. */
+  /** The owner edited the channel: update stages, running show, and scheduled stream hours. */
   async apply(channel: ChannelRow): Promise<void> {
-    const slot = this.slots.get(channel.id);
-    if (!slot) return;
-    slot.channel = channel;
-    slot.stage.setLook(channel.persona.name, channel.persona.look);
-    const runtime = slot.runtime;
-    if (!runtime || !isActive(runtime.getStatus().status)) return;
-    if (runtime.needsRestartFor(channel)) {
-      await runtime.stop("restarting with new settings");
-      slot.runtime = null;
-      await this.startRow(channel, false);
-    } else {
-      runtime.reconfigure(channel, await this.options.entitlements.planFor(channel.ownerId));
-      await this.syncBroadcast(slot);
+    const prevSchedule = this.scheduleState.get(channel.id);
+    if (prevSchedule) {
+      prevSchedule.manualStopWindowKey = null;
     }
+    const slot = this.slots.get(channel.id);
+    if (slot) {
+      slot.channel = channel;
+      slot.stage.setLook(channel.persona.name, channel.persona.look);
+      const runtime = slot.runtime;
+      if (runtime && isActive(runtime.getStatus().status)) {
+        if (runtime.needsRestartFor(channel)) {
+          await runtime.stop("restarting with new settings");
+          slot.runtime = null;
+          await this.startRow(channel, false);
+        } else {
+          runtime.reconfigure(channel, await this.options.entitlements.planFor(channel.ownerId));
+          await this.syncBroadcast(slot);
+        }
+      }
+    }
+    await this.reconcileChannelSchedule(channel);
   }
 
   async rotateStageKey(channel: ChannelRow, stageKey: string): Promise<void> {
@@ -149,6 +191,7 @@ export class RuntimeManager {
   }
 
   async remove(channelId: string): Promise<void> {
+    this.scheduleState.delete(channelId);
     this.options.liveStudio?.closeBridge(channelId, 4004, "channel deleted");
     const slot = this.slots.get(channelId);
     if (!slot) return;
@@ -197,12 +240,15 @@ export class RuntimeManager {
           state: liveStudio.state,
           detail: liveStudio.detail,
           bridgeConnected: liveStudio.bridgeConnected,
+          ...(liveStudio.probe ? { probe: liveStudio.probe } : {}),
         };
       } else if (this.options.liveStudio?.isBridgeConnected(channel.id)) {
+        const probe = this.options.liveStudio.latestProbe(channel.id);
         snapshot.health.liveStudio = {
           state: "stopped",
           detail: "Agente conectado no seu PC",
           bridgeConnected: true,
+          ...(probe ? { probe } : {}),
         };
       }
       return snapshot;
@@ -210,10 +256,12 @@ export class RuntimeManager {
     const summary = this.summary(channel);
     const snap = stoppedSnapshot(channel, slot?.stage.counts() ?? { program: 0, preview: 0, broadcast: 0 }, summary.status, summary.detail);
     if (this.options.liveStudio?.isBridgeConnected(channel.id)) {
+      const probe = this.options.liveStudio.latestProbe(channel.id);
       snap.health.liveStudio = {
         state: "stopped",
         detail: "Agente conectado no seu PC",
         bridgeConnected: true,
+        ...(probe ? { probe } : {}),
       };
     }
     return snap;
@@ -249,6 +297,74 @@ export class RuntimeManager {
 
   stageHub(channelId: string): StageHub | undefined {
     return this.slots.get(channelId)?.stage;
+  }
+
+  /** Evaluates scheduled stream hours across all channels and starts/stops them accordingly. */
+  async checkSchedules(at: Date = this.nowDate()): Promise<void> {
+    if (!this.accepting) return;
+    const rows = await listAllChannels(this.options.ctx.db).catch(() => [] as ChannelRow[]);
+    for (const row of rows) {
+      if (row.broadcast.schedule?.enabled || this.scheduleState.has(row.id)) {
+        await this.reconcileChannelSchedule(row, at);
+      }
+    }
+  }
+
+  private async reconcileChannelSchedule(channel: ChannelRow, at: Date = this.nowDate()): Promise<void> {
+    if (!this.accepting) return;
+    const schedule = channel.broadcast.schedule;
+    if (!schedule || !schedule.enabled) {
+      this.scheduleState.delete(channel.id);
+      return;
+    }
+
+    const evalResult = evaluateStreamSchedule(schedule, at, channel.persona.timezone);
+    const state = this.scheduleState.get(channel.id) ?? {
+      lastWindowKey: null,
+      manualStopWindowKey: null,
+      startedBySchedule: false,
+    };
+    const slot = this.slots.get(channel.id);
+    const running = Boolean(slot?.runtime && isActive(slot.runtime.getStatus().status));
+
+    if (evalResult.inWindow && evalResult.windowKey) {
+      state.lastWindowKey = evalResult.windowKey;
+      this.scheduleState.set(channel.id, state);
+      if (!running && state.manualStopWindowKey !== evalResult.windowKey) {
+        if (channel.source === "tiktok" && !channel.tiktokUsername) return;
+        const check = await this.start(channel);
+        if (check.ok) {
+          state.startedBySchedule = true;
+          this.scheduleState.set(channel.id, state);
+          this.slots.get(channel.id)?.studio.publish({
+            t: "notice",
+            level: "info",
+            code: "schedule_started",
+            message: `Horário agendado iniciado (${schedule.startTime}–${schedule.endTime}). O apresentador entrou no ar automaticamente.`,
+            at: at.getTime(),
+          });
+        }
+      }
+      return;
+    }
+
+    // Outside the scheduled window: if the window just ended, stop the channel.
+    if (state.lastWindowKey !== null || state.startedBySchedule) {
+      state.lastWindowKey = null;
+      state.startedBySchedule = false;
+      state.manualStopWindowKey = null;
+      this.scheduleState.set(channel.id, state);
+      if (running) {
+        this.slots.get(channel.id)?.studio.publish({
+          t: "notice",
+          level: "info",
+          code: "schedule_ended",
+          message: `Horário agendado encerrado (${schedule.startTime}–${schedule.endTime}). A transmissão foi finalizada automaticamente.`,
+          at: at.getTime(),
+        });
+        await this.stop(channel.id, "scheduled stream window ended");
+      }
+    }
   }
 
   /** Graceful shutdown: hold stages, stop runtimes, keep desired state for the next boot. */
@@ -310,6 +426,7 @@ export class RuntimeManager {
       plan,
       stage: slot.stage,
       studio: slot.studio,
+      ...(this.options.liveStudio ? { liveStudio: this.options.liveStudio } : {}),
       ...this.options.runtimeOverrides,
     });
     slot.runtime = runtime;
@@ -358,6 +475,7 @@ export class RuntimeManager {
   }
 
   private async tickMinute(): Promise<void> {
+    await this.checkSchedules().catch(() => undefined);
     for (const slot of this.slots.values()) {
       const runtime = slot.runtime;
       if (!runtime || !isActive(runtime.getStatus().status)) continue;
@@ -430,7 +548,7 @@ export function stoppedSnapshot(
     vote: null,
     music: null,
     dj: null,
-    stats: { viewers: 0, likes: 0, diamonds: 0, messages: 0, follows: 0, uptimeSec: 0 },
+    stats: { viewers: 0, likes: 0, diamonds: 0, follows: 0, messages: 0, uptimeSec: 0 },
     nowSaying: null,
     queue: [],
     filtered: {},

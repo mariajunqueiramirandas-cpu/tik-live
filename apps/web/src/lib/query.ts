@@ -1,4 +1,4 @@
-import type { ChannelCreateInput, ChannelDto, ChannelListItem, ChannelUpdateInput } from "@tik-live/shared";
+import type { BroadcastUpdate, ChannelCreateInput, ChannelDto, ChannelListItem, ChannelUpdateInput } from "@tik-live/shared";
 import { QueryClient, useMutation, useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { api, ApiError, call } from "./api";
 import { toast } from "../ui/toast-store";
@@ -192,7 +192,7 @@ export function useRotateStageKey(id: string) {
 
 export function useUpdateBroadcast(id: string) {
   return useMutation({
-    mutationFn: async (input: { enabled?: boolean; liveStudio?: boolean; rtmpUrl?: string | null; streamKey?: string | null }) =>
+    mutationFn: async (input: BroadcastUpdate) =>
       (await call(api.api.channels[":id"].broadcast.$put({ param: { id }, json: input }))).channel as ChannelDto,
     onSuccess: (channel) => putChannel(channel),
   });

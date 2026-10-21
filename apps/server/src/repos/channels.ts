@@ -71,6 +71,11 @@ export async function listAllChannelOwners(db: Db): Promise<Array<{ id: string; 
   return db.select({ id: channel.id, ownerId: channel.ownerId }).from(channel);
 }
 
+/** Internal (scheduler / runtime manager only): every channel row. */
+export async function listAllChannels(db: Db): Promise<ChannelRow[]> {
+  return db.select().from(channel).orderBy(asc(channel.createdAt));
+}
+
 export async function listDesiredRunning(db: Db): Promise<ChannelRow[]> {
   return db.select().from(channel).where(eq(channel.desiredState, "running")).orderBy(asc(channel.updatedAt));
 }

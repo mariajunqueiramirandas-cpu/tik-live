@@ -47,6 +47,29 @@
     background: var(--glow);
     box-shadow: none;
   }
+  .studioDeck {
+    display: grid;
+    gap: var(--s-4);
+    padding: var(--s-4);
+    border-radius: var(--r-md, 10px);
+    background: color-mix(in srgb, var(--ink, #121218) 65%, transparent);
+    border: 1px solid color-mix(in srgb, var(--mist, #333) 45%, transparent);
+  }
+  .deckSection {
+    display: grid;
+    gap: var(--s-2);
+  }
+  .deckTitle {
+    font-size: var(--t-14, 0.875rem);
+    font-weight: 700;
+    color: var(--snow, #fff);
+  }
+  .chipRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    align-items: center;
+  }
   .subhead {
     font-size: var(--t-15);
     font-weight: 700;

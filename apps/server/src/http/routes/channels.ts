@@ -6,7 +6,9 @@ import {
   DEFAULT_SAFETY,
   downsample,
   findPreset,
+  liveStudioActionRequestSchema,
   PLANS,
+  tiktokHandleSchema,
   type ChannelListItem,
   type LastStreamDto,
   type VoiceSettings,
@@ -32,7 +34,7 @@ import { loadSegmentScores } from "../../repos/segment-scores";
 import { getSession, listSamples, listSessions, listUtterances } from "../../repos/streams";
 import { SegmentScores } from "../../runtime/segment-scores";
 import { regulars, topSupporters, viewerCount } from "../../repos/viewers";
-import { toChannelDto } from "../dto";
+import { stageUrlFor, toChannelDto } from "../dto";
 import type { AppEnv } from "../env";
 import { notFound, problem } from "../errors";
 import { clientIp, rateLimit, requireUser } from "../middleware";
@@ -171,6 +173,13 @@ export function channelRoutes(deps: AppDeps) {
       const broadcast = { ...current.broadcast };
       if (input.enabled !== undefined) broadcast.enabled = input.enabled;
       if (input.liveStudio !== undefined) broadcast.liveStudio = input.liveStudio;
+      if (input.schedule !== undefined) {
+        if (input.schedule === null) {
+          delete broadcast.schedule;
+        } else {
+          broadcast.schedule = input.schedule;
+        }
+      }
       if (input.rtmpUrl !== undefined) broadcast.rtmpUrl = input.rtmpUrl;
       if (input.streamKey !== undefined) {
         broadcast.streamKeyCiphertext = input.streamKey ? await deps.secrets.encrypt("stream-key", input.streamKey) : null;
@@ -196,6 +205,48 @@ export function channelRoutes(deps: AppDeps) {
       const row = await owned(c.get("user").id, c.req.valid("param").id);
       const { launch } = c.req.valid("json");
       return c.json(await deps.liveStudio.check({ channelId: row.id, ...(launch !== undefined ? { launch } : {}) }));
+    })
+    .post("/:id/live-studio/action", valid("param", idParam), valid("json", liveStudioActionRequestSchema), async (c) => {
+      const user = c.get("user");
+      const row = await owned(user.id, c.req.valid("param").id);
+      const input = c.req.valid("json");
+      if (input.action === "sync_handle") {
+        const checked = await deps.liveStudio.check({ channelId: row.id });
+        const rawHandle = checked.probe.tiktokUsername;
+        if (!rawHandle) {
+          return c.json({
+            ok: false,
+            detail: "Nenhuma conta logada foi encontrada no TikTok LIVE Studio deste computador.",
+            probe: checked.probe,
+            channel: null,
+          });
+        }
+        const parsed = tiktokHandleSchema.safeParse(rawHandle);
+        if (!parsed.success) {
+          return c.json({
+            ok: false,
+            detail: `O usuário detectado (@${rawHandle}) não parece um usuário válido do TikTok.`,
+            probe: checked.probe,
+            channel: null,
+          });
+        }
+        const updated = await updateChannel(deps.db, user.id, row.id, {
+          tiktokUsername: parsed.data,
+          source: "tiktok",
+        });
+        if (!updated) throw notFound("Esse apresentador");
+        await deps.manager.apply(updated);
+        return c.json({
+          ok: true,
+          detail: `Conta @${parsed.data} detectada no TikTok LIVE Studio e vinculada ao apresentador.`,
+          probe: checked.probe,
+          channel: await toChannelDto(deps, updated),
+        });
+      }
+
+      const stageUrl = input.action === "inject_stage" ? await stageUrlFor(deps, row) : undefined;
+      const result = await deps.liveStudio.executeAction(row.id, input, stageUrl);
+      return c.json({ ...result, channel: null });
     })
     // Each download carries a fresh pairing code, so the copy pairs itself on first run (ADR-0047).
     .get(
