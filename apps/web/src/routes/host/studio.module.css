@@ -69,6 +69,10 @@
 
   /* ---- Health ---------------------------------------------------------- */
   .health {
+    /* Contains the items' visually-hidden details: absolutely positioned,
+       they would otherwise escape the swipeable row on phones and widen the
+       whole page. */
+    position: relative;
     display: flex;
     flex-wrap: wrap;
     gap: var(--s-2);

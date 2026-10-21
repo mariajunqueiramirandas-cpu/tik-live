@@ -47,6 +47,11 @@ test("create a host, go live in practice mode, pause, resume and stop", async ({
   const room = page.getByRole("log");
   await expect(room.getByText("E2E Pip", { exact: true }).first()).toBeVisible({ timeout: 20_000 });
 
+  // On a phone the studio never scrolls sideways (the health row scrolls on its own).
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   // Kill switch: the button flips at once and the host confirms.
   await page.getByRole("button", { name: "Pausar o apresentador" }).click();
   await expect(page.getByRole("button", { name: "Retomar o apresentador" })).toBeVisible();
