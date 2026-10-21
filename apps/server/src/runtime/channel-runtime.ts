@@ -16,6 +16,7 @@ import {
   type RuntimeStatus,
   type StudioCommand,
 } from "@tik-live/shared";
+import type { LiveStudioSupervisor } from "../broadcast/live-studio";
 import type { AppConfig } from "../config";
 import type { Db } from "../db/client";
 import type { Logger } from "../log";
@@ -68,6 +69,7 @@ export interface ChannelRuntimeOptions {
   plan: Plan;
   stage: StageHub;
   studio: StudioFeed;
+  liveStudio?: LiveStudioSupervisor;
   /** Overrides for tests. */
   makeSource?: (channel: ChannelRow) => EventSource;
   makeHost?: (channel: ChannelRow) => HostBrain;
@@ -649,12 +651,29 @@ export class ChannelRuntime {
       t: "transcript",
       line: { id: cue.id, at: this.now(), text: cue.text, emotion: cue.emotion, status: "spoken", ...(cue.operator ? { operator: true } : {}) },
     });
+
+    if (this.channel.broadcast.liveStudio && this.options.liveStudio) {
+      if (cue.emotion === "mischief") {
+        void this.options.liveStudio.autoVibe(this.channelId, "roast");
+        void this.options.liveStudio.autoHighlight(this.channelId, "roast");
+      } else if (cue.emotion === "surprised") {
+        void this.options.liveStudio.autoVibe(this.channelId, "surprise");
+      } else if ((cue.emotion === "excited" || cue.emotion === "proud") && cue.fx?.includes("confetti")) {
+        void this.options.liveStudio.autoVibe(this.channelId, "victory");
+        void this.options.liveStudio.autoHighlight(this.channelId, "celebration");
+      }
+    }
   }
 
   private onEvent(event: LiveEvent, result: TriageResult | null): void {
     this.recorder.observe(event);
     const summary = this.summarize(event, result);
     if (summary) this.options.studio.publish({ t: "live-event", event: summary });
+
+    if (this.channel.broadcast.liveStudio && this.options.liveStudio && event.kind === "gift" && event.diamonds >= 100) {
+      void this.options.liveStudio.autoVibe(this.channelId, "victory");
+      void this.options.liveStudio.autoHighlight(this.channelId, "big_gift");
+    }
   }
 
   private async onStandbyChange(standby: boolean): Promise<void> {

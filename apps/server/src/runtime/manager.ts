@@ -310,6 +310,7 @@ export class RuntimeManager {
       plan,
       stage: slot.stage,
       studio: slot.studio,
+      ...(this.options.liveStudio ? { liveStudio: this.options.liveStudio } : {}),
       ...this.options.runtimeOverrides,
     });
     slot.runtime = runtime;
@@ -430,7 +431,7 @@ export function stoppedSnapshot(
     vote: null,
     music: null,
     dj: null,
-    stats: { viewers: 0, likes: 0, diamonds: 0, messages: 0, follows: 0, uptimeSec: 0 },
+    stats: { viewers: 0, likes: 0, diamonds: 0, follows: 0, messages: 0, uptimeSec: 0 },
     nowSaying: null,
     queue: [],
     filtered: {},

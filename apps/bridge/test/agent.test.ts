@@ -1,7 +1,14 @@
 import { describe, expect, it } from "bun:test";
 import { toBridgeWsUrl, type BridgeClientMessage, type LiveStudioProbe } from "@tik-live/shared";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { BridgeAgent } from "../src/agent";
-import type { LocalStudioController } from "../src/live-studio";
+import {
+  injectStageIntoTikTokStore,
+  readLocalTikTokStore,
+  type LocalStudioController,
+} from "../src/live-studio";
 
 describe("BridgeAgent", () => {
   it("converts Stage URLs into bridge WebSocket URLs", () => {
@@ -13,9 +20,96 @@ describe("BridgeAgent", () => {
     );
   });
 
-  it("connects to the server, pushes status, and executes start/stop requests", async () => {
+  it("reads logged-in @username and injects 1080x1920 Stage Browser Source into TTStore/services.json", () => {
+    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "lantern-ttstore-"));
+    try {
+      const sceneId = "f9d3a8fc-1463-47c7-91f5-e6441262639e";
+      const initialStore = {
+        services: {
+          UserService: {
+            state: {
+              userInfo: {
+                username: "curiosabolha",
+                display_id: "curiosabolha",
+              },
+            },
+          },
+          SourceService: {
+            state: {
+              currentSceneNew: sceneId,
+              scenes: [{ id: sceneId, name: "Câmera em tela cheia" }],
+              sceneSource: {
+                [sceneId]: {
+                  order: ["src-1"],
+                  data: {
+                    "src-1": {
+                      id: "src-1",
+                      name: "Adesivo de classificação do criador",
+                      type: "rankingSticker",
+                      visible: true,
+                    },
+                  },
+                  theme: "Default",
+                },
+              },
+            },
+          },
+        },
+      };
+      writeFileSync(path.join(tmpDir, "services.json"), JSON.stringify(initialStore, null, 2), "utf8");
+
+      const before = readLocalTikTokStore(tmpDir);
+      expect(before).toEqual({
+        tiktokUsername: "curiosabolha",
+        stageInjected: false,
+      });
+
+      const stageUrl = "http://localhost:8080/s/abcdefgh12345678";
+      const injected = injectStageIntoTikTokStore(stageUrl, tmpDir);
+      expect(injected.ok).toBe(true);
+      expect(injected.updatedExisting).toBe(false);
+      expect(injected.sceneName).toBe("Câmera em tela cheia");
+
+      const after = readLocalTikTokStore(tmpDir);
+      expect(after).toEqual({
+        tiktokUsername: "curiosabolha",
+        stageInjected: true,
+      });
+
+      // Injecting a new Stage URL updates the existing "Vincular" browser source in place
+      const rotatedUrl = "http://localhost:8080/s/zyxwvuts87654321";
+      const updated = injectStageIntoTikTokStore(rotatedUrl, tmpDir);
+      expect(updated.ok).toBe(true);
+      expect(updated.updatedExisting).toBe(true);
+
+      const saved = JSON.parse(readFileSync(path.join(tmpDir, "services.json"), "utf8"));
+      const sceneSources = Object.values(saved.services.SourceService.state.sceneSource[sceneId].data) as Array<{
+        name: string;
+        type: string;
+        visible: boolean;
+        payload?: { url?: string; cx?: number; cy?: number; enableAudio?: boolean };
+      }>;
+      const browserSources = sceneSources.filter((s) => s.type === "browser");
+      expect(browserSources).toHaveLength(1);
+      expect(browserSources[0]?.name).toBe("Vincular");
+      expect(browserSources[0]?.visible).toBe(true);
+      expect(browserSources[0]?.payload).toMatchObject({
+        url: rotatedUrl,
+        cx: 1080,
+        cy: 1920,
+        enableAudio: true,
+      });
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("connects to the server, pushes status, and executes start/stop/highlight/vibe/scene requests", async () => {
     const received: BridgeClientMessage[] = [];
     let status: "stopped" | "live" = "stopped";
+    let currentScene = "Cena Principal";
+    let recording = false;
+    const triggeredVibes: string[] = [];
 
     const fakeController: LocalStudioController = {
       async probe(): Promise<LiveStudioProbe> {
@@ -23,9 +117,13 @@ describe("BridgeAgent", () => {
           connected: true,
           port: 28189,
           streamStatus: status,
-          scene: "Cena Principal",
+          scene: currentScene,
           installed: true,
           executablePath: "C:\\Program Files\\TikTok LIVE Studio\\1.38.0\\TikTok LIVE Studio.exe",
+          recording,
+          highlightAble: status === "live",
+          tiktokUsername: "curiosabolha",
+          stageInjected: true,
         };
       },
       async launch() {
@@ -38,6 +136,30 @@ describe("BridgeAgent", () => {
       async stop() {
         status = "stopped";
         return { ok: true, detail: "Desligada" };
+      },
+      async highlight() {
+        return { ok: true, detail: "Clipe de destaque (60s) salvo no TikTok LIVE Studio!" };
+      },
+      async toggleRecording() {
+        recording = !recording;
+        return { ok: true, detail: recording ? "Gravação iniciada" : "Gravação parada" };
+      },
+      async switchScene(scene: string) {
+        currentScene = scene;
+        return { ok: true, detail: `Cena alterada para "${scene}".` };
+      },
+      async toggleSource(sourceId: string) {
+        return { ok: true, detail: `Fonte ${sourceId} alternada.` };
+      },
+      async triggerVibe(vibeId: string) {
+        triggeredVibes.push(vibeId);
+        return { ok: true, detail: `Vibe "${vibeId}" acionada!` };
+      },
+      async setCameraEffect() {
+        return { ok: true, detail: "Efeito aplicado." };
+      },
+      async injectStage() {
+        return { ok: true, detail: "Cena configurada." };
       },
     };
 
@@ -52,6 +174,9 @@ describe("BridgeAgent", () => {
         open(ws) {
           ws.send(JSON.stringify({ v: 1, t: "hello", channelId: "ch-1", channelName: "Lia" }));
           ws.send(JSON.stringify({ v: 1, t: "request", id: "req-1", action: "start" }));
+          ws.send(JSON.stringify({ v: 1, t: "request", id: "req-2", action: "scene", params: { scene: "Câmera em tela cheia" } }));
+          ws.send(JSON.stringify({ v: 1, t: "request", id: "req-3", action: "vibe", params: { vibeId: "Vitória!" } }));
+          ws.send(JSON.stringify({ v: 1, t: "request", id: "req-4", action: "highlight" }));
         },
         message(_ws, raw) {
           received.push(JSON.parse(String(raw)) as BridgeClientMessage);
@@ -70,15 +195,19 @@ describe("BridgeAgent", () => {
       agent.start();
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline) {
-        if (received.some((m) => m.t === "response" && m.id === "req-1")) break;
+        if (received.some((m) => m.t === "response" && m.id === "req-4")) break;
         await Bun.sleep(25);
       }
-      const response = received.find((m) => m.t === "response" && m.id === "req-1");
-      expect(response).toBeDefined();
-      if (response?.t === "response") {
-        expect(response.result).toEqual({ ok: true, detail: "Transmitindo pelo TikTok LIVE Studio" });
-        expect(response.probe?.streamStatus).toBe("live");
-      }
+      const res1 = received.find((m) => m.t === "response" && m.id === "req-1");
+      const res2 = received.find((m) => m.t === "response" && m.id === "req-2");
+      const res3 = received.find((m) => m.t === "response" && m.id === "req-3");
+      const res4 = received.find((m) => m.t === "response" && m.id === "req-4");
+
+      expect(res1?.t === "response" && res1.result?.ok).toBe(true);
+      expect(res2?.t === "response" && res2.probe?.scene).toBe("Câmera em tela cheia");
+      expect(res3?.t === "response" && res3.result?.detail).toContain("Vitória!");
+      expect(res4?.t === "response" && res4.result?.detail).toContain("60s");
+      expect(triggeredVibes).toEqual(["Vitória!"]);
     } finally {
       agent.stop();
       server.stop(true);

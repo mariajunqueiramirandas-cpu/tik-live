@@ -1,9 +1,16 @@
-import { broadcastUpdateSchema, PLANS, PRODUCT_NAME, tiktokHandleSchema } from "@tik-live/shared";
-import { Download, RefreshCw } from "lucide-react";
+import {
+  broadcastUpdateSchema,
+  PLANS,
+  PRODUCT_NAME,
+  tiktokHandleSchema,
+  type LiveStudioActionRequest,
+  type LiveStudioProbe,
+} from "@tik-live/shared";
+import { Download, Film, RefreshCw, Sparkles, Video, Wand2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api, call, errorMessage } from "../../lib/api";
-import { useConfig, useMe, useRotateStageKey, useUpdateBroadcast, useUpdateChannel } from "../../lib/query";
+import { putChannel, useConfig, useMe, useRotateStageKey, useUpdateBroadcast, useUpdateChannel } from "../../lib/query";
 import { useStudio } from "../../lib/studio";
 import { Button, ButtonLink } from "../../ui/Button";
 import { Banner, CopyField, Panel } from "../../ui/Display";
@@ -136,6 +143,7 @@ function TikTokLiveStudio() {
     connected?: boolean;
     installed?: boolean;
     bridgeConnected?: boolean;
+    probe?: LiveStudioProbe;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,6 +151,27 @@ function TikTokLiveStudio() {
     mutationFn: (launch: boolean) => call(api.api.channels[":id"]["live-studio"].check.$post({ param: { id: channel.id }, json: { launch } })),
     onSuccess: (result) => setChecked(result),
     onError: (err) => setChecked({ ok: false, detail: errorMessage(err) }),
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: (payload: LiveStudioActionRequest) =>
+      call(api.api.channels[":id"]["live-studio"].action.$post({ param: { id: channel.id }, json: payload })),
+    onSuccess: (res) => {
+      if (res.channel) putChannel(res.channel);
+      if (res.probe) {
+        setChecked((prev) => ({
+          ok: res.ok,
+          detail: res.detail,
+          connected: res.probe.connected,
+          installed: res.probe.installed,
+          bridgeConnected: prev?.bridgeConnected ?? liveStudio?.bridgeConnected ?? false,
+          probe: res.probe,
+        }));
+      }
+      if (res.ok) toast.success(res.detail);
+      else toast.error("Não deu para executar no TikTok LIVE Studio", res.detail);
+    },
+    onError: (err) => setError(errorMessage(err)),
   });
 
   const toggle = async (enabled: boolean) => {
@@ -156,17 +185,20 @@ function TikTokLiveStudio() {
   };
 
   const bridgeConnected = checked?.bridgeConnected ?? liveStudio?.bridgeConnected ?? false;
+  const probe = checked?.probe ?? liveStudio?.probe ?? null;
+  const detectedHandle = probe?.tiktokUsername ?? null;
+  const currentSceneItem = probe?.sceneList?.find((sc) => sc.name === probe.scene) ?? probe?.sceneList?.[0] ?? null;
 
   return (
     <Panel as="section" aria-labelledby="live-studio-heading" className={p.form}>
       <div className={p.sectionHead}>
         <h2 id="live-studio-heading">TikTok LIVE Studio automático</h2>
-        <p>O agente local do {PRODUCT_NAME} roda no seu PC e comanda o aplicativo do TikTok LIVE Studio para iniciar e encerrar a live automaticamente junto com o apresentador.</p>
+        <p>O agente local do {PRODUCT_NAME} roda no seu PC e comanda o aplicativo do TikTok LIVE Studio para iniciar e encerrar a live, salvar clipes de destaque, controlar cenas e acionar Vibes automaticamente.</p>
       </div>
       <div className={s.form}>
         <Switch
           label="Iniciar e encerrar a live no TikTok LIVE Studio"
-          hint="Usa a cena, o título e as configurações que já estão prontos no seu TikTok LIVE Studio."
+          hint="Começa e encerra a transmissão no TikTok LIVE Studio junto com o apresentador, e aciona clipes de 60s e Vibes automaticamente nos melhores momentos."
           checked={Boolean(channel.broadcast.liveStudio)}
           onChange={(enabled) => void toggle(enabled)}
           disabled={update.isPending}
@@ -178,6 +210,13 @@ function TikTokLiveStudio() {
           <p className={s.status} data-ok={liveStudio.state === "live" || Boolean(liveStudio.bridgeConnected)}>
             <span className={s.statusDot} aria-hidden />
             {liveStudio.detail}
+          </p>
+        )}
+        {detectedHandle && (
+          <p className={s.status} data-ok="true">
+            <span className={s.statusDot} aria-hidden />
+            Conta logada no TikTok LIVE Studio: <strong>@{detectedHandle}</strong>
+            {probe?.stageInjected ? " · Fonte Vincular (1080×1920) configurada" : ""}
           </p>
         )}
         {error && <p className={s.error}>{error}</p>}
@@ -196,12 +235,148 @@ function TikTokLiveStudio() {
               Abrir TikTok LIVE Studio
             </Button>
           )}
+          <Button
+            variant="ghost"
+            icon={<Wand2 aria-hidden />}
+            busy={actionMutation.isPending}
+            onClick={() => actionMutation.mutate({ action: "inject_stage" })}
+          >
+            Configurar palco na cena (1 clique)
+          </Button>
+          {(!channel.tiktokUsername || (detectedHandle && detectedHandle !== channel.tiktokUsername)) && (
+            <Button
+              variant="ghost"
+              busy={actionMutation.isPending}
+              onClick={() => actionMutation.mutate({ action: "sync_handle" })}
+            >
+              {detectedHandle ? `Usar @${detectedHandle}` : "Detectar @usuário logado"}
+            </Button>
+          )}
           <a href={`/api/channels/${channel.id}/live-studio/bridge.exe`} download="lantern-bridge.exe">
             <Button type="button" variant="ghost" icon={<Download aria-hidden />}>
               Baixar lantern-bridge.exe
             </Button>
           </a>
         </div>
+
+        {probe?.connected && (
+          <div className={s.studioDeck}>
+            <div className={s.deckSection}>
+              <span className={s.deckTitle}>Clipes Virais e Gravação Local</span>
+              <div className={s.chipRow}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Film aria-hidden />}
+                  busy={actionMutation.isPending}
+                  onClick={() => actionMutation.mutate({ action: "highlight" })}
+                >
+                  Salvar clipe de destaque (60s)
+                </Button>
+                <Button
+                  size="sm"
+                  variant={probe.recording ? "primary" : "ghost"}
+                  icon={<Video aria-hidden />}
+                  busy={actionMutation.isPending}
+                  onClick={() => actionMutation.mutate({ action: "recording" })}
+                >
+                  {probe.recording ? "Gravando MP4 local (Parar)" : "Gravar MP4 local"}
+                </Button>
+              </div>
+            </div>
+
+            {probe.sceneList && probe.sceneList.length > 0 && (
+              <div className={s.deckSection}>
+                <span className={s.deckTitle}>Cenas no TikTok LIVE Studio</span>
+                <div className={s.chipRow}>
+                  {probe.sceneList.map((sc) => (
+                    <Button
+                      key={sc.name}
+                      size="sm"
+                      variant={sc.name === probe.scene ? "primary" : "ghost"}
+                      busy={actionMutation.isPending}
+                      onClick={() => actionMutation.mutate({ action: "scene", scene: sc.name })}
+                    >
+                      {sc.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {currentSceneItem && currentSceneItem.sources.length > 0 && (
+              <div className={s.deckSection}>
+                <span className={s.deckTitle}>Fontes da cena ({currentSceneItem.name})</span>
+                <div className={s.chipRow}>
+                  {currentSceneItem.sources.map((src) => (
+                    <Button
+                      key={src.id}
+                      size="sm"
+                      variant={src.visible ? "primary" : "ghost"}
+                      busy={actionMutation.isPending}
+                      onClick={() =>
+                        actionMutation.mutate({
+                          action: "source",
+                          scene: currentSceneItem.name,
+                          sourceId: src.id,
+                        })
+                      }
+                    >
+                      {src.label} ({src.visible ? "Visível" : "Oculta"})
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {probe.vibeList && probe.vibeList.length > 0 && (
+              <div className={s.deckSection}>
+                <span className={s.deckTitle}>Vibes e Zooms Visuais</span>
+                <div className={s.chipRow}>
+                  {probe.vibeList.map((vibe) => (
+                    <Button
+                      key={vibe.id}
+                      size="sm"
+                      variant={probe.playingVibe === vibe.id ? "primary" : "ghost"}
+                      icon={<Sparkles aria-hidden />}
+                      busy={actionMutation.isPending}
+                      onClick={() => actionMutation.mutate({ action: "vibe", vibeId: vibe.id })}
+                    >
+                      {vibe.name}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {probe.cameraEffects && probe.cameraEffects.categories.some((c) => c.effects.length > 0) && (
+              <div className={s.deckSection}>
+                <span className={s.deckTitle}>Efeitos de Câmera</span>
+                <div className={s.chipRow}>
+                  {probe.cameraEffects.categories.flatMap((cat) =>
+                    cat.effects.slice(0, 8).map((fx) => (
+                      <Button
+                        key={`${cat.key}:${fx.id}`}
+                        size="sm"
+                        variant="ghost"
+                        busy={actionMutation.isPending}
+                        onClick={() =>
+                          actionMutation.mutate({
+                            action: "camera_effect",
+                            cameraEffectType: cat.key,
+                            cameraEffectId: fx.id,
+                          })
+                        }
+                      >
+                        {fx.label}
+                      </Button>
+                    )),
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Panel>
   );

@@ -54,10 +54,59 @@ export const LIVE_STUDIO_SUBPROTOCOL = "streamdeck_ttls_v1";
 export const LIVE_STUDIO_ACTIONS = {
   liveStartEnd: "com.tiktok.livestudio.livestartend",
   livePauseResume: "com.tiktok.livestudio.livepauseresume",
+  highlight: "com.tiktok.livestudio.highlight",
+  recording: "com.tiktok.livestudio.recording",
+  scene: "com.tiktok.livestudio.scene",
+  source: "com.tiktok.livestudio.source",
+  vibe: "com.tiktok.livestudio.vibe",
+  cameraEffects: "com.tiktok.livestudio.cameraeffects",
 } as const;
 
 export const LIVE_STUDIO_STREAM_STATUSES = ["stopped", "paused", "live"] as const;
 export type LiveStudioStreamStatus = (typeof LIVE_STUDIO_STREAM_STATUSES)[number];
+
+export const liveStudioSceneSourceSchema = z.object({
+  id: z.string().max(200),
+  label: z.string().max(200),
+  visible: z.boolean(),
+});
+export type LiveStudioSceneSource = z.infer<typeof liveStudioSceneSourceSchema>;
+
+export const liveStudioSceneItemSchema = z.object({
+  name: z.string().max(200),
+  sources: z.array(liveStudioSceneSourceSchema).max(60),
+});
+export type LiveStudioSceneItem = z.infer<typeof liveStudioSceneItemSchema>;
+
+export const liveStudioVibeItemSchema = z.object({
+  id: z.string().max(200),
+  name: z.string().max(200),
+});
+export type LiveStudioVibeItem = z.infer<typeof liveStudioVibeItemSchema>;
+
+export const liveStudioCameraEffectsSchema = z.object({
+  sources: z
+    .array(
+      z.object({
+        id: z.string().max(200),
+        label: z.string().max(200),
+        isDefault: z.boolean().optional(),
+        effectId: z.string().max(200).nullable().optional(),
+      }),
+    )
+    .max(20),
+  types: z.array(z.string().max(100)).max(20),
+  categories: z
+    .array(
+      z.object({
+        key: z.string().max(100),
+        name: z.string().max(200),
+        effects: z.array(z.object({ id: z.string().max(200), label: z.string().max(200) })).max(100),
+      }),
+    )
+    .max(20),
+});
+export type LiveStudioCameraEffects = z.infer<typeof liveStudioCameraEffectsSchema>;
 
 export const liveStudioProbeSchema = z.object({
   connected: z.boolean(),
@@ -66,11 +115,63 @@ export const liveStudioProbeSchema = z.object({
   scene: z.string().max(200).nullable(),
   installed: z.boolean(),
   executablePath: z.string().max(500).nullable(),
+  recording: z.boolean().optional(),
+  highlightAble: z.boolean().optional(),
+  sceneList: z.array(liveStudioSceneItemSchema).max(50).optional(),
+  vibeList: z.array(liveStudioVibeItemSchema).max(50).optional(),
+  playingVibe: z.string().max(200).nullable().optional(),
+  cameraEffects: liveStudioCameraEffectsSchema.nullable().optional(),
+  tiktokUsername: z.string().max(100).nullable().optional(),
+  stageInjected: z.boolean().optional(),
 });
 export type LiveStudioProbe = z.infer<typeof liveStudioProbeSchema>;
 
-export const BRIDGE_ACTIONS = ["probe", "start", "stop", "launch"] as const;
+export const BRIDGE_ACTIONS = [
+  "probe",
+  "start",
+  "stop",
+  "launch",
+  "highlight",
+  "recording",
+  "scene",
+  "source",
+  "vibe",
+  "camera_effect",
+  "inject_stage",
+] as const;
 export type BridgeAction = (typeof BRIDGE_ACTIONS)[number];
+
+export const bridgeActionParamsSchema = z.object({
+  scene: z.string().max(200).optional(),
+  sourceId: z.string().max(200).optional(),
+  vibeId: z.string().max(200).optional(),
+  cameraSource: z.string().max(200).optional(),
+  cameraEffectType: z.string().max(200).optional(),
+  cameraEffectId: z.string().max(200).optional(),
+  stageUrl: z.string().url().max(500).optional(),
+});
+export type BridgeActionParams = z.infer<typeof bridgeActionParamsSchema>;
+
+export const liveStudioActionRequestSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("highlight") }),
+  z.object({ action: z.literal("recording") }),
+  z.object({ action: z.literal("scene"), scene: z.string().trim().min(1).max(200) }),
+  z.object({
+    action: z.literal("source"),
+    scene: z.string().trim().min(1).max(200).optional(),
+    sourceId: z.string().trim().min(1).max(200),
+  }),
+  z.object({ action: z.literal("vibe"), vibeId: z.string().trim().min(1).max(200) }),
+  z.object({
+    action: z.literal("camera_effect"),
+    cameraSource: z.string().trim().max(200).optional(),
+    cameraEffectType: z.string().trim().min(1).max(200),
+    cameraEffectId: z.string().trim().min(1).max(200),
+  }),
+  z.object({ action: z.literal("inject_stage") }),
+  z.object({ action: z.literal("sync_handle") }),
+]);
+export type LiveStudioActionRequest = z.infer<typeof liveStudioActionRequestSchema>;
 
 export const bridgeServerMessageSchema = z.discriminatedUnion("t", [
   z.object({
@@ -84,6 +185,7 @@ export const bridgeServerMessageSchema = z.discriminatedUnion("t", [
     t: z.literal("request"),
     id: z.string().min(1).max(64),
     action: z.enum(BRIDGE_ACTIONS),
+    params: bridgeActionParamsSchema.optional(),
   }),
 ]);
 export type BridgeServerMessage = z.infer<typeof bridgeServerMessageSchema>;

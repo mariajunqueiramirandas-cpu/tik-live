@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { LiveStudioProbe } from "./broadcast";
 import { RUNTIME_STATUSES } from "./channel";
 import { injectEventSchema } from "./events";
 import { BOOST_KINDS, gameConfigSchema, gameSceneSchema, type GameStatus, type LoopRankingStatus, type SegmentGame } from "./game";
@@ -327,7 +328,12 @@ export interface RuntimeSnapshot {
     /** Cloud broadcast, when it's turned on for this channel. */
     broadcast?: { state: "starting" | "live" | "retrying" | "failed" | "stopped"; detail: string; bitrateKbps: number | null } | null;
     /** Local TikTok LIVE Studio automation, when turned on for this channel. */
-    liveStudio?: { state: "starting" | "live" | "retrying" | "failed" | "stopped"; detail: string; bridgeConnected?: boolean } | null;
+    liveStudio?: {
+      state: "starting" | "live" | "retrying" | "failed" | "stopped";
+      detail: string;
+      bridgeConnected?: boolean;
+      probe?: LiveStudioProbe | null;
+    } | null;
   };
   session: { id: string; startedAt: string } | null;
 }
