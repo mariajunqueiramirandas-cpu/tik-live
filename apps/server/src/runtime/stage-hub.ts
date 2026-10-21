@@ -1,4 +1,5 @@
 import {
+  djCredit,
   disclosureText,
   parseMessage,
   PROTOCOL_VERSION,
@@ -14,6 +15,8 @@ import {
   type StageRole,
   type StageServerPayload,
   type BoostKind,
+  type DjStageTrack,
+  type DjTrack,
   type Challenge,
   type LeaderBoard,
   type LeaderRow,
@@ -106,6 +109,8 @@ export class StageHub implements SpeechOutput, StageNotifier {
   private lastGame: GameScene | null = null;
   /** The piece playing now and when it ends, so a stage that reconnects picks it up. */
   private lastMusic: { track: MusicTrack; endsAt: number } | null = null;
+  /** The DJ's track, when it started and what comes next, so a stage that connects joins it mid-track (ADR-0045). */
+  private lastDj: { track: DjTrack; startedAt: number; next: DjTrack | undefined } | null = null;
   private lastStats: { viewers: number; likes: number } | undefined;
   /** What's up next and when it was sent, so a stage that connects gets the countdowns from now. */
   private lastSchedule: { items: UpNextItem[]; at: number } | null = null;
@@ -164,6 +169,11 @@ export class StageHub implements SpeechOutput, StageNotifier {
     if (this.lastGoals.length) this.sendTo(peer, { t: "goals", goals: this.lastGoals });
     // A piece that's nearly over isn't worth restarting from the top.
     if (this.lastMusic && this.lastMusic.endsAt - this.now() > 8_000) this.sendTo(peer, { t: "music", track: this.lastMusic.track });
+    if (this.lastDj) {
+      const offsetMs = this.now() - this.lastDj.startedAt;
+      // Past its end the next track is on its way; nothing to join.
+      if (offsetMs < this.lastDj.track.seconds * 1000) this.sendTo(peer, this.djMessage(this.lastDj.track, offsetMs, this.lastDj.next));
+    }
     this.options.log?.debug(`${role} stage connected`);
   }
 
@@ -406,6 +416,12 @@ export class StageHub implements SpeechOutput, StageNotifier {
     this.broadcast({ t: "music", track });
   }
 
+  /** The automatic DJ's track (ADR-0045), started at `startedAt` (server clock), or null to fade it out. */
+  dj(track: DjTrack | null, startedAt = this.now(), next?: DjTrack): void {
+    this.lastDj = track ? { track, startedAt, next } : null;
+    this.broadcast(track ? this.djMessage(track, Math.max(0, this.now() - startedAt), next) : { t: "dj", track: null });
+  }
+
   sfx(sound: Sound): void {
     this.broadcast({ t: "sfx", sound });
   }
@@ -522,6 +538,22 @@ export class StageHub implements SpeechOutput, StageNotifier {
   // ---- internals ----------------------------------------------------------
 
   /** The challenge as a stage connecting now should see it: its clock moved on, and nothing that ended a while ago. */
+  private djMessage(track: DjTrack, offsetMs: number, next: DjTrack | undefined): StageServerPayload {
+    const stageTrack: DjStageTrack = {
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      credit: djCredit(track),
+      url: this.djUrl(track),
+      seconds: track.seconds,
+    };
+    return { t: "dj", track: stageTrack, offsetMs: Math.round(offsetMs), ...(next ? { next: this.djUrl(next) } : {}) };
+  }
+
+  private djUrl(track: DjTrack): string {
+    return `/api/stage/${this.options.stageKey}/dj/${track.id}`;
+  }
+
   private replayedChallenge(): Challenge | null {
     const last = this.lastChallenge;
     if (!last) return null;

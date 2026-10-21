@@ -2,6 +2,7 @@ export * from "./auto-show";
 export * from "./brand";
 export * from "./broadcast";
 export * from "./channel";
+export * from "./dj";
 export * from "./events";
 export * from "./game";
 export * from "./music";

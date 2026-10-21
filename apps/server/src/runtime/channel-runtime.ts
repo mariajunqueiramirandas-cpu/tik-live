@@ -36,6 +36,8 @@ import { GameMaster } from "./games/master";
 import { LoopRanking } from "./games/ranking";
 import { ClaudeGameWriter } from "./games/writer";
 import { LatencyTracker } from "./latency";
+import { Dj } from "./dj";
+import type { DjCache } from "./dj-cache";
 import { ClaudeModerator, SafetyGate } from "./safety/gate";
 import { SegmentScores } from "./segment-scores";
 import { sanitizeEvent } from "./sources/sanitize";
@@ -56,6 +58,8 @@ export interface RuntimeContext {
   anthropic: Anthropic | null;
   log: Logger;
   now?: () => number;
+  /** Warms the automatic DJ's next track on disk (ADR-0045). */
+  djCache?: Pick<DjCache, "warm">;
 }
 
 export interface ChannelRuntimeOptions {
@@ -110,6 +114,8 @@ export class ChannelRuntime {
   /** The piece of music on stage, if any. */
   private music: { title: string; endsAt: number; byHost: boolean } | null = null;
   private hostMusicAt = -Infinity;
+  /** The automatic DJ (ADR-0045), while it's turned on. */
+  private dj: Dj | null = null;
   private source!: EventSource;
   private recorder!: StreamRecorder;
   private readonly meter: UsageMeter;
@@ -293,6 +299,7 @@ export class ChannelRuntime {
       }
     });
     this.director.start();
+    this.syncDj();
     this.flushTimer = setInterval(() => void this.flush(), FLUSH_MS);
     this.lastTickAt = this.now();
 
@@ -314,6 +321,8 @@ export class ChannelRuntime {
     this.director?.stop();
     this.speech?.stop();
     this.stopMusic();
+    this.dj?.stop();
+    this.dj = null;
     this.options.stage.setCueListener(null);
     await this.source?.stop().catch((err) => this.log.warn("source stop failed", err));
     this.accrue();
@@ -346,6 +355,7 @@ export class ChannelRuntime {
     }
     this.host.reconfigure({ persona: channel.persona, safety: channel.safety, ...(speechLanguage !== undefined ? { speechLanguage } : {}) });
     this.director.reconfigure(channel.persona);
+    this.syncDj();
   }
 
   /** Whether a restart is needed to apply this change (different audience source). */
@@ -427,6 +437,8 @@ export class ChannelRuntime {
       case "music_stop":
         this.stopMusic();
         return { ok: true };
+      case "dj_skip":
+        return this.dj?.skip() ? { ok: true } : { ok: false, error: "O DJ está desligado. Ligue no estúdio ou em Personagem." };
       case "reset":
         // Clears what's on stage without ending the stream: the line being said, any game or podium, the music,
         // and the counters and leaderboards of this stream session (viewer memory is kept).
@@ -437,6 +449,31 @@ export class ChannelRuntime {
         this.director.resetSession();
         this.notice("info", "reset", "Live reiniciada: palco limpo e placares zerados.");
         return { ok: true };
+    }
+  }
+
+  /** Starts or stops the automatic DJ to match the persona's switch (ADR-0045). */
+  private syncDj(): void {
+    const on = this.channel.persona.sound?.dj === true;
+    if (on && !this.dj) {
+      const stage = this.options.stage;
+      const cache = this.options.ctx.djCache;
+      this.dj = new Dj({
+        stage: {
+          dj: (track, startedAt, next) => {
+            stage.dj(track, startedAt, next);
+            this.director?.noteDj(track && startedAt !== undefined ? { title: track.title, artist: track.artist, endsAt: startedAt + track.seconds * 1000 } : null);
+          },
+        },
+        ...(cache ? { warm: (track) => cache.warm(track) } : {}),
+        now: this.now,
+      });
+      this.dj.start();
+      this.log.info("dj on");
+    } else if (!on && this.dj) {
+      this.dj.stop();
+      this.dj = null;
+      this.log.info("dj off");
     }
   }
 
@@ -541,6 +578,7 @@ export class ChannelRuntime {
       music: this.music && this.music.endsAt > this.now()
         ? { title: this.music.title, endsInSec: Math.ceil((this.music.endsAt - this.now()) / 1000), byHost: this.music.byHost }
         : null,
+      dj: this.djStatus(),
       stats: {
         viewers: stats?.viewers ?? 0,
         likes: stats?.likes ?? 0,
@@ -580,6 +618,13 @@ export class ChannelRuntime {
   }
 
   // ---- internals ----------------------------------------------------------
+
+  private djStatus(): RuntimeSnapshot["dj"] {
+    const playing = this.dj?.nowPlaying();
+    if (!playing) return null;
+    const { track, endsAt } = playing;
+    return { id: track.id, title: track.title, artist: track.artist, endsInSec: Math.max(0, Math.ceil((endsAt - this.now()) / 1000)) };
+  }
 
   private setStatus(status: RuntimeStatus, detail: string): void {
     if (status !== this.status) this.since = this.now();

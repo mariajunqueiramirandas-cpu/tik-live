@@ -1,13 +1,14 @@
 import { GAME_KINDS, GAME_LABELS, MUSIC_LIBRARY, type GameKind, type GameStatus, type LoopRankingStatus, type RuntimeSnapshot, type StudioCommand } from "@tik-live/shared";
-import { Gamepad2, Gift, Heart, Music, Pause, Play, RotateCcw, Send, SkipForward, Sparkles, Square, Target, Trophy, Vote } from "lucide-react";
+import { Disc3, Gamepad2, Gift, Heart, Music, Pause, Play, RotateCcw, Send, SkipForward, Sparkles, Square, Target, Trophy, Vote } from "lucide-react";
 import { Link } from "react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { clock, plural } from "../../lib/format";
 import { ANSWER_WORD, GAME_HOW, gamePhase } from "../../lib/games";
 import { useHotkeys } from "../../lib/hotkeys";
+import { useUpdateChannel } from "../../lib/query";
 import { useStudio, type StudioStore } from "../../lib/studio";
 import { Button } from "../../ui/Button";
-import { Field, Input, Select, TextArea } from "../../ui/Field";
+import { Field, Input, Select, Switch, TextArea } from "../../ui/Field";
 import { Tooltip } from "../../ui/Overlay";
 import { cx } from "../../ui/cx";
 import { toast } from "../../ui/toast-store";
@@ -517,6 +518,63 @@ function MusicPane({ store, music, disabled, host, musicOff, characterUrl }: { s
   );
 }
 
+function DjNowPlaying({ dj, store, disabled }: { dj: NonNullable<RuntimeSnapshot["dj"]>; store: StudioStore; disabled: boolean }) {
+  const left = useCountdown(dj.endsInSec, dj.id, true);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className={s.playing}>
+      <Disc3 aria-hidden className={s.playingIcon} />
+      <div className={s.playingText}>
+        <p className={s.playingTitle}>{dj.title}</p>
+        <p className={s.paneHint}>
+          {dj.artist} · <span role="timer">faltam {clock(left)}</span>
+        </p>
+      </div>
+      <Button
+        size="sm"
+        variant="ghost"
+        icon={<SkipForward aria-hidden />}
+        busy={busy}
+        disabled={disabled}
+        onClick={async () => {
+          setBusy(true);
+          await send(store, { kind: "dj_skip" }, undefined, "Não deu para pular a faixa");
+          setBusy(false);
+        }}
+      >
+        Próxima
+      </Button>
+    </div>
+  );
+}
+
+/** The automatic DJ (ADR-0045): one switch, saved with the host, and what it's playing. */
+function DjPane({ store, dj, disabled, onAir }: { store: StudioStore; dj: RuntimeSnapshot["dj"]; disabled: boolean; onAir: boolean }) {
+  const { channel } = useHost();
+  const update = useUpdateChannel(channel.id);
+  const on = channel.persona.sound?.dj === true;
+  const toggle = (next: boolean) => {
+    const sound = channel.persona.sound;
+    update.mutate({ persona: { ...channel.persona, sound: { music: sound?.music ?? true, effects: sound?.effects ?? true, dj: next } } });
+  };
+  return (
+    <section className={s.dj} aria-labelledby="dj-heading">
+      <div className={s.paneHead}>
+        <h2 id="dj-heading">DJ automático</h2>
+        {!dj && <span className={s.paneHint}>{on ? (onAir ? "Começando…" : "Toca quando o apresentador entrar no ar") : "Eletrônica sem parar"}</span>}
+      </div>
+      <Switch
+        label="Tocar música eletrônica sem parar"
+        hint="Faixas Creative Commons de Kevin MacLeod, por baixo da voz, com o crédito no palco."
+        checked={on}
+        disabled={update.isPending}
+        onChange={toggle}
+      />
+      {dj && <DjNowPlaying dj={dj} store={store} disabled={disabled} />}
+    </section>
+  );
+}
+
 export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean }) {
   const snapshot = useStudio(store, (st) => st.snapshot);
   const { channel } = useHost();
@@ -593,6 +651,8 @@ export function Controls({ store, onAir }: { store: StudioStore; onAir: boolean 
           characterUrl={`/app/hosts/${channel.id}/character?tab=voice`}
         />
       )}
+
+      {snapshot && <DjPane store={store} dj={snapshot.dj ?? null} disabled={!usable} onAir={onAir} />}
 
       {snapshot && snapshot.segments.length > 0 && (
         <div className={s.segments}>

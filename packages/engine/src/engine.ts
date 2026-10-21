@@ -4,6 +4,7 @@ import { createRandom } from "./anim/random";
 import { Spring, SpringVector, SPRINGS } from "./anim/spring";
 import { AudioEngine, type PlaybackHandle } from "./audio/audio";
 import type { MusicPlayer } from "./audio/music";
+import type { DjDeck } from "./audio/dj";
 import { FrameCapture, type CaptureOptions, type CaptureStats } from "./capture";
 import { hexToRgb } from "./color";
 import type { GameLayer } from "./game/scene";
@@ -11,7 +12,7 @@ import { Gl, ShaderError, type Program, type QuadGeometry, type RenderTarget } f
 import { FULLSCREEN_VERTEX, RECT_VERTEX, SPRITE_FRAGMENT, SPRITE_SINGLE_FRAGMENT, YUV_CHROMA_FRAGMENT, YUV_LUMA_FRAGMENT } from "./gl/shaders";
 import { AtmosphereLayer, STAGE_HEIGHT, STAGE_WIDTH } from "./stage/atmosphere";
 import { CharacterLayer } from "./stage/character";
-import type { FxLayer } from "./stage/fx";
+import type { FxLayer, NowPlayingSource } from "./stage/fx";
 import { Frame, type Layer, type StageContext } from "./stage/layer";
 import { TextLayer } from "./stage/text";
 import { FONT_FAMILY, type TextSprite } from "./text/sprites";
@@ -279,6 +280,8 @@ export class Engine implements StageEngine {
   private waiting: Array<() => void> = [];
   /** Music and sound effects (ADR-0024); ducks itself under the voice. Loads with the extras. */
   private music: MusicPlayer | null = null;
+  /** The automatic DJ (ADR-0045); steps aside while a piece of music plays. Loads with the extras. */
+  private dj: DjDeck | null = null;
 
   // Until the server says who's hosting: "O apresentador é uma IA".
   private name = "O apresentador";
@@ -382,6 +385,10 @@ export class Engine implements StageEngine {
     // `music` and `sfx` go to the music player.
     if (message.t === "music" || message.t === "sfx") {
       this.whenLoaded(() => this.music?.handle(message));
+      return;
+    }
+    if (message.t === "dj") {
+      this.whenLoaded(() => this.dj?.handle(message));
       return;
     }
     switch (message.t) {
@@ -496,11 +503,19 @@ export class Engine implements StageEngine {
 
   /** Resolves once effects and game scenes are loaded (tests render after it). */
   ready(): Promise<void> {
-    this.extras ??= Promise.all([import("./stage/fx"), import("./game/scene"), import("./audio/music")]).then(
-      ([fx, game, music]) => {
+    this.extras ??= Promise.all([import("./stage/fx"), import("./game/scene"), import("./audio/music"), import("./audio/dj")]).then(
+      ([fx, game, music, dj]) => {
         if (this.destroyed) return;
-        this.music = new music.MusicPlayer(this.audio);
-        this.fx = new fx.FxLayer(this.ctx, this.character, this.music, this.random);
+        const player = new music.MusicPlayer(this.audio);
+        const deck = new dj.DjDeck(this.audio, { musicPlaying: () => player.nowPlaying() !== null });
+        this.music = player;
+        this.dj = deck;
+        // The chip shows the host's piece when one plays, otherwise the DJ's track.
+        const nowPlaying: NowPlayingSource = {
+          nowPlaying: () => player.nowPlaying() ?? deck.nowPlaying(),
+          bands: (out) => (player.nowPlaying() ? player.bands(out) : deck.bands(out)),
+        };
+        this.fx = new fx.FxLayer(this.ctx, this.character, nowPlaying, this.random);
         this.game = new game.GameLayer(this.ctx);
         this.stack();
         this.fx.repaint(this.scale);
@@ -595,6 +610,7 @@ export class Engine implements StageEngine {
     for (const off of this.observers) off();
     this.speaker.stop();
     this.music?.destroy();
+    this.dj?.destroy();
     this.audio.destroy();
     this.events.clear();
   }

@@ -382,6 +382,22 @@ A short synthesized sound for a show moment (`SOUNDS` in
 opening and revealing, wins, the end of a game. Not sent when the creator
 turned sound effects off.
 
+#### `dj`
+
+```json
+{ "v": 1, "t": "dj", "track": { "id": "werq", "title": "Werq", "artist": "Kevin MacLeod", "credit": "Kevin MacLeod (incompetech.com) · CC BY 4.0", "url": "/api/stage/<stageKey>/dj/werq", "seconds": 162 }, "offsetMs": 0, "next": "/api/stage/<stageKey>/dj/realizer" }
+```
+
+The automatic DJ ([ADR-0045](adr/0045-automatic-dj.md)): play this recorded
+track from `offsetMs` in, crossfading from the one before; `"track": null`
+fades the DJ out. The stage streams `url` (same origin, so it mixes into the
+stage's audio output like music), shows the title and `credit` while it
+plays (the Creative Commons license asks for it), ducks it under speech, and
+fades it out while a [`music`](#music) piece plays. `next` is the track after
+this one, to start loading early. The server sends the next track a few
+seconds before this one ends. A stage that connects mid-track gets it after
+`hello` with `offsetMs` set to how far in it is.
+
 #### `hold`
 
 The server is restarting (graceful shutdown). Keep the last frame and
@@ -620,6 +636,11 @@ what's playing.
 ##### `music_stop`
 
 Stop the music on stage.
+
+##### `dj_skip`
+
+The automatic DJ moves on to its next track now. Fails when the DJ is off
+(`persona.sound.dj`). The snapshot's `dj` field says what it's playing.
 
 ##### `reset`
 

@@ -201,6 +201,7 @@ purchase endpoints return `409 billing_disabled`.
 |---|---|
 | `GET /s/:stageKey` | The stage page for OBS or TikTok LIVE Studio (1080×1920). `?role=preview` for the dashboard's monitor, `?role=broadcast` for the cloud broadcaster. |
 | `GET /api/stage/:stageKey/audio/:cueId` | One line of speech audio (`audio/mpeg`), kept in memory for about two minutes. The stage key is the only credential. |
+| `GET /api/stage/:stageKey/dj/:trackId` | A track of the automatic DJ's catalog (`audio/mpeg`, [ADR-0045](adr/0045-automatic-dj.md)), fetched from its source once and kept on disk. Honors a single `Range: bytes=` range (206, or 416 outside the file). 404 for an unknown track or stage key; 503 with `Retry-After` while the file can't be fetched. |
 
 ## Identity provider routes
 

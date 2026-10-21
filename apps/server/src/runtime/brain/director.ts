@@ -495,6 +495,8 @@ export class Director {
   private askedRoom = false;
   private recentChat: string[] = [];
   private music: { title: string; endsAt: number } | null = null;
+  /** The automatic DJ's track (ADR-0045), so the host can say what's playing. */
+  private dj: { title: string; artist: string; endsAt: number } | null = null;
   /** Who sent the most likes (last 15 minutes) and diamonds (last hour). */
   private readonly boards: Record<LeaderBoard, RollingBoard>;
   private readonly boardSent: Record<LeaderBoard, { revision: number; at: number }> = {
@@ -847,6 +849,11 @@ export class Director {
     this.engine.unsaid("blocked", [{ text, meta }]);
   }
 
+  /** The automatic DJ started a track, or stopped (ADR-0045). Only the brief mentions it: tracks change too often to narrate. */
+  noteDj(track: { title: string; artist: string; endsAt: number } | null): void {
+    this.dj = track;
+  }
+
   /** Music went on (or off) on stage. */
   noteMusic(track: { title: string; endsAt: number; byHost: boolean } | null): void {
     if (!track) {
@@ -1079,7 +1086,11 @@ export class Director {
       segmentLeftMin: Math.max(0, Math.ceil((segmentEndsAt - now) / 60_000)),
       ...(this.goalsOn() ? { goals: this.goals.describe() } : {}),
       ...(game ? { game } : {}),
-      ...(this.music && this.music.endsAt > now ? { music: `"${this.music.title}" is playing (${Math.ceil((this.music.endsAt - now) / 1000)} s left).` } : {}),
+      ...(this.music && this.music.endsAt > now
+        ? { music: `"${this.music.title}" is playing (${Math.ceil((this.music.endsAt - now) / 1000)} s left).` }
+        : this.dj && this.dj.endsAt > now
+          ? { music: `The DJ is playing "${this.dj.title}" by ${this.dj.artist}.` }
+          : {}),
       originAt: now,
     };
 
