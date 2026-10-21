@@ -1,15 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { encodeBridgeStamp, toBridgeWsUrl, type BridgeClientMessage, type LiveStudioProbe } from "@tik-live/shared";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { BRIDGE_CLOSE, encodeBridgeStamp, toBridgeWsUrl, type BridgeClientMessage, type LiveStudioProbe } from "@tik-live/shared";
+import type { LocalStudioController } from "@tik-live/shared/live-studio";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { BridgeAgent } from "../src/agent";
-import {
-  injectStageIntoTikTokStore,
-  readLocalTikTokStore,
-  type LocalStudioController,
-} from "../src/live-studio";
-import { pairWithCode, readOwnStamp } from "../src/pair";
+import { PairingNetworkError, pairWithCode, readOwnStamp } from "../src/pair";
 
 const idleController: LocalStudioController = {
   probe: async () => ({ connected: false, port: null, streamStatus: null, scene: null, installed: false, executablePath: null }),
@@ -26,90 +22,6 @@ describe("BridgeAgent", () => {
     expect(toBridgeWsUrl("http://localhost:8080/s/abcdefgh12345678")).toBe(
       "ws://localhost:8080/ws/bridge/abcdefgh12345678",
     );
-  });
-
-  it("reads logged-in @username and injects 1080x1920 Stage Browser Source into TTStore/services.json", () => {
-    const tmpDir = mkdtempSync(path.join(tmpdir(), "lantern-ttstore-"));
-    try {
-      const sceneId = "f9d3a8fc-1463-47c7-91f5-e6441262639e";
-      const initialStore = {
-        services: {
-          UserService: {
-            state: {
-              userInfo: {
-                username: "curiosabolha",
-                display_id: "curiosabolha",
-              },
-            },
-          },
-          SourceService: {
-            state: {
-              currentSceneNew: sceneId,
-              scenes: [{ id: sceneId, name: "Câmera em tela cheia" }],
-              sceneSource: {
-                [sceneId]: {
-                  order: ["src-1"],
-                  data: {
-                    "src-1": {
-                      id: "src-1",
-                      name: "Adesivo de classificação do criador",
-                      type: "rankingSticker",
-                      visible: true,
-                    },
-                  },
-                  theme: "Default",
-                },
-              },
-            },
-          },
-        },
-      };
-      writeFileSync(path.join(tmpDir, "services.json"), JSON.stringify(initialStore, null, 2), "utf8");
-
-      const before = readLocalTikTokStore(tmpDir);
-      expect(before).toEqual({
-        tiktokUsername: "curiosabolha",
-        stageInjected: false,
-      });
-
-      const stageUrl = "http://localhost:8080/s/abcdefgh12345678";
-      const injected = injectStageIntoTikTokStore(stageUrl, tmpDir);
-      expect(injected.ok).toBe(true);
-      expect(injected.updatedExisting).toBe(false);
-      expect(injected.sceneName).toBe("Câmera em tela cheia");
-
-      const after = readLocalTikTokStore(tmpDir);
-      expect(after).toEqual({
-        tiktokUsername: "curiosabolha",
-        stageInjected: true,
-      });
-
-      // Injecting a new Stage URL updates the existing "Vincular" browser source in place
-      const rotatedUrl = "http://localhost:8080/s/zyxwvuts87654321";
-      const updated = injectStageIntoTikTokStore(rotatedUrl, tmpDir);
-      expect(updated.ok).toBe(true);
-      expect(updated.updatedExisting).toBe(true);
-
-      const saved = JSON.parse(readFileSync(path.join(tmpDir, "services.json"), "utf8"));
-      const sceneSources = Object.values(saved.services.SourceService.state.sceneSource[sceneId].data) as Array<{
-        name: string;
-        type: string;
-        visible: boolean;
-        payload?: { url?: string; cx?: number; cy?: number; enableAudio?: boolean };
-      }>;
-      const browserSources = sceneSources.filter((s) => s.type === "browser");
-      expect(browserSources).toHaveLength(1);
-      expect(browserSources[0]?.name).toBe("Vincular");
-      expect(browserSources[0]?.visible).toBe(true);
-      expect(browserSources[0]?.payload).toMatchObject({
-        url: rotatedUrl,
-        cx: 1080,
-        cy: 1920,
-        enableAudio: true,
-      });
-    } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
-    }
   });
 
   it("connects to the server, pushes status, and executes start/stop/highlight/vibe/scene requests", async () => {
@@ -261,6 +173,47 @@ describe("BridgeAgent", () => {
       server.stop(true);
     }
   });
+
+  it("stops when another agent window takes its place, instead of fighting it", async () => {
+    let connections = 0;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(req, srv) {
+        if (srv.upgrade(req)) return;
+        return new Response("no upgrade", { status: 400 });
+      },
+      websocket: {
+        open(ws) {
+          connections += 1;
+          ws.close(BRIDGE_CLOSE.replaced, "replaced by new bridge connection");
+        },
+        message() {},
+      },
+    });
+    let ended: number | null = null;
+    const agent = new BridgeAgent({
+      server: `http://127.0.0.1:${server.port}`,
+      token: "lbt_secret",
+      controller: idleController,
+      reconnectMs: 20,
+      onLog: () => undefined,
+      onEnded: (code) => {
+        ended = code;
+      },
+    });
+    try {
+      agent.start();
+      const deadline = Date.now() + 5_000;
+      while (ended === null && Date.now() < deadline) await Bun.sleep(25);
+      await Bun.sleep(200);
+      expect(ended as number | null).toBe(BRIDGE_CLOSE.replaced);
+      expect(connections).toBe(1);
+    } finally {
+      agent.stop();
+      server.stop(true);
+    }
+  });
 });
 
 describe("pairing", () => {
@@ -297,5 +250,12 @@ describe("pairing", () => {
     } finally {
       server.stop(true);
     }
+  });
+
+  it("tells a server it couldn't reach apart from a refused code, so the code isn't spent", async () => {
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
+    const base = `http://127.0.0.1:${server.port}`;
+    server.stop(true);
+    await expect(pairWithCode(base, "ABCD2345", "PC")).rejects.toBeInstanceOf(PairingNetworkError);
   });
 });

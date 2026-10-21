@@ -164,6 +164,11 @@ To give the host its real brain and voice, copy `.env.example` to `.env`:
    waits in standby until TikTok reports the stream live, so it never talks
    to an empty room, and goes back to standby when the stream ends.
 
+With **TikTok LIVE Studio** instead of OBS, download the Local Bridge Agent
+from the Setup tab and leave it open on the PC: it starts and ends the
+TikTok live with the host, and **Scheduled hours** can put the host on and
+off the air by themselves ([docs/live-studio](docs/live-studio/README.md)).
+
 On Pro, **Broadcast from the cloud** streams to TikTok without OBS: paste the
 server URL and stream key from TikTok LIVE Producer. Stream keys aren't
 available on every account or in every region.

@@ -18,6 +18,9 @@ export function readOwnStamp(exePath = process.execPath): BridgeStamp | null {
   }
 }
 
+/** The server couldn't be reached, so the code wasn't used. */
+export class PairingNetworkError extends Error {}
+
 /** Trades a pairing code for this PC's device token. Throws with a message to show. */
 export async function pairWithCode(server: string, code: string, device: string): Promise<BridgePairResponse> {
   let res: Response;
@@ -28,7 +31,7 @@ export async function pairWithCode(server: string, code: string, device: string)
       body: JSON.stringify({ code, device }),
     });
   } catch {
-    throw new Error(`Não foi possível falar com ${new URL(server).host}. Confira a internet e tente de novo.`);
+    throw new PairingNetworkError(`Não foi possível falar com ${new URL(server).host}. Confira a internet e tente de novo.`);
   }
   if (res.ok) return (await res.json()) as BridgePairResponse;
   const problem = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;

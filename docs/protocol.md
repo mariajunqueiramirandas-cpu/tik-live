@@ -7,7 +7,7 @@ and a third talks to the Local Bridge Agent on the creator's PC:
 |---|---|---|
 | `/ws/stage/<stageKey>?role=program\|preview\|broadcast` | Stage pages: OBS or TikTok LIVE Studio (`program`), the dashboard's monitor (`preview`), the cloud broadcaster (`broadcast`) | The stage key in the URL |
 | `/ws/studio/<channelId>` | The dashboard's studio page for that host | The signed-in user (same cookie as the API); must own the channel |
-| `/ws/bridge` | The Local Bridge Agent on the creator's PC ([ADR-0047](adr/0047-bridge-agent-pairing-and-distribution.md)) | `Authorization: Bearer <device token>` from pairing. An unknown or removed token is closed with `4003`; a second paired PC while one is connected, with `4009`. `/ws/bridge/<stageKey>` still works for agents from before pairing. |
+| `/ws/bridge` | The Local Bridge Agent on the creator's PC ([ADR-0047](adr/0047-bridge-agent-pairing-and-distribution.md)) | `Authorization: Bearer <device token>` from pairing. An unknown or removed token is closed with `4003`; a second paired PC while one is connected, with `4009`. `/ws/bridge/<stageKey>` still works for agents from before pairing, but not while a paired PC is connected (`4009`). See [Local Bridge Agent](#local-bridge-agent). |
 
 The schemas live in `packages/shared/src/protocol.ts`. Messages the server
 receives are validated with zod; anything that doesn't parse is dropped
@@ -660,3 +660,37 @@ Reloads the stage page in every connected OBS source by sending them
 [`reload`](#reload). Works while the host is off the air, since OBS stays
 connected. Fails with "Nenhum palco aberto no OBS agora…" when no `program`
 stage is connected.
+
+## Local Bridge Agent
+
+`/ws/bridge` carries the server's requests to the agent on the creator's PC
+and the agent's reports of TikTok LIVE Studio
+([docs/live-studio](live-studio/README.md)). Schemas:
+`bridgeServerMessageSchema` and `bridgeClientMessageSchema` in
+`packages/shared/src/broadcast.ts`.
+
+| Direction | `t` | Fields |
+|---|---|---|
+| Server to agent | `hello` | `channelId`, `channelName`: the connection is accepted |
+| Server to agent | `request` | `id`, `action` (`probe`, `launch`, `start`, `stop`, `highlight`, `recording`, `scene`, `source`, `vibe`, `camera_effect`, `inject_stage`), `params?` |
+| Agent to server | `status` | `probe`: sent on connect, whenever Studio's state changes, and on a 3 s check |
+| Agent to server | `response` | `id`, `result?` (`{ ok, detail }`), `probe?` |
+
+`LiveStudioProbe` is `{ connected, port, streamStatus, scene, installed,
+executablePath }` plus, when known: `running` (Studio is open, even if not
+answering yet), `authRequired` (Studio refused the agent), `recording`,
+`highlightAble`, `sceneList`, `vibeList`, `playingVibe`, `cameraEffects`,
+`tiktokUsername`, `stageInjected`, `stageSourceUrl` (where the stage source
+in Studio points) and `stagePending` (a stage source waits for Studio to
+close). The agent trims long lists so a probe stays under 12,000
+characters; messages over 16 KB or that don't parse are dropped and logged.
+
+Close codes the agent acts on:
+
+| Code | Meaning | Agent |
+|---|---|---|
+| `4000` | Another connection for the same host took this one's place (the agent opened twice on one PC) | Stops |
+| `4001` | The stage link changed (stage-link agents) | Forgets it and asks for a pairing code |
+| `4003` | Unknown or removed device | Forgets the pairing and asks for a code |
+| `4004` | The host was deleted | Forgets the pairing and asks for a code |
+| `4009` | A paired PC is already connected | Retries every 30 s |

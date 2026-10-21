@@ -78,12 +78,28 @@ Studio to client (all broadcast to the whole room):
 | `stream_deck/<context>` | `{"code":0}` or `{"code":-1}` | After each `action_emit`. |
 | `stream_deck/join_room` | none | When any client joins. |
 
-**Disconnect quirk (code, verified):** every socket's `disconnect` calls
-`stopListening()` on the shared renderer service. When any client
-disconnects, pushes stop for **all** clients until someone sends `join_room`
-again. A client that wants change pushes must keep one long-lived socket, and
-must re-join if another client (for example the real Stream Deck plugin)
-disconnects.
+### Room quirks
+
+All verified in Studio's code; the leave-and-join refresh was also checked
+on a running Studio.
+
+- **Any disconnect stops pushes for everyone.** Every socket's `disconnect`
+  calls `stopListening()` on the shared renderer service, so pushes stop for
+  **all** clients until someone sends `join_room` again. Keep one
+  long-lived socket, and re-join now and then in case another client (such
+  as the real Stream Deck plugin) disconnected.
+- **Never join twice on one socket.** Each `join_room` registers the
+  socket's `sync_settings`, `device_status_emit` and `action_emit` handlers
+  again without removing the old ones, so every later action would run
+  twice (and `livestartend` is a toggle). `leave_room` disposes them; to
+  refresh, send `leave_room` then `join_room`.
+- **Re-joining is cheap.** `join_room` restarts the renderer's listeners
+  (`startListening()` drops the previous ones first) and recomputes the
+  cached snapshot.
+- **Handlers exist only after the join settles.** The join handler awaits
+  the room join before registering the socket's handlers, so a request in
+  the same breath as `join_room` can be lost. Ask for `sync_settings` until
+  a snapshot arrives, and send actions only after that.
 
 ## Ack codes
 
@@ -158,6 +174,16 @@ most likely a 0–1 linear value. **Not tested.** The handler refuses
 follows, room title or topic, stream URL or key, account info. Reacting to
 the audience has to keep coming from our own TikTok LIVE connection.
 
+## Studio's saved scenes (`services.json`)
+
+Studio keeps its saved state, scenes included, in
+`%APPDATA%\TikTok LIVE Studio\TTStore\services.json`, one
+`{ state, version }` entry per internal service (`SourceService` holds the
+scenes). Studio's main process reads the file **once at start-up** and later
+writes its whole in-memory state back over it. An edit made while Studio is
+open is never seen and gets overwritten: write it only while Studio is
+closed, and it shows up the next time Studio opens. (code, verified)
+
 ## Telemetry
 
 Every action is reported to TikTok's analytics as
@@ -168,6 +194,9 @@ automate through this socket is visible to TikTok as Stream Deck usage.
 
 1. Run `lantern-bridge.exe --check` on the PC. It connects, reads
    `sync_settings` and prints what it found, without changing anything.
+   `authRequired: true` means Studio switched to token auth; `running:
+   true` with `connected: false` means Studio is open but not on its main
+   page.
 2. If it fails, check the port list and subprotocol in Studio's `main.js`
    (search for `streamdeck_ttls` and `LS_PORT_LIST`) and the auth flag
    (`streamdeck_websocket_auth_enabled`).

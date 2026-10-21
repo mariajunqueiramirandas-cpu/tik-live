@@ -46,7 +46,8 @@ function BroadcastItem({ broadcast }: { broadcast: NonNullable<RuntimeSnapshot["
 
 function LiveStudioItem({ liveStudio }: { liveStudio: NonNullable<RuntimeSnapshot["health"]["liveStudio"]> }) {
   const tone: Tone = liveStudio.state === "live" ? "ok" : liveStudio.state === "failed" ? "bad" : liveStudio.state === "stopped" ? "off" : "warn";
-  const value = BROADCAST_TEXT[liveStudio.state];
+  // A paused live isn't reconnecting: say what it is.
+  const value = liveStudio.probe?.streamStatus === "paused" ? "Pausada" : BROADCAST_TEXT[liveStudio.state];
   return (
     <li className={cx(s.healthItem, s[tone])} title={liveStudio.detail}>
       <span className={s.healthDot} aria-hidden />

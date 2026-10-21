@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { decodeBridgeStamp, type BridgePairResponse, type ChannelDto } from "@tik-live/shared";
+import { decodeBridgeStamp, type BridgePairResponse, type ChannelDto, type LiveStudioProbe } from "@tik-live/shared";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,6 +7,29 @@ import { bridgePairing } from "../../src/db/schema";
 import { eventually, startTestServer, type TestServer, type TestSocket } from "../harness";
 
 const FAKE_EXE = new Uint8Array(200_000).map((_, i) => (i * 31) % 251);
+
+/** Plays the agent on the PC: answers the server's requests against a pretend Studio. */
+function actAsAgent(socket: TestSocket, studio: { status: "stopped" | "live"; requests: string[] }): void {
+  const probe = (): LiveStudioProbe => ({
+    connected: true,
+    port: 28189,
+    streamStatus: studio.status,
+    scene: "Cena",
+    installed: true,
+    executablePath: "C:\\Studio.exe",
+    running: true,
+  });
+  socket.ws.addEventListener("message", (event) => {
+    const msg = JSON.parse(String(event.data)) as { t: string; id: string; action: string };
+    if (msg.t !== "request") return;
+    studio.requests.push(msg.action);
+    if (msg.action === "start") studio.status = "live";
+    if (msg.action === "stop") studio.status = "stopped";
+    const result = msg.action === "probe" ? undefined : { ok: true, detail: msg.action === "stop" ? "Desligada" : "Transmitindo pelo TikTok LIVE Studio" };
+    socket.send({ v: 1, t: "response", id: msg.id, probe: probe(), ...(result ? { result } : {}) });
+  });
+  socket.send({ v: 1, t: "status", probe: probe() });
+}
 
 describe("Local Bridge Agent pairing (ADR-0047)", () => {
   let server: TestServer;
@@ -102,6 +125,65 @@ describe("Local Bridge Agent pairing (ADR-0047)", () => {
     const b2 = await connect(second.token);
     await b2.next((m) => m.t === "hello");
     b2.close();
+  });
+
+  it("doesn't let the stage link take the live away from a paired PC", async () => {
+    const channel = await newChannel("stagelink");
+    const paired = (await pair((await pairingCode("stagelink", channel.id)).code)).body;
+    const pc = await connect(paired.token);
+    await pc.next((m) => m.t === "hello");
+
+    const stageKey = channel.stageUrl.slice(channel.stageUrl.lastIndexOf("/") + 1);
+    const intruder = await server.socket(`/ws/bridge/${stageKey}`);
+    await eventually(() => intruder.closed?.code === 4009);
+    expect(pc.closed).toBeNull();
+    expect((await devices("stagelink", channel.id))[0]?.connected).toBe(true);
+    pc.close();
+  });
+
+  it("ends the PC's live after the agent comes back, when the host stopped while it was away", async () => {
+    const channel = await newChannel("owedstop");
+    const paired = (await pair((await pairingCode("owedstop", channel.id)).code)).body;
+    const studio = { status: "stopped" as "stopped" | "live", requests: [] as string[] };
+    const pc = await connect(paired.token);
+    await pc.next((m) => m.t === "hello");
+    actAsAgent(pc, studio);
+
+    await server.json(`/api/channels/${channel.id}/broadcast`, { method: "PUT", user: "owedstop", json: { liveStudio: true } });
+    await server.json(`/api/channels/${channel.id}/start`, { method: "POST", user: "owedstop" });
+    await eventually(() => studio.status === "live");
+
+    // The PC drops off, and the host is stopped meanwhile: nobody can end the TikTok live yet.
+    pc.close();
+    await eventually(async () => !(await devices("owedstop", channel.id)).some((d) => d.connected));
+    await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "owedstop" });
+    await Bun.sleep(100);
+    expect(server.deps.liveStudio.isStopOwed(channel.id)).toBe(true);
+
+    // It comes back still live: the server ends it.
+    const back = await connect(paired.token);
+    await back.next((m) => m.t === "hello");
+    actAsAgent(back, studio);
+    await eventually(() => studio.status === "stopped");
+    await eventually(() => !server.deps.liveStudio.isStopOwed(channel.id));
+    back.close();
+  });
+
+  it("ends the PC's live before letting the agent go when the host is deleted", async () => {
+    const channel = await newChannel("deleter");
+    const paired = (await pair((await pairingCode("deleter", channel.id)).code)).body;
+    const studio = { status: "stopped" as "stopped" | "live", requests: [] as string[] };
+    const pc = await connect(paired.token);
+    await pc.next((m) => m.t === "hello");
+    actAsAgent(pc, studio);
+
+    await server.json(`/api/channels/${channel.id}/broadcast`, { method: "PUT", user: "deleter", json: { liveStudio: true } });
+    await server.json(`/api/channels/${channel.id}/start`, { method: "POST", user: "deleter" });
+    await eventually(() => studio.status === "live");
+
+    expect((await server.api(`/api/channels/${channel.id}`, { method: "DELETE", user: "deleter" })).status).toBe(204);
+    expect(studio.status).toBe("stopped");
+    await eventually(() => pc.closed?.code === 4004);
   });
 
   it("only the owner can make codes or see and remove PCs", async () => {

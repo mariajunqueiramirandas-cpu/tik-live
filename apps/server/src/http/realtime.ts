@@ -85,7 +85,7 @@ export function mountRealtime(app: Hono<AppEnv>, deps: AppDeps): void {
         onMessage(event) {
           if (!paired) return;
           const data = typeof event.data === "string" ? event.data : "";
-          if (data.length > MAX_MESSAGE_BYTES) return;
+          if (data.length > MAX_MESSAGE_BYTES) return deps.liveStudio.noteDroppedMessage(paired.channel.id, `too large (${data.length} chars)`);
           deps.liveStudio.handleBridgeMessage(paired.channel.id, id, data);
         },
         onClose() {
@@ -110,11 +110,12 @@ export function mountRealtime(app: Hono<AppEnv>, deps: AppDeps): void {
       const id = crypto.randomUUID();
       return {
         onOpen(_event, ws) {
-          deps.liveStudio.attachBridge(channel, toPeer(id, ws));
+          // The stage link is in OBS: it never takes the live away from a paired PC.
+          if (!deps.liveStudio.attachBridge(channel, toPeer(id, ws))) return ws.close(BRIDGE_CLOSE.busy, "a paired device is connected");
         },
         onMessage(event) {
           const data = typeof event.data === "string" ? event.data : "";
-          if (data.length > MAX_MESSAGE_BYTES) return;
+          if (data.length > MAX_MESSAGE_BYTES) return deps.liveStudio.noteDroppedMessage(channel.id, `too large (${data.length} chars)`);
           deps.liveStudio.handleBridgeMessage(channel.id, id, data);
         },
         onClose() {
