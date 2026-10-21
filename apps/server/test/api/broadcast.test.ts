@@ -218,6 +218,7 @@ describe("TikTok LIVE Studio automation", () => {
       state: "live",
       detail: "Transmitindo pelo TikTok LIVE Studio",
       bridgeConnected: false,
+      probe: expect.objectContaining({ connected: true, tiktokUsername: "curiosabolha" }),
     });
 
     await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "studiocaster" });
@@ -353,6 +354,7 @@ describe("TikTok LIVE Studio automation", () => {
       state: "live",
       detail: "Transmitindo pelo TikTok LIVE Studio",
       bridgeConnected: true,
+      probe: expect.objectContaining({ connected: true, scene: "Cena do PC" }),
     });
 
     await server.json(`/api/channels/${channel.id}/stop`, { method: "POST", user: "bridgecaster" });

@@ -84,7 +84,7 @@ export async function setDesiredStateInternal(db: Db, id: string, desiredState: 
   await db.update(channel).set({ desiredState, updatedAt: new Date() }).where(eq(channel.id, id));
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function isUuid(value: string): boolean {
   return UUID.test(value);
 }

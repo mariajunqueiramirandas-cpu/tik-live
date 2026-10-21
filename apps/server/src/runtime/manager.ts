@@ -243,7 +243,7 @@ export class RuntimeManager {
           ...(liveStudio.probe ? { probe: liveStudio.probe } : {}),
         };
       } else if (this.options.liveStudio?.isBridgeConnected(channel.id)) {
-        const probe = this.options.liveStudio.bridgeProbe(channel.id);
+        const probe = this.options.liveStudio.latestProbe(channel.id);
         snapshot.health.liveStudio = {
           state: "stopped",
           detail: "Agente conectado no seu PC",
@@ -256,7 +256,7 @@ export class RuntimeManager {
     const summary = this.summary(channel);
     const snap = stoppedSnapshot(channel, slot?.stage.counts() ?? { program: 0, preview: 0, broadcast: 0 }, summary.status, summary.detail);
     if (this.options.liveStudio?.isBridgeConnected(channel.id)) {
-      const probe = this.options.liveStudio.bridgeProbe(channel.id);
+      const probe = this.options.liveStudio.latestProbe(channel.id);
       snap.health.liveStudio = {
         state: "stopped",
         detail: "Agente conectado no seu PC",
