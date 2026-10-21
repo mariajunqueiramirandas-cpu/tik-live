@@ -9,6 +9,7 @@ import { hexToRgb, type Rgb } from "../color";
 import type { Program, QuadGeometry } from "../gl/gl";
 import { GLOW_DOT_FRAGMENT } from "../gl/shaders";
 import { rgba, ShapeDrawer, type Rgba } from "../gl/shapes";
+import { fit, HUD } from "../text/kit";
 import { FONT_FAMILY, GOLD as GOLD_HEX, INK, measureWith, roundRect, TextSprite, truncate, withAlpha } from "../text/sprites";
 import { GOLD, STAGE_HEIGHT, STAGE_WIDTH } from "./atmosphere";
 import type { CharacterLayer } from "./character";
@@ -111,8 +112,9 @@ export class FxLayer {
   private readonly chip: TextSprite;
   private chipTitle = "";
   private chipCredit = "";
+  /** The room the chip was painted for, right of the AI badge. */
+  private chipRoom = 0;
   private readonly eq = new Float32Array(4);
-  private readonly chipY = new Spring(600, SPRINGS.snappy);
 
   constructor(
     private readonly ctx: StageContext,
@@ -374,10 +376,11 @@ export class FxLayer {
     }
     this.chip.opacity.target = playing ? 1 : 0;
     if (playing) this.player.bands(this.eq);
-    // Below the alerts; during games, up beside the badge so the board stays clear.
-    this.chipY.target = 600 + (300 - 600) * f.game;
-    this.chipY.step(dt);
-    this.chip.y = this.chipY.value;
+    // Right of the AI badge, in the show bar, clear of the columns and the board (ADR-0048).
+    const room = CHIP_RIGHT - f.nowPlayingX;
+    if (this.chipTitle && Math.abs(room - this.chipRoom) > 1) this.paintChip(f.scale, room);
+    this.chip.x = f.nowPlayingX;
+    this.chip.y = f.nowPlayingY + (BADGE_H - this.chip.height) / 2;
     this.chip.update(dt, t);
     this.hype.update(dt, f);
 
@@ -413,8 +416,8 @@ export class FxLayer {
       // The equalizer: four bands of the music's spectrum.
       const alpha = Math.min(1, this.chip.opacity.value);
       for (let i = 0; i < 4; i++) {
-        const h = 10 + 26 * Math.min(1, (this.eq[i] as number) * 1.4);
-        this.shapes.box(this.chip.x + 30 + i * 11, this.chip.y + (this.chipCredit ? 56 : 46) - h / 2, 7, h, 3.5, EQ, alpha, undefined, undefined, 0, 0, -1, f.scale);
+        const h = 8 + 22 * Math.min(1, (this.eq[i] as number) * 1.4);
+        this.shapes.box(this.chip.x + 18 + i * 10, this.chip.y + this.chip.height / 2 - h / 2, 6, h, 3, EQ, alpha, undefined, undefined, 0, 0, -1, f.scale);
       }
     }
   }
@@ -578,32 +581,32 @@ export class FxLayer {
     s.x = 540 - s.width / 2;
   }
 
-  private paintChip(scale: number): void {
-    const font = `700 30px ${FONT_FAMILY}`;
-    const creditFont = `500 20px ${FONT_FAMILY}`;
-    const text = truncate(this.chipTitle, 28);
-    const credit = truncate(this.chipCredit, 44);
+  /** The chip, sized for `room` (stage px between the AI badge and the right column). */
+  private paintChip(scale: number, room = this.chipRoom || CHIP_RIGHT - 320): void {
+    this.chipRoom = room;
+    const font = `800 22px ${FONT_FAMILY}`;
+    const creditFont = `600 16px ${FONT_FAMILY}`;
+    const textRoom = Math.max(120, room - 76);
+    const text = fit(this.chipTitle, font, textRoom);
+    const credit = this.chipCredit ? fit(this.chipCredit, creditFont, textRoom) : "";
     // A credited track (the DJ's) gets a second line: the license asks for it on screen.
-    const lines = credit ? 2 : 1;
-    const width = Math.max(measureWith(font)(text), credit ? measureWith(creditFont)(credit) : 0) + 104;
-    const height = lines === 2 ? 112 : 92;
-    const box = lines === 2 ? 72 : 52;
-    this.chip.x = 1016 - width;
+    const width = Math.max(measureWith(font)(text), credit ? measureWith(creditFont)(credit) : 0) + 76;
+    const height = credit ? 56 : 44;
     this.chip.draw(width, height, scale, (ctx) => {
-      ctx.fillStyle = "rgba(14,6,34,0.72)";
-      ctx.strokeStyle = "rgba(163,151,214,0.55)";
-      ctx.lineWidth = 2;
-      roundRect(ctx, 2, 20, width - 4, box, 26);
+      ctx.fillStyle = "rgba(14,6,34,0.78)";
+      ctx.strokeStyle = "rgba(124,245,255,0.45)";
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, 0.75, 0.75, width - 1.5, height - 1.5, (height - 1.5) / 2);
       ctx.fill();
       ctx.stroke();
       ctx.font = font;
       ctx.textBaseline = "middle";
       ctx.fillStyle = INK;
-      ctx.fillText(text, 84, lines === 2 ? 42 : 47);
+      ctx.fillText(text, 62, credit ? 21 : height / 2 + 1);
       if (credit) {
         ctx.font = creditFont;
-        ctx.globalAlpha = 0.72;
-        ctx.fillText(credit, 84, 72);
+        ctx.globalAlpha = 0.75;
+        ctx.fillText(credit, 62, 41);
         ctx.globalAlpha = 1;
       }
     });
@@ -611,3 +614,6 @@ export class FxLayer {
 }
 
 const EQ: Rgba = rgba("#7CF5FF");
+/** The chip ends left of the right column, and is centered on the AI badge's row. */
+const CHIP_RIGHT = HUD.right - HUD.column - 16;
+const BADGE_H = 42;

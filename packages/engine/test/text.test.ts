@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { syllableCount, syllableEnvelope } from "../src/audio/envelope";
-import { formatCount, formatCountdown, giftCameIn, goalFraction, goalProgress, nextBoard, twinkle, windowLabel } from "../src/text/hud";
+import { giftCameIn, nextBoard, twinkle } from "../src/text/hud";
+import { formatCount, formatCountdown, goalFraction, goalProgress, windowLabel } from "../src/text/kit";
 import { layoutCaption, wordAtProgress } from "../src/text/layout";
 
 // Monospace stand-in: every character is 0.5em wide.

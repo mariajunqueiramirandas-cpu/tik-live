@@ -58,19 +58,21 @@ test("captions and alerts appear when the host speaks and gifts arrive", async (
   });
   // The reveal starts once playback begins (a microtask later), so render separately.
   await page.evaluate(() => (window as any).__lab.frame(2.5));
-  // Caption text sits below the orb; the gift alert at the upper right.
+  // Caption text sits below the orb; the gift's name card at the upper right (no goals: right under TikTok's header).
   let lit = 0;
   for (let x = 140; x <= 940; x += 20) if (brightness(await probe(page, x, 1110)) > 450) lit++;
   expect(lit, "caption pixels").toBeGreaterThan(2);
   let gold = 0;
-  for (let x = 700; x <= 1010; x += 6) {
-    const [r, g, b] = await probe(page, x, 392);
-    if (r > 180 && g > 140 && b < 140) gold++;
+  for (const y of [256, 272]) {
+    for (let x = 700; x <= 1030; x += 6) {
+      const [r, g, b] = await probe(page, x, y);
+      if (r > 180 && g > 140 && b < 140) gold++;
+    }
   }
-  expect(gold, "gold gift text").toBeGreaterThan(0);
+  expect(gold, "the gift card's gold mark and line").toBeGreaterThan(2);
 });
 
-test("up next and the top likers show under the badge, and leave when emptied", async ({ page }) => {
+test("up next and the rankings show under the badge, and leave when emptied", async ({ page }) => {
   // The panel's top-left corner area, clear of the orb and the alerts.
   const lit = async () => {
     let n = 0;
@@ -177,8 +179,8 @@ test("the support ticker stays up under the goals, and the gift showcase shows u
     for (let y = y0; y <= y1; y += 6) for (let x = x0; x <= x1; x += step) if (match(await probe(page, x, y))) n++;
     return n;
   };
-  // The ticker sits right under the goals (they end near y 350), the showcase under the orb.
-  const ticker = () => count(690, 1004, 360, 440, 12, gold);
+  // The ticker sits right under the goals (they end near y 460), the showcase under the orb.
+  const ticker = () => count(720, 1020, 480, 590, 12, gold);
   const showcase = () => count(80, 1000, 904, 1046, 30, gold);
   await page.evaluate(() => (window as any).__lab.frame(2));
   const before = { ticker: await ticker(), showcase: await showcase() };
@@ -206,6 +208,32 @@ test("the support ticker stays up under the goals, and the gift showcase shows u
     (window as any).__lab.frame(9);
   });
   expect(await ticker(), "ticker taken down").toBeLessThanOrEqual(before.ticker + 2);
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+});
+
+test("during a game the side panels fold to fit above the board", async ({ page }) => {
+  const gold = ([r, g, b]: Rgba) => r > 180 && g > 140 && b < 140;
+  const count = async (x0: number, x1: number, y0: number, y1: number) => {
+    let n = 0;
+    for (let y = y0; y <= y1; y += 6) for (let x = x0; x <= x1; x += 10) if (gold(await probe(page, x, y))) n++;
+    return n;
+  };
+  await page.evaluate(async () => {
+    const lab = (window as any).__lab;
+    await lab.ready();
+    lab.hud(true);
+    lab.goals(true);
+    lab.ticker(true);
+    lab.frame(3);
+  });
+  // At rest the gifters' card runs past y 560: second and third place, and what takes the crown.
+  expect(await count(60, 360, 566, 700), "the whole card").toBeGreaterThan(3);
+  await page.evaluate(() => {
+    (window as any).__lab.scene("trivia");
+    (window as any).__lab.frame(6);
+  });
+  expect(await count(60, 360, 566, 700), "folded above the board").toBe(0);
+  expect(await count(60, 360, 480, 550), "first place stays").toBeGreaterThan(3);
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
 });
 
