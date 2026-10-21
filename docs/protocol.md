@@ -163,10 +163,13 @@ without reloading.
 
 A reaction on its own, not tied to a line: a game win, the end of a game, a
 like milestone. `fx` is one of `EFFECTS` (particle bursts like `confetti`,
-`hearts`, `fireworks`, `notes`, and character moves like `spin`, `jump`,
-`shake`). Optional `intensity`, 0.25 to 3 (default 1), scales it. Gifts,
-follows, shares and likes don't need this: the stage plays their effects
-from [`alert`](#alert) and [`stats`](#stats) on its own.
+`hearts`, `fireworks`, `notes`, character moves like `spin`, `jump`,
+`shake`, and `mlg`, full hype mode: RGB lights, lasers, "deal with it"
+sunglasses, hitmarkers and meme stamps, [ADR-0046](adr/0046-gifts-first-and-hype-mode.md)).
+Optional `intensity`, 0.25 to 3 (default 1), scales it. Gifts, follows,
+shares and likes don't need this: the stage plays their effects from
+[`alert`](#alert) and [`stats`](#stats) on its own, and every gift alert
+sets off hype mode, longer and louder for bigger gifts and combos.
 
 #### `game`
 
@@ -378,8 +381,9 @@ after `hello`, from the top.
 ```
 
 A short synthesized sound for a show moment (`SOUNDS` in
-`packages/shared/src/music.ts`): gifts, follows and shares, game rounds
-opening and revealing, wins, the end of a game. Not sent when the creator
+`packages/shared/src/music.ts`): gifts (each with an `airhorn` and a
+`hitmarker`), follows and shares, game rounds opening and revealing, wins,
+the end of a game. Not sent when the creator
 turned sound effects off.
 
 #### `dj`

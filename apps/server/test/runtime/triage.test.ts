@@ -24,6 +24,21 @@ describe("Triage", () => {
     expect(order).toEqual(["Lion", "Rose", "chat"]);
   });
 
+  it("puts the smallest gift ahead of any message, the dono da live's included (ADR-0046)", () => {
+    const { triage, ingest, clock } = setup();
+    triage.promote("boss", "boss", clock.now() + 60_000);
+    ingest(chat("boss", "Blip, qual seu time favorito?"));
+    ingest(gift("b", "Rose", 1));
+    expect(triage.take(2).map((item) => item.event.kind)).toEqual(["gift", "chat"]);
+  });
+
+  it("keeps a gift waiting for its thank-you for minutes", () => {
+    const { triage, ingest, clock } = setup();
+    ingest(gift("b", "Rose", 1));
+    clock.advance(5 * 60_000);
+    expect(triage.take(1)[0]?.event.kind).toBe("gift");
+  });
+
   it("folds repeat gifts from one viewer into a single thank-you", () => {
     const { triage, ingest } = setup();
     for (let i = 0; i < 10; i++) ingest(gift("maria", "Rose", 1));

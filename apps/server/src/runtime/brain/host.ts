@@ -328,6 +328,8 @@ export class ClaudeHost implements HostBrain {
 function sentenceCap(turn: TurnRequest, maxSentences: number): number {
   // A game turn reads a question and its options, so it gets a little more room.
   if (turn.kind === "game" || turn.kind === "perk") return maxSentences + 3;
+  // A gift's moment gets room to be loud (ADR-0046).
+  if (turn.kind === "thanks") return Math.max(2, maxSentences) + 1;
   const chat = turn.items.filter((item) => item.event.kind === "chat" || item.event.kind === "question").length;
   // An answer to chat is kept as short as the brief asked: people are waiting on it.
   if (turn.kind === "react" && chat) return reactionSentences(chat, turn.items.length - chat, maxSentences) + 1;
@@ -381,6 +383,14 @@ export class ScriptedHost implements HostBrain {
           "[surprised] Pera, já é essa hora? O tempo aqui dentro é estranho.",
         ];
         return [fillers[this.fillerIndex++ % fillers.length] as string];
+      }
+      case "thanks": {
+        const hype = ["MITOU", "QUE ISSO", "BRABO DEMAIS", "+1000 DE AURA"];
+        return turn.items.slice(0, 3).map((item, i) => {
+          const e = item.event;
+          const what = e.kind === "gift" ? ` pelo ${e.count}x ${e.giftName}` : "";
+          return `[excited] ${hype[i % hype.length]}! ${name(item)}, obrigado${what}! Lenda da live!`;
+        });
       }
       case "react": {
         const out: string[] = [];

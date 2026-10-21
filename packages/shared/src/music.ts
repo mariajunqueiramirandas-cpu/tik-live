@@ -105,7 +105,7 @@ function maxRepeats(bpm: number, bars: number): number {
 }
 
 /** Short sounds for show moments. The stage synthesizes them; no samples. */
-export const SOUNDS = ["pop", "chime", "whoosh", "tick", "start", "reveal", "win", "fail", "fanfare", "drumroll", "applause", "levelup"] as const;
+export const SOUNDS = ["pop", "chime", "whoosh", "tick", "start", "reveal", "win", "fail", "fanfare", "drumroll", "applause", "levelup", "airhorn", "hitmarker"] as const;
 export type Sound = (typeof SOUNDS)[number];
 
 /** Ready-made pieces: the studio can play them, and they show what the language looks like. */

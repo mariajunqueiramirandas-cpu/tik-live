@@ -70,13 +70,17 @@ describe("Director", () => {
     director.handleEvent(gift("maria", "Rose", 1));
     director.handleEvent(chat("joe", "what are you?"));
     await step(2_000);
-    expect(kinds()).toEqual(["opening", "react"]);
-    expect(host.turns[1]?.items.map((i) => i.event.kind)).toEqual(["gift", "chat"]);
+    // The gift gets a turn of its own, first (ADR-0046); the message comes right after.
+    expect(kinds()).toEqual(["opening", "thanks"]);
+    expect(host.turns[1]?.items.map((i) => i.event.kind)).toEqual(["gift"]);
+    await step(2_000);
+    expect(kinds()).toEqual(["opening", "thanks", "react"]);
+    expect(host.turns[2]?.items.map((i) => i.event.kind)).toEqual(["chat"]);
 
     await step(2_000); // quiet, but not for long enough
-    expect(kinds()).toHaveLength(2);
+    expect(kinds()).toHaveLength(3);
     await step(6_000);
-    expect(kinds()).toEqual(["opening", "react", "filler"]);
+    expect(kinds()).toEqual(["opening", "thanks", "react", "filler"]);
   });
 
   it("keeps the recent lines it actually spoke", async () => {
@@ -267,22 +271,41 @@ describe("Director turn-taking", () => {
     director.handleEvent(gift("maria", "Rose", 1));
     expect(speech.pending()).toBe(0); // filler 2 and 3 dropped; filler 1 still on stage
     await step(); // no gap after yielding
-    expect(host.turns.map((t) => t.kind)).toEqual(["opening", "filler", "react"]);
+    expect(host.turns.map((t) => t.kind)).toEqual(["opening", "filler", "thanks"]);
     // The host knows the rest of its filler never aired.
     expect(host.turns.at(-1)?.context.room).toContain('"filler 2" "filler 3"</unsaid>');
     await next();
-    expect(output.played.slice(-2)).toEqual(["filler 1", "react 1"]);
+    expect(output.played.slice(-2)).toEqual(["filler 1", "thanks 1"]);
   });
 
-  it("never cuts a reaction short for another event", async () => {
+  it("never cuts a reaction short for a message, but a gift goes first (ADR-0046)", async () => {
     const { director, host, speech, step, next } = liveSetup();
     await step();
     for (let i = 0; i < 3; i++) await next();
     director.handleEvent(chat("joe", "hello host"));
     await step(2_000);
     expect(host.turns.at(-1)?.kind).toBe("react");
-    director.handleEvent(gift("maria", "Lion", 500));
+    director.handleEvent(chat("ana", "hi again"));
     expect(speech.pending()).toBe(2); // react 2 and 3 stay
+    director.handleEvent(gift("maria", "Lion", 500));
+    expect(speech.pending()).toBe(0); // react 1 finishes on stage; the rest gives way to the gift
+    await step();
+    expect(host.turns.at(-1)?.kind).toBe("thanks");
+  });
+
+  it("never cuts a gift's thank-you short, not even for another gift", async () => {
+    const { director, host, speech, step, next } = liveSetup();
+    await step();
+    for (let i = 0; i < 3; i++) await next();
+    director.handleEvent(gift("maria", "Lion", 500));
+    await step(2_000);
+    expect(host.turns.at(-1)?.kind).toBe("thanks");
+    director.handleEvent(gift("joe", "Rose", 1));
+    expect(speech.pending()).toBe(2); // thanks 2 and 3 stay
+    for (let i = 0; i < 3; i++) await next();
+    await step(2_000);
+    expect(host.turns.at(-1)?.kind).toBe("thanks");
+    expect(host.turns.at(-1)?.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["joe"]);
   });
 
   it("tells the model what it's still about to say, and keeps busy replies brief", async () => {
@@ -399,16 +422,38 @@ describe("Director with games and context", () => {
   });
 
   it("gives the moderator what a line replies to, and plays sounds for gifts", async () => {
-    const { director, step, contexts, sounds } = gameSetup();
+    const { director, step, contexts, sounds, host } = gameSetup();
     await step();
     director.handleEvent(chat("lucas", "canta um funk aí"));
     director.handleEvent(gift("maria", "Galaxy", 1_000));
-    await step(2_000);
-    await step(100);
+    // The gift's thank-you first (ADR-0046), then the segment's round that went up meanwhile, then the message.
+    for (let i = 0; i < 6; i++) await step(2_000);
+    expect(host.turns.map((turn) => turn.kind)).toEqual(["opening", "thanks", "game", "react"]);
     expect(contexts.some((context) => context?.includes("Viewer lucas wrote: canta um funk aí"))).toBe(true);
     // The segment's bit is part of what a line means.
     expect(contexts.every((context) => context?.includes(`The show's current segment is "Quiz": Banter between rounds.`))).toBe(true);
     expect(sounds).toContain("fanfare");
+    expect(sounds).toContain("airhorn");
+  });
+
+  it("thanks a gift before a game round that's waiting for the floor (ADR-0046)", async () => {
+    const output = new HeldOutput();
+    const { director, host, games, step } = gameSetup(output);
+    const flush = async () => {
+      for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+    };
+    director.handleEvent({ kind: "viewers", at: 0, count: 12 });
+    await step();
+    await flush();
+    await step(5_000);
+    expect(games.status()?.phase).toBe("preparing"); // ready, waiting for the host
+    director.handleEvent(gift("maria", "Rose", 1));
+    output.finish();
+    await flush();
+    await step();
+    expect(host.turns.map((turn) => turn.kind)).toEqual(["opening", "thanks"]);
+    await step(2_000);
+    expect(host.turns.map((turn) => turn.kind)).toEqual(["opening", "thanks", "game"]);
   });
 });
 
@@ -425,10 +470,15 @@ describe("Director ordering", () => {
     director.handleEvent(at(chat("dani", "Blip do you like pizza?"), 4_000));
     director.handleEvent({ ...gift("leo", "Rose", 1), at: 5_000 });
     await step(2_000);
+    const thanks = host.turns.at(-1)!;
+    expect(thanks.kind).toBe("thanks");
+    expect(thanks.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""))).toEqual(["leo"]);
+    expect(thanks.context.brief).toContain("Now: Gifts first: this turn is only for the gifters, everything else waits. Thank e5 (gift).");
+    await step(2_000);
     const react = host.turns.at(-1)!;
     const who = react.items.map((item) => ("viewer" in item.event ? item.event.viewer.handle : ""));
-    expect(who).toEqual(["leo", "ana", "bia", "dani"]);
-    expect(react.context.brief).toContain("Now: Thank e5 (gift), then answer e1 (chat), then e2 (chat), then e4 (chat).");
+    expect(who).toEqual(["ana", "bia", "dani"]);
+    expect(react.context.brief).toContain("Now: Answer e1 (chat), then e2 (chat), then e4 (chat).");
     // caio's question is older than dani's, so it isn't answered in the same breath, but right after, saying who asked.
     await step(2_000);
     const owed = host.turns.at(-1)!;
@@ -554,10 +604,13 @@ describe("Director ordering", () => {
     director.handleEvent(chat("bia", "where are you from?"));
     director.handleEvent(gift("leo", "Rose", 1));
     await step(2_000);
-    expect(kinds()).toEqual(["opening", "react", "react", "react", "react", "show"]);
+    // The gift goes first, on its own turn (ADR-0046); the show's turn comes right after.
+    expect(kinds()).toEqual(["opening", "react", "react", "react", "react", "thanks"]);
+    await step(2_000);
+    expect(kinds().at(-1)).toBe("show");
     const show = host.turns.at(-1)!;
-    // The gift is still thanked, the plain chat is let go, and the question waits for the next reaction.
-    expect(show.items.map((item) => item.event.kind)).toEqual(["gift"]);
+    // The plain chat is let go, and the question waits for the next reaction.
+    expect(show.items).toEqual([]);
     expect(show.context.brief).toContain("Don't answer anyone by name this time");
     await step(2_000);
     expect(kinds().at(-1)).toBe("react");
@@ -911,7 +964,7 @@ describe("Director: like and gift goals (ADR-0036)", () => {
     director.handleEvent(gift("maria", "Galaxy", 60));
     expect(published.at(-1)?.[1]).toEqual({ kind: "gifts", value: 60, target: 100, level: 2 });
     await step(2_000);
-    expect(kinds()).toEqual(["opening", "react"]);
+    expect(kinds()).toEqual(["opening", "thanks"]);
     expect(host.turns[1]?.also).toContain("the stream just reached its gift goal of 50 diamonds (thank the gifters; the next goal is 100 diamonds)");
   });
 

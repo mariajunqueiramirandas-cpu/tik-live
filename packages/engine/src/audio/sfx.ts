@@ -128,6 +128,23 @@ function random(seed: number): () => number {
   return () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
 }
 
+/** An air horn blast: a dissonant cluster of brassy saws whose pitch sags a little as the air runs out. */
+function horn(ctx: BaseAudioContext, out: AudioNode, t: number, dur: number): number {
+  let end = t;
+  for (const midi of [69, 70, 74]) {
+    const p = new Patch(ctx, t, out);
+    const hz = midiToHz(midi);
+    const f = p.filter("lowpass", hz * 5, 1.4, p.out);
+    for (const o of [p.osc("sawtooth", hz, f), p.osc("square", hz, f, 14)]) {
+      o.frequency.setValueAtTime(hz * 1.03, t);
+      o.frequency.linearRampToValueAtTime(hz, t + 0.04);
+      o.frequency.linearRampToValueAtTime(hz * 0.97, t + dur);
+    }
+    end = Math.max(end, p.play(adsr(p.out.gain, t, 0.09, 0.012, 0.3, 0.85, t + dur, 0.04)).end);
+  }
+  return end;
+}
+
 const RECIPES: Record<Sound, Recipe> = {
   pop(ctx, out, t) {
     const p = new Patch(ctx, t, out);
@@ -227,6 +244,16 @@ const RECIPES: Record<Sound, Recipe> = {
       end = Math.max(end, hits(ctx, out, t, 1.55, "bandpass", hz, 1.5, claps, 0.012));
     }
     return end;
+  },
+  // Hype mode for gifts (ADR-0046): the air horn's "BWAA BWA BWAAAA" and the hitmarker's click.
+  airhorn: (ctx, out, t) => Math.max(horn(ctx, out, t, 0.2), horn(ctx, out, t + 0.27, 0.12), horn(ctx, out, t + 0.46, 0.65)),
+  hitmarker(ctx, out, t) {
+    const p = new Patch(ctx, t, out);
+    const o = p.osc("triangle", 3200, p.out);
+    o.frequency.setValueAtTime(3200, t);
+    o.frequency.exponentialRampToValueAtTime(1900, t + 0.05);
+    p.noise(p.filter("highpass", 5000, 0.7, p.out));
+    return p.play(adsr(p.out.gain, t, 0.9, 0.001, 0.018, 0, t + 0.06, 0.01)).end;
   },
   levelup(ctx, out, t) {
     const p = new Patch(ctx, t, out);

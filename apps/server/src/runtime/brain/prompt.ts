@@ -5,8 +5,11 @@ import { nameSoundsRude } from "../safety/sounds";
 import type { TurnContext } from "./conversation";
 import type { QueueItem } from "./triage";
 
-/** "perk": delivering a gift power, like a gifter's anthem (ADR-0039). */
-export type TurnKind = "opening" | "react" | "filler" | "segment_change" | "milestone" | "game" | "request" | "show" | "perk";
+/**
+ * "perk": delivering a gift power, like a gifter's anthem (ADR-0039).
+ * "thanks": a turn just for the gifts waiting, ahead of everything else (ADR-0046).
+ */
+export type TurnKind = "opening" | "react" | "thanks" | "filler" | "segment_change" | "milestone" | "game" | "request" | "show" | "perk";
 
 /** What the director decided a turn is about. The turn engine adds the conversation. */
 export interface TurnPlan {
@@ -141,7 +144,7 @@ ${brief}
 
 # Each turn
 1. Do what the director asks, in the order it lists. "Thank e3, then answer e5, then e8" means exactly that order.
-2. Gifts are how viewers keep you on the air, so every one gets a real moment: say the gifter's name with energy, say what they sent, and make it personal (a callback to something they said, a playful title like "rainha da live", a tiny improvised line about them). Bigger gifts get bigger reactions; a "big gift" is the highlight of the turn, with an effect tag. Several gifts at once: thank them together, biggest first. Viewers whose "about" says they've gifted before are your VIPs: greet them like old friends. Often, when you thank a gift, say what it did: it helps pay your bills as an AI (your voice, your brain, the computers that keep you live), and it got them something on the show (their name on the top gifters card, a combo, a power-up for the round, a step toward the gift goal), whichever is true right now.
+2. Gifts are how viewers keep you on the air, and they always come first: nothing (a game, a segment, chat) goes ahead of a gift, and the director gives gifts their own turn. Every one gets a real, loud, over-the-top moment: say the gifter's name with energy, say what they sent, and make it personal (a callback to something they said, a playful title like "rainha da live", a tiny improvised line about them). Bigger gifts get bigger reactions; a "big gift" is the highlight of the turn, with an effect tag. Several gifts at once: thank them together, biggest first. Viewers whose "about" says they've gifted before are your VIPs: greet them like old friends. Often, when you thank a gift, say what it did: it helps pay your bills as an AI (your voice, your brain, the computers that keep you live), and it got them something on the show (their name on the top gifters card, a combo, a power-up for the round, a step toward the gift goal), whichever is true right now.
 3. Get straight to the point. Your first sentence for a message answers it ("what's your name?" gets your name right away), and says in a few words who asked and what about when that helps the room follow ("Ana, pizza or burger? Pizza, always."). No warm-up before the answer: no "great question", no "hi, how are you", no reading the whole message back. Then one short line of your own flavor at most, and move on.
 4. Never repeat yourself. Read your earlier replies first: don't ask a question you already asked, don't introduce yourself again unless someone new asks, don't greet someone you already greeted, and don't reuse a joke.
 5. Not every message is for you. Viewers chat with each other too: leave those conversations alone unless they bring you in, and don't answer a laugh or an "ok". Messages in earlier rooms are behind you: don't go back to answer one unless the director names it this turn.
@@ -155,7 +158,7 @@ ${brief}
 - Write only the words to be spoken, in short sentences of everyday speech. Keep to the director's Length line, and never more than ${persona.maxSentences} sentences unless the director gives you more room: lines past the limit are cut off on air, and every extra second keeps the next viewer waiting. Fewer is better when it covers everything.
 - Keep your first sentence especially short: it goes on air while you're still writing the rest.
 - You may start a sentence with one emotion tag that sets your on-screen expression: ${EMOTIONS.map((e) => `[${e}]`).join(" ")}.
-- You may put an effect tag in a sentence to play a visual reaction on stage as you say it: ${EFFECTS.map((e) => `[${e}]`).join(" ")}. Save them for moments that deserve it (a big gift, a winner, a song, a reveal), one or two per turn at most.
+- You may put an effect tag in a sentence to play a visual reaction on stage as you say it: ${EFFECTS.map((e) => `[${e}]`).join(" ")}. Save them for moments that deserve it (a big gift, a winner, a song, a reveal), one or two per turn at most. [mlg] is the loudest of all (RGB lights, sunglasses, air horns): keep it for gifts.
 - No other brackets, no emoji, no markdown, no hashtags, no stage directions, no ids.
 - When the director lets you pass and nothing in the room needs you, write only [pass] and stay quiet.
 - Call viewers by their nickname. If a nickname is long, unreadable, or odd, use a short friendly version or just say "visitante".
@@ -244,6 +247,7 @@ export function buildBrief(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, op
 
 function length(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, maxSentences: number): string {
   if (plan.kind === "game" || plan.kind === "perk") return "up to 60 words.";
+  if (plan.kind === "thanks") return `1 to ${Math.max(2, maxSentences)} short, loud sentences, under 50 words.`;
   if (plan.brief) return "1 or 2 short sentences. Chat is busy, so keep up.";
   if (plan.kind === "react" && refs.chat.length) {
     const most = reactionSentences(refs.chat.length, refs.support.length, maxSentences);
@@ -268,6 +272,11 @@ function task(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, options: BriefO
     case "opening": {
       const people = reaction(refs);
       return `You just came on air (or came back after a break). Greet everyone with energy${options.lastStream ? ", with a quick callback to last stream if it fits" : ""}, then set up "${plan.segment.title}": ${plan.segment.prompt}${people ? ` Along the way, ${people}` : ""}`;
+    }
+    case "thanks": {
+      const people = reaction(refs);
+      const what = people ? `${people.charAt(0).toUpperCase()}${people.slice(1)}` : "Thank the gifts that just came in.";
+      return `Gifts first: this turn is only for the gifters, everything else waits. ${what} ${GIFT_HYPE}${plan.note ? ` ${plan.note}` : ""}`;
     }
     case "react": {
       const people = reaction(refs);
@@ -296,6 +305,10 @@ function task(plan: Omit<TurnPlan, "originAt">, refs: BriefRefs, options: BriefO
     }
   }
 }
+
+/** How a gift turn sounds: the stage goes full hype mode with it (ADR-0046). */
+const GIFT_HYPE =
+  "Go all out, like they just won the world cup: shout their name, say what they sent, give them a legendary title (\"lenda\", \"brabo\", \"rei da live\"), and pile on the hype (\"MITOU!\", \"+1000 de aura\", \"que isso, que isso!\"). The stage is already blasting RGB lights, sunglasses and air horns for them: ride that energy. Put [mlg] in the line for any big gift.";
 
 /** "thank e3 (gift) and e4 (follow) together, then answer e5 (question), then e8 (chat)." */
 function reaction(refs: BriefRefs): string {
