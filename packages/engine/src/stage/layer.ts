@@ -62,4 +62,7 @@ export class Frame {
   characterMix = 1;
   moteFraction = 1;
   speaking = false;
+  /** Where the now-playing chip goes, right of the AI badge (the text layer's; read a frame later). */
+  nowPlayingX = 320;
+  nowPlayingY = 262;
 }

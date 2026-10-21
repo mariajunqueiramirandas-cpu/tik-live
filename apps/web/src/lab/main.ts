@@ -9,7 +9,7 @@ import { HUD, SCENES, tick } from "./samples";
  * `window.__lab`; `?demo` plays the scripted show. Also:
  * `?scene=trivia|trivia-reveal|poll|...` (see samples.ts), `?fx=confetti`,
  * `?gift=galaxy`, `?emotion=shy`, `?music=lofi-night`, `?caption=0` (no
- * sample caption with scenes), `?hud` (up next and top likers), `?support`
+ * sample caption with scenes), `?hud` (up next and the kings), `?support`
  * (the "apoie a live" card), `?goals` (the stream's goals), `?hook` (the call
  * to people scrolling past), `?perks` (the gift showcase), `?ticker` (the
  * always-on support ticker), `?boss` (the "dono

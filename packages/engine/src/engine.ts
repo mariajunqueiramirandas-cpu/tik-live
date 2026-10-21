@@ -438,7 +438,7 @@ export class Engine implements StageEngine {
         this.text.card.setVote(message.vote, this.time, this.scale);
         break;
       case "support":
-        this.text.card.setSupport(message.card, this.time, this.scale);
+        this.text.support.set(message.card, this.time, this.scale);
         break;
       case "perks":
         this.text.showcase.set(message.card, this.time, this.scale);
@@ -462,7 +462,7 @@ export class Engine implements StageEngine {
         this.text.upNext.set(message.items, this.time, this.scale);
         break;
       case "leaders":
-        this.text.card.set(message.board, message.rows, message.windowMin, this.time, this.scale);
+        this.text.leaders(message.board, message.rows, message.windowMin, this.time, this.scale);
         break;
       case "game": {
         const { scene } = message;
@@ -751,13 +751,19 @@ export class Engine implements StageEngine {
     if (!this.sprite || !sprite.visible()) return;
     const opacity = Math.max(0, Math.min(1, sprite.opacity.value));
     const settled = sprite.mix <= 0.001 || sprite.mix >= 0.999;
+    // Zoom grows or shrinks the sprite around its center.
+    const zoom = sprite.zoom.value;
+    const width = sprite.width * zoom;
+    const height = sprite.height * zoom;
+    const x = sprite.x + sprite.offsetX.value - (width - sprite.width) / 2;
+    const y = sprite.y + sprite.offsetY.value - (height - sprite.height) / 2;
     // Outside a cross-fade only one texture shows: sample just that one.
     if (settled && this.spriteSingle) {
       sprite.textures[sprite.mix >= 0.999 ? 1 : 0].bind(0);
       this.spriteSingle
         .use()
         .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
-        .v4("u_rect", sprite.x, sprite.y + sprite.offsetY.value, sprite.width, sprite.height)
+        .v4("u_rect", x, y, width, height)
         .i("u_tex", 0)
         .f("u_opacity", opacity);
       this.quad.draw();
@@ -768,7 +774,7 @@ export class Engine implements StageEngine {
     this.sprite
       .use()
       .v2("u_res", STAGE_WIDTH, STAGE_HEIGHT)
-      .v4("u_rect", sprite.x, sprite.y + sprite.offsetY.value, sprite.width, sprite.height)
+      .v4("u_rect", x, y, width, height)
       .i("u_tex", 0)
       .i("u_tex2", 1)
       .f("u_mix", sprite.mix)
@@ -851,7 +857,7 @@ export class Engine implements StageEngine {
   }
 }
 
-/** The highlighted end of an alert: "<name> enviou Rose ×5", "<name> começou a seguir", "<name> desbloqueou Fura-fila!". */
+/** The highlighted end of an alert: "<name> enviou Rose ×5", "<name> começou a seguir", "<name> ativou Fura-fila!". */
 export function alertDetail(message: Extract<StageServerPayload, { t: "alert" }>): string {
   if (message.kind === "gift") {
     // TikTok's own convention: the gift's name (as TikTok sends it), then the combo count.
@@ -862,7 +868,7 @@ export function alertDetail(message: Extract<StageServerPayload, { t: "alert" }>
     case "level":
       return `subiu pro nível ${message.level ?? 2}!`;
     case "crown":
-      return "assumiu o topo dos presentes!";
+      return "assumiu a coroa!";
     case "perk":
       return `${message.perk || "um poder"}!`;
     case "raffle":

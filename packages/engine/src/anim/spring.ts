@@ -17,6 +17,8 @@ export const SPRINGS = {
   bouncy: { stiffness: 180, damping: 9 },
   /** Mouth and audio-driven values: fast, tightly damped. */
   quick: { stiffness: 700, damping: 48 },
+  /** HUD pops (an alert landing, a countdown's last seconds): a quick overshoot that settles fast. */
+  pop: { stiffness: 380, damping: 15 },
 } satisfies Record<string, SpringConfig>;
 
 const STEP = 1 / 120;

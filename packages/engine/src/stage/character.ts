@@ -13,7 +13,9 @@ export type Move = "spin" | "jump" | "shake";
 
 // extent: the orb quad's half-size in body radii. The body (wobble and squash
 // included) stays inside 1.2; the halo around it is drawn with the atmosphere.
-const ORB = { x: 540, y: 720, r: 165, extent: 1.25 };
+// It sits high in TikTok's safe frame, with the moment stage and the caption
+// under it, all above TikTok's comment feed (ADR-0049).
+const ORB = { x: 540, y: 556, r: 150, extent: 1.25 };
 /** During games the character moves up and shrinks so the board fits below. */
 const GAME_ORB = { y: 430, r: 105 };
 const INK_DARK = hexToRgb("#0B0420");

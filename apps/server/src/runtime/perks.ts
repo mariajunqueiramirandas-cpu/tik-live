@@ -14,7 +14,7 @@ export type PerkId = (typeof PERK_IDS)[number];
 export interface Perk {
   id: PerkId;
   diamonds: number;
-  /** As the alert and the host say it: "<name> desbloqueou Dono da live!". */
+  /** As the alert and the host say it: "<name> ativou Dono da live!". */
   label: string;
   /** Its row on the card. */
   card: string;
