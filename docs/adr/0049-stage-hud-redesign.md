@@ -1,6 +1,6 @@
 # ADR-0049: A stage HUD built to keep people watching
 
-**Status:** Proposed
+**Status:** Proposed (the safe frame's numbers amended by [ADR-0050](0050-safe-frame-measured-on-a-phone.md))
 **Date:** 2026-10-21
 **Deciders:** Project owner
 **Amends:** ADR-0009 (where the character sits), ADR-0028 (up next and the ranking card), ADR-0032 (where the support card shows), ADR-0036 (the goal panel), ADR-0037 (the call to passers-by), ADR-0039 (the "dono da live" badge and gift power alerts), ADR-0040 (the challenge banner), ADR-0041 (the support ticker and the gift showcase), ADR-0045 (where the now-playing chip sits)

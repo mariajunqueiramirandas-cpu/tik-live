@@ -75,9 +75,9 @@ const SPOTS: ReadonlyArray<readonly [number, number]> = [
 ];
 /** During a game: beside and above the smaller character, never on the board. */
 const GAME_SPOTS: ReadonlyArray<readonly [number, number]> = [
-  [540, 190],
-  [215, 430],
-  [865, 450],
+  [540, 150],
+  [215, 330],
+  [865, 340],
 ];
 /** Stamps keep this far inside the stage's edges once they've landed. */
 const STAMP_MARGIN = 24;

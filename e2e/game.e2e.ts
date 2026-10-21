@@ -93,15 +93,15 @@ test("every game scene draws its board, in its own accent, under a smaller chara
     await open(page, `scene=${name}`);
     await page.evaluate(() => (window as any).__lab.frame(3));
     expect(await error(page), name).toBeNull();
-    // The character moved up and shrank to make room: its body is near y 430.
-    expect(brightness(await probe(page, 540, 410)), `${name}: character up top`).toBeGreaterThan(300);
+    // The character moved up and shrank to make room: its body is near y 326.
+    expect(brightness(await probe(page, 540, 300)), `${name}: character up top`).toBeGreaterThan(300);
     // The board has text and shapes.
-    expect(await count(page, [100, 600, 980, 1440], 12, "bright"), `${name}: board content`).toBeGreaterThan(40);
+    expect(await count(page, [100, 450, 980, 1200], 12, "bright"), `${name}: board content`).toBeGreaterThan(40);
     const kind = name.replace(/-(reveal|running|finish|boom)$|4$/, "");
     // No timer once a round is revealed, and none on the potato: its fuse is secret.
     if (/-(reveal|boom)$/.test(name) || kind === "scoreboard" || kind === "podium" || kind === "potato") continue;
     // Open rounds: the timer bar (2/3 left) is in the scene's accent.
-    expect(near(await probe(page, 200, 669), ACCENTS[kind]!), `${name}: timer in accent`).toBe(true);
+    expect(near(await probe(page, 200, 521), ACCENTS[kind]!), `${name}: timer in accent`).toBe(true);
   }
 });
 
@@ -113,41 +113,41 @@ test("reveals highlight the right answer and the scoreboard builds a podium", as
   }
   await open(page, "scene=scoreboard");
   await page.evaluate(() => (window as any).__lab.frame(3));
-  expect(near(await probe(page, 540, 1120), [0xff, 0xd1, 0x5c], 60), "first place in gold").toBe(true);
+  expect(near(await probe(page, 540, 900), [0xff, 0xd1, 0x5c], 60), "first place in gold").toBe(true);
 });
 
 test("the loop's podium keeps first place hidden until it's revealed", async ({ page }) => {
   await open(page, "scene=podium");
   await page.evaluate(() => (window as any).__lab.frame(3));
   expect(await error(page)).toBeNull();
-  expect(near(await probe(page, 540, 1120), [0xff, 0xd1, 0x5c], 60), "first place still a question mark").toBe(false);
+  expect(near(await probe(page, 540, 900), [0xff, 0xd1, 0x5c], 60), "first place still a question mark").toBe(false);
   await page.evaluate(() => {
     const lab = (window as any).__lab;
     lab.apply({ t: "game", scene: { kind: "podium", title: "Pódio geral", places: [{ name: "mari.souza", points: 1240 }, { name: "lu.desenha", points: 985 }, { name: "duda", points: 610 }], suspense: null } });
     lab.frame(4.5);
   });
-  expect(near(await probe(page, 540, 1120), [0xff, 0xd1, 0x5c], 60), "first place in gold once revealed").toBe(true);
+  expect(near(await probe(page, 540, 900), [0xff, 0xd1, 0x5c], 60), "first place in gold once revealed").toBe(true);
 });
 
 test("same-round updates stay in place, new rounds transition, null goes back to the show", async ({ page }) => {
   await open(page, "scene=poll");
   await page.evaluate(() => (window as any).__lab.frame(3));
-  const timer = await probe(page, 200, 669);
+  const timer = await probe(page, 200, 521);
   // A tally update: no entrance replays, the board is still fully there right after.
   await page.evaluate(() => {
     const lab = (window as any).__lab;
     lab.apply({ t: "game", scene: { kind: "poll", round: 2, rounds: 5, phase: "open", remainingMs: 17_000, durationMs: 30_000, question: "Pizza com abacaxi: sim ou não?", options: ["Sim, doce e salgado combinam", "Nunca, isso é um crime"], tally: [80, 20] } });
     lab.frame(3.05);
   });
-  expect(near(await probe(page, 200, 669), [timer[0], timer[1], timer[2]], 30), "board stays put").toBe(true);
+  expect(near(await probe(page, 200, 521), [timer[0], timer[1], timer[2]], 30), "board stays put").toBe(true);
   // Back to the show: the board leaves and the character returns to the middle.
   await page.evaluate(() => {
     const lab = (window as any).__lab;
     lab.scene(null);
     lab.frame(6);
   });
-  expect(near(await probe(page, 200, 669), [timer[0], timer[1], timer[2]], 30), "board gone").toBe(false);
-  expect(brightness(await probe(page, 540, 470)), "character back in the middle").toBeGreaterThan(300);
+  expect(near(await probe(page, 200, 521), [timer[0], timer[1], timer[2]], 30), "board gone").toBe(false);
+  expect(brightness(await probe(page, 540, 410)), "character back in the middle").toBeGreaterThan(300);
   expect(await error(page)).toBeNull();
 });
 
@@ -161,8 +161,8 @@ test("the board survives a lost GPU context", async ({ page }) => {
     await new Promise((r) => setTimeout(r, 300));
     (window as any).__lab.frame(3.5);
   });
-  expect(near(await probe(page, 200, 669), ACCENTS.trivia!), "timer after restore").toBe(true);
-  expect(await count(page, [100, 600, 980, 1440], 12, "bright"), "board text after restore").toBeGreaterThan(40);
+  expect(near(await probe(page, 200, 521), ACCENTS.trivia!), "timer after restore").toBe(true);
+  expect(await count(page, [100, 450, 980, 1200], 12, "bright"), "board text after restore").toBeGreaterThan(40);
   expect(await error(page)).toBeNull();
 });
 
@@ -182,6 +182,34 @@ test("every effect and gift tier plays without errors; big gifts get a banner", 
     (window as any).__lab.gift("galaxy");
     (window as any).__lab.frame(time + 1.2);
   }, t);
-  expect(await count(page, [140, 900, 940, 1120], 8, "gold"), "gold banner").toBeGreaterThan(10);
+  expect(await count(page, [140, 700, 940, 950], 8, "gold"), "gold banner").toBeGreaterThan(10);
+  expect(await error(page)).toBeNull();
+});
+
+test("nothing a viewer reads is drawn where TikTok's notices and comments go", async ({ page }) => {
+  // Measured on a phone: TikTok's "entrou" notices and comment feed cover the stream from y 1325 down.
+  await open(page, "bare");
+  await page.evaluate(() => (window as any).__lab.frame(2));
+  const empty = await count(page, [60, 1330, 1020, 1900], 10, "bright");
+  for (const name of ["trivia", "truefalse", "poll4", "tug", "potato", "scoreboard"]) {
+    await page.evaluate((scene) => {
+      const lab = (window as any).__lab;
+      lab.hud(true);
+      lab.goals(true);
+      lab.ticker(true);
+      lab.scene(scene);
+      lab.caption("Rodada quatro de cinco, e agora é a pergunta mais difícil de todas, valendo pontos em dobro!");
+    }, name);
+    await page.evaluate(() => (window as any).__lab.frame(((window as any).__t = ((window as any).__t ?? 2) + 3)));
+    expect(await count(page, [60, 1330, 1020, 1900], 10, "bright"), `${name}: below y 1325`).toBeLessThanOrEqual(empty + 6);
+  }
+  // And at rest: the caption ends above it too.
+  await page.evaluate(() => {
+    const lab = (window as any).__lab;
+    lab.scene(null);
+    lab.caption("Chat, vocês estão prontos para a próxima rodada? Valendo pontos em dobro pra quem acertar primeiro!");
+    lab.frame(((window as any).__t += 4));
+  });
+  expect(await count(page, [60, 1330, 1020, 1900], 10, "bright"), "at rest: below y 1325").toBeLessThanOrEqual(empty + 6);
   expect(await error(page)).toBeNull();
 });

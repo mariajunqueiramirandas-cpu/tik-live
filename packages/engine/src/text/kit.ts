@@ -31,32 +31,35 @@ export const SURFACE = "rgba(13,7,34,0.86)";
 export const MEDALS = [GOLD, "#D9E1F7", "#E8A06A"] as const;
 
 /**
- * Where things sit on the 1080 × 1920 stage (ADR-0049). Everything a viewer
- * must read stays inside a safe frame: below TikTok's header and its chips
- * (y 236), above its comment feed (y 1180), and clear of the sides a tall
- * phone crops when TikTok fills the screen (96 px each side). Inside it, top
- * to bottom: the title and its chips, the side cards flanking the
- * character, the moment stage under the character, and the caption.
+ * Where things sit on the 1080 × 1920 stage (ADR-0050). Everything a viewer
+ * must read stays inside the frame TikTok leaves clear, measured on a phone:
+ * TikTok shows the stream at full width under its header, its chips cover
+ * the top 80 px, and its "entrou" notices and comment feed cover everything
+ * from y 1325 down. Inside it, top to bottom: the title and its chips, the
+ * side cards flanking the character, the moment stage under the character,
+ * and the caption.
  */
 export const HUD = {
-  /** The side margin: what a 20:9 phone crops, plus a little. */
-  margin: 96,
+  /** The side margin: the whole width shows, this just keeps cards off the edge. */
+  margin: 48,
   /** The right edge of everything. */
-  right: 1080 - 96,
+  right: 1080 - 48,
   /** The title row, and the row of chips under it (the AI badge, now playing). */
-  titleTop: 228,
-  chipsTop: 288,
+  titleTop: 104,
+  chipsTop: 164,
   /** Where the side cards start, under the chips. */
-  sideTop: 346,
+  sideTop: 222,
   /** The side columns: beside the character at rest, wider beside the smaller one in a game. */
-  column: 272,
-  gameColumn: 324,
+  column: 300,
+  gameColumn: 372,
   gap: 10,
   /** The moment stage under the character: one card at a time, centered in this slot. */
-  stageTop: 748,
+  stageTop: 702,
   stageHeight: 148,
   /** In a game, where the board starts: side panels end above it. */
-  boardTop: 556,
+  boardTop: 440,
+  /** Where TikTok's notices and comments start: nothing to read below this. */
+  safeBottom: 1310,
 } as const;
 
 /** How wide a side column is, at rest or in a game. */

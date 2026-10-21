@@ -48,7 +48,8 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   allocate, and a quality governor that steps down before frames drop. It
   keeps animating through disconnects and reconnects on its own.
 - **A HUD built to keep people watching**: calm edges, a busy center, all
-  inside the area TikTok's own UI leaves clear. Small and still around the
+  inside the area TikTok's own UI leaves clear, measured on a phone (games
+  and captions included, [ADR-0050](docs/adr/0050-safe-frame-measured-on-a-phone.md)). Small and still around the
   character: who gives and who taps the most, the goals as bars that say
   what's left ("FALTAM 1.760"), and viewers' names on name cards. Right under
   the character, one card at a time: a challenge, a call to people who just

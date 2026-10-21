@@ -28,7 +28,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0020](0020-broadcast-pipeline-avx2.md) | Broadcast pipeline for CPU-only AVX2 hosts | Proposed |
 | [0021](0021-self-hosted-tts.md) | A self-hosted Brazilian Portuguese voice | Proposed (default voice amended by 0030) |
 | [0022](0022-host-turn-taking.md) | Host turn-taking and speech pacing | Proposed (scheduling amended by 0026, gift urgency by 0046) |
-| [0023](0023-chat-minigames.md) | Chat minigames, game scenes and stage reactions | Proposed (gift reactions amended by 0046) |
+| [0023](0023-chat-minigames.md) | Chat minigames, game scenes and stage reactions | Proposed (gift reactions amended by 0046, board placement by 0050) |
 | [0024](0024-music-as-code.md) | Music as code | Proposed (recorded tracks for the DJ allowed by 0045) |
 | [0025](0025-host-context-and-memory.md) | What the host knows each turn | Proposed (amended by 0026 and 0033) |
 | [0026](0026-turn-engine-and-context-cache.md) | A turn engine over one cached conversation, on Claude Haiku 5.5 | Proposed (head and folding amended by 0033) |
@@ -54,7 +54,8 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0046](0046-gifts-first-and-hype-mode.md) | Gifts first, every time, and hype mode on stage | Proposed |
 | [0047](0047-bridge-agent-pairing-and-distribution.md) | Pairing and handing out the Local Bridge Agent | Proposed |
 | [0048](0048-live-studio-bridge-reliability.md) | One TikTok LIVE Studio client, one socket, no lost stops | Proposed |
-| [0049](0049-stage-hud-redesign.md) | A stage HUD built to keep people watching | Proposed |
+| [0049](0049-stage-hud-redesign.md) | A stage HUD built to keep people watching | Proposed (the safe frame's numbers amended by 0050) |
+| [0050](0050-safe-frame-measured-on-a-phone.md) | The stage's safe frame, measured on a phone | Proposed |
 
 ## Evidence used
 
