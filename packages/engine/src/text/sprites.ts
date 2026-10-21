@@ -106,7 +106,8 @@ export class TextSprite {
 
 // ---------------------------------------------------------------------------
 
-const CAPTION = { centerX: 540, top: 1060, maxWidth: 900, maxLines: 3, sizes: [64, 56, 48], lineHeight: 1.12, pad: 40 };
+/** Under the moment stage, ending above TikTok's comment feed (y 1180) even at three lines (ADR-0049). */
+const CAPTION = { centerX: 540, top: 910, maxWidth: 860, maxLines: 3, sizes: [60, 52, 46], lineHeight: 1.12, pad: 40 };
 /** During games the caption sits under the board, above TikTok's bottom UI. */
 const GAME_CAPTION = { top: 1512, maxLines: 2, sizes: [52, 46, 40] };
 

@@ -31,27 +31,43 @@ export const SURFACE = "rgba(13,7,34,0.86)";
 export const MEDALS = [GOLD, "#D9E1F7", "#E8A06A"] as const;
 
 /**
- * Where things sit on the 1080 × 1920 stage. The side columns flank the
- * character (its body spans x 375 to 705 at rest, 435 to 645 in a game)
- * below TikTok's header; in a game they end above the board (y 556).
+ * Where things sit on the 1080 × 1920 stage (ADR-0049). Everything a viewer
+ * must read stays inside a safe frame: below TikTok's header and its chips
+ * (y 236), above its comment feed (y 1180), and clear of the sides a tall
+ * phone crops when TikTok fills the screen (96 px each side). Inside it, top
+ * to bottom: the title and its chips, the side cards flanking the
+ * character, the moment stage under the character, and the caption.
  */
 export const HUD = {
-  /** The side margin, about TikTok's own. */
-  margin: 44,
-  /** Both side columns are this wide. */
-  column: 330,
-  /** The right column's right edge. */
-  right: 1080 - 44,
-  /** The show bar: the segment title, then the AI badge under it. */
-  titleTop: 196,
-  badgeTop: 262,
-  /** Where the left column starts, under the badge, and where the right one starts. */
-  leftTop: 316,
-  rightTop: 202,
-  gap: 12,
+  /** The side margin: what a 20:9 phone crops, plus a little. */
+  margin: 96,
+  /** The right edge of everything. */
+  right: 1080 - 96,
+  /** The title row, and the row of chips under it (the AI badge, now playing). */
+  titleTop: 228,
+  chipsTop: 288,
+  /** Where the side cards start, under the chips. */
+  sideTop: 346,
+  /** The side columns: beside the character at rest, wider beside the smaller one in a game. */
+  column: 272,
+  gameColumn: 324,
+  gap: 10,
+  /** The moment stage under the character: one card at a time, centered in this slot. */
+  stageTop: 748,
+  stageHeight: 148,
   /** In a game, where the board starts: side panels end above it. */
   boardTop: 556,
 } as const;
+
+/** How wide a side column is, at rest or in a game. */
+export function columnWidth(compact: boolean): number {
+  return compact ? HUD.gameColumn : HUD.column;
+}
+
+/** Where a card of `height` sits so it's centered in the moment stage. */
+export function stageY(height: number): number {
+  return HUD.stageTop + Math.max(0, (HUD.stageHeight - height) / 2);
+}
 
 /** Room around a panel's body in its texture, so its glow never clips into a hard edge. */
 export const BLEED = 14;

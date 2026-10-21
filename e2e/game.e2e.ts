@@ -147,7 +147,7 @@ test("same-round updates stay in place, new rounds transition, null goes back to
     lab.frame(6);
   });
   expect(near(await probe(page, 200, 669), [timer[0], timer[1], timer[2]], 30), "board gone").toBe(false);
-  expect(brightness(await probe(page, 540, 625)), "character back in the middle").toBeGreaterThan(300);
+  expect(brightness(await probe(page, 540, 470)), "character back in the middle").toBeGreaterThan(300);
   expect(await error(page)).toBeNull();
 });
 

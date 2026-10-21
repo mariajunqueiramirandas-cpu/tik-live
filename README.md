@@ -47,13 +47,14 @@ TikTok LIVE ──(chat, gifts, likes, follows, joins)──► Triage
   lip sync, gift and follow alerts, captions, a frame loop that doesn't
   allocate, and a quality governor that steps down before frames drop. It
   keeps animating through disconnects and reconnects on its own.
-- **A HUD built to keep people watching**: every panel on stage reads on a
-  phone and carries a colored tab that names it and a reason to stay: what's
-  next on a countdown ring that gets louder as it closes in, what's left for
-  each goal ("FALTAM 1.760", then "QUASE!"), what takes the gifters' crown,
-  and viewers' names big on name cards. Calls to people scrolling past ask
-  "ACABOU DE CHEGAR?". During games the panels fold so the board has the
-  stage ([ADR-0049](docs/adr/0049-stage-hud-redesign.md)).
+- **A HUD built to keep people watching**: calm edges, a busy center, all
+  inside the area TikTok's own UI leaves clear. Small and still around the
+  character: who gives and who taps the most, the goals as bars that say
+  what's left ("FALTAM 1.760"), and viewers' names on name cards. Right under
+  the character, one card at a time: a challenge, a call to people who just
+  arrived, a goal almost reached ("QUASE LÁ!"), the top three when they
+  change, or what's next on a countdown ring that gets louder as it closes
+  in ([ADR-0049](docs/adr/0049-stage-hud-redesign.md)).
 - **Runtime**: one supervised runtime per live host, with audience-aware
   pacing, per-plan AI budgets and daily spend caps, viewer memory, and
   graceful restarts that don't drop OBS. The show is one append-only

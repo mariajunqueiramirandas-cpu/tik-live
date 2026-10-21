@@ -3,168 +3,215 @@
 **Status:** Proposed
 **Date:** 2026-10-21
 **Deciders:** Project owner
-**Amends:** ADR-0028 (the up next pill and the ranking card), ADR-0036 (the goal panel), ADR-0037 (the call to passers-by), ADR-0039 (the "dono da live" badge and gift power alerts), ADR-0040 (the challenge banner), ADR-0041 (the support ticker and the gift showcase), ADR-0045 (where the now-playing chip sits)
+**Amends:** ADR-0009 (where the character sits), ADR-0028 (up next and the ranking card), ADR-0032 (where the support card shows), ADR-0036 (the goal panel), ADR-0037 (the call to passers-by), ADR-0039 (the "dono da live" badge and gift power alerts), ADR-0040 (the challenge banner), ADR-0041 (the support ticker and the gift showcase), ADR-0045 (where the now-playing chip sits)
 
 ## Context
 
 The owner says the stage's heads-up display is bad and bad at keeping
-people's attention. Looking at it as a viewer on a phone, they're right:
+people's attention, and asked for a complete overhaul. Looking at it as a
+viewer on a phone, they're right:
 
 - **Too small to read.** Labels were 15 to 19 px and values 21 to 25 px on
-  the 1080 px stage, which is 5 to 9 pt on a phone. "METAS DA LIVE",
-  "CURTIDAS", "A SEGUIR" and the ranking window couldn't be read at all.
+  the 1080 px stage, which is 5 to 9 pt on a phone.
 - **No hierarchy.** Six panels of the same weight (dark glass with a thin
   gradient edge) sat in the top third of the screen and competed with each
   other. Nothing said where to look first.
+- **Everything at the edges.** A viewer's eye sits on the character and its
+  caption; the panels were all at the edges, which people learn to skip.
 - **Nothing pulled anyone forward.** The goals said "3.240 / 5.000", a ratio
   nobody does in their head. The countdown to the next game was a small
   chip. Nothing told a viewer what it would take to climb a ranking.
-- **Viewers' names were an afterthought.** Alerts were bare lines of text
-  next to the character, the same weight as everything else, when a
-  viewer's own name on screen is the strongest reason to gift, follow and
-  stay.
+- **Viewers' names were an afterthought.** Alerts were bare lines of text,
+  when a viewer's own name on screen is the strongest reason to gift,
+  follow and stay.
+- **Under TikTok's own UI.** The caption ran to y 1300, into the area where
+  TikTok draws its comment feed; panels started 44 to 64 px from the sides,
+  which a tall phone crops when TikTok fills the screen with a 9:16 stream.
 - **Cut text and collisions.** The ticker cut its lines ("Presentes pagam
-  as conta…"), long calls to passers-by shrank to 30 px and then were cut,
-  and the now-playing chip sat where the alerts stack.
+  as conta…"), long calls to passers-by were cut, and the now-playing chip
+  sat where the alerts stack.
 
 ## Decision
 
-Rebuild every HUD element on one kit (`packages/engine/src/text/kit.ts`) and
-one layout, with the protocol unchanged: the server sends the same messages.
+Rebuild the HUD around one idea: **calm edges, busy center**. Everything
+draws with one kit (`packages/engine/src/text/kit.ts`); the protocol is
+unchanged, so the server sends the same messages.
 
 ### Principles
 
-1. **Readable on a phone.** Nothing a viewer needs is under 22 px on the
-   stage (about 8 pt); names and numbers are 26 px and up, the countdown 34.
-2. **One hero at a time.** The character and its caption are the hero. Side
-   panels are calm until something happens in them; the one call to action
-   under the character (a challenge, a call to passers-by, the gift showcase)
-   is the only thing in that spot.
-3. **Every panel gives a reason to stay or act.** An open loop or a target:
-   what's next on a draining ring, what's left for each goal, what takes the
-   crown, how to climb the likers, what to type for a vote.
-4. **Names are the stars.** Alerts are name cards with the name big.
-5. **Urgency escalates.** Things move when something happens and get louder
-   as a moment gets close; nothing blinks for its own sake.
-6. **The board wins in a game.** Side panels fold to their essentials and
-   end above the board.
-
-### The look
-
-- **Cards** are deep, nearly opaque surfaces with a soft glow in their color
-  and a **colored tab** on top that names them ("TOP DOADORES", "METAS DA
-  LIVE", "VOTE: DIGITE 1 A 3"): dark capitals on a bright pill, like a
-  sports broadcast package. Color keeps its meaning (ADR-0011): gold for
-  money, pink for likes, cyan for "do it now", green for the raffle.
-- Sprites gained a **zoom** spring (drawn around their center) and a
-  horizontal **slide**, for pops and entrances without repainting.
+1. **Inside TikTok's safe frame.** Anything a viewer must read stays in
+   x 96 to 984 and y 236 to 1180: below TikTok's header and chips, above its
+   comment feed, clear of what a 20:9 phone crops. One constant each
+   (`HUD` in the kit) to tune once checked on a phone.
+2. **Readable on a phone.** Names and numbers are 22 to 30 px and up; the
+   countdown 34. Small type (17 to 19 px) only for labels a mark already
+   explains.
+3. **One hero, one call to action.** The character and its caption are the
+   hero. Right under the character is the **moment stage**: one card at a
+   time, the only thing that asks the room to do something.
+4. **Every element gives a reason to stay or act**: what's next on a
+   draining ring, what's left for each goal, what takes the crown, how to
+   climb the likers, what to type for a vote.
+5. **Names are the stars**, at the center when they climb, beside the
+   character when they act.
+6. **Urgency escalates; the edges stay still.** Motion answers events and
+   grows as a moment gets close.
+7. **The board wins in a game.** Side cards fold and end above the board.
 
 ### The layout (1080 × 1920)
 
 ```
- y 196   Segment title (46 px)                      ┌ Goals ────────┐
- y 262   [✦ Luma é uma IA] [▮▮ now playing]         │ ♥ FALTAM 1.760│
- y 316   ┌ Up next ring ─┐                          │ ◆ FALTAM 380  │
-         │ (2:31) Quiz   │                          └───────────────┘
-         ├ Ranking card ─┤                          ┌ Support ticker┐
-         │ 👑 duda  25 mil│       (character)        └───────────────┘
-         │ ...           │                          ┌ name card ────┐
-         │ Roube a coroa │                          ┌ name card ────┐
-         └───────────────┘
-         ┌ Dono da live ─┐
- y 900   ┌──────────── spotlight: challenge, call or showcase ─────┐
- y 1060                   caption (unchanged)
+ y 228   Segment title (44 px)
+ y 288   [✦ Luma é uma IA] [▮▮ now playing · credit]
+ y 346   ┌ Kings ───────┐                    ┌ Goals ────────┐
+         │ 👑 duda      │                    │ ♥ FALTAM 1.760│
+         │    ◆ 25,3 mil│      character     │ ◆ FALTAM 380  │
+         │ ♥ mari.souza │    (540, 556),     └───────────────┘
+         │    ♥ 1.834   │      r 150         ┌ support line ─┐
+         └──────────────┘                    └───────────────┘
+         ┌ Dono da live ┐                    ┌ name card ────┐
+         └──────────────┘                    ┌ name card ────┐
+ y 748   ┌──────────────── MOMENT STAGE (one card) ──────────────┐
+ y 896   └───────────────────────────────────────────────────────┘
+ y 910                     caption (up to 3 lines)
+ y 1110  ─────────────── (TikTok's comment feed below) ───────────
 ```
 
-Both side columns are 330 px wide with a 44 px margin, clear of the
-character (x 375 to 705 at rest).
+The character moves up from y 720 (r 165) to y 556 (r 150) so the stage and
+a three-line caption fit above TikTok's comment feed. In a game it still
+moves to y 430 (r 105) above the board.
 
-### What each element does now
+### The edges
 
-- **Show bar:** the segment title, bigger, and the AI badge under it (still
-  drawn last but one and never hidden). The **now-playing chip** moved next
-  to the badge, so it never collides with the alerts and stays put during
-  games (its credit line is still on screen while a track plays).
-- **Up next:** a card with a **countdown ring** that drains from the moment
-  the item was set. The label says what it is ("PRÓXIMO JOGO", "A SEGUIR",
-  "PÓDIO DA RODADA"). Calm in the host's color; gold under a minute; under
-  ten seconds the seconds are big, the ring turns hot and pops every second;
-  once due it says "COMEÇA JÁ JÁ" with a play mark.
-- **Ranking card:** names at 26 to 32 px. The likers end with "Toque na
-  tela pra subir"; the gifters end with "Roube a coroa" and the diamonds it
-  takes (first place's count, "25,3 mil+"). The vote's tab says what to
-  type. Long support lines wrap to two rows.
-- **Goals:** each goal is a thick bar that fills with a spring and says
-  **what's left** inside it ("FALTAM 1.760"), with the percent beside the
-  label. From 80% the percent becomes a "QUASE!" pill and a light runs along
-  the bar; reaching the goal turns the tab and bar gold with a pop.
-- **Support ticker:** under the goals, same width; lines wrap to two rows
-  instead of being cut, and each new line slides in.
-- **Name cards (alerts):** the viewer's name big, what they did under it in
-  the alert's color ("enviou Rose ×5", "começou a seguir", "ativou Dono da
-  live!", "assumiu a coroa!"), and a mark in a solid disc. They slide in
-  from the edge with a pop and stack under the ticker, as many as fit above
-  the spotlight (up to three; one during a game).
-- **Spotlight:** the call to passers-by gets a cyan tab that speaks to them,
-  **"ACABOU DE CHEGAR?"**, and long calls wrap to two lines at 28 px or more
-  instead of being cut. The challenge bar says what's left ("640 / 1.000 ·
-  FALTAM 360") and its timer turns hot and pops each second in the last ten.
-  The gift showcase uses the same tab and type sizes.
-- **During a game** (past halfway into game layout): the ranking card keeps
-  only its tab and first place (a vote keeps its leading option), the goals
-  become two bars with their marks inside, the ticker drops its tab, and the
-  "dono da live" and the spotlight give way to the board as before.
+- **Title and chips:** the segment's title, then the AI badge (a legal
+  requirement, drawn last but one, never hidden) with the now-playing chip
+  beside it (its credit line stays on screen while a track plays).
+- **The kings** (left): the top gifter and the top liker **both at once**,
+  each with a mark in a disc, the name big and the count under it. No more
+  taking turns. Whoever isn't there yet is an invitation ("Seja o
+  primeiro!", "Toque na tela!"). A soft gold glow while someone holds the
+  crown flares when a gift comes in. A vote or one viewer's pick takes the
+  card's place while it's open; the vote's tab says what to type.
+- **The goals** (right): two thick bars with their marks, filling with a
+  spring and saying what's left ("FALTAM 1.760"). Near a goal (80% and up)
+  a light runs along the bar; reaching it turns the bar gold with a pop.
+- **The support line** (ADR-0041, always on): under the goals, one line at
+  a time, wrapping to two rows instead of being cut.
+- **Name cards** (alerts): under the support line, the viewer's name big,
+  what they did under it in the alert's color ("enviou Rose ×5", "ativou
+  Dono da live!", "assumiu a coroa!"). They slide in with a pop; two fit at
+  rest.
+- **The "dono da live"** under the kings, with how long the reign has left
+  on its own line.
+
+### The moment stage
+
+One card at a time, centered under the character, in this order:
+
+1. A **challenge or raffle** (server): its bar says what's left ("640 /
+   1.000 · FALTAM 360"); its timer turns hot and beats in the last 10 s.
+2. A **call to passers-by** (server), under a cyan tab that speaks to them:
+   **"ACABOU DE CHEGAR?"**. Long calls wrap to two lines.
+3. **Up next's last seconds**: in the final ten seconds (and while due) it
+   goes ahead of everything below.
+4. **How to support the show** (server, moved here from the ranking card's
+   place): the title and the four ways to help in two columns.
+5. The **gift showcase** (server).
+6. The stage's **own moments**, decided by a small queue (`MomentQueue`):
+   - **"QUASE LÁ!"** when a goal is 80% done: "FALTAM 580 CURTIDAS PRA
+     BATER A META!" with the bar and a light along it. At most every 30 s
+     while it stays close.
+   - **A ranking's top three side by side** when it changes: the gifters
+     when a gift comes in or the top three move (with "Roube a coroa: ◆ 25,3
+     mil+"), the likers when first place changes (with "Toque na tela pra
+     subir!").
+   - When the stage has been quiet for 45 s, the rankings come back in turn
+     as a reminder.
+   - Each moment stays 6 s; a goal close to done goes first; anything that
+     waited more than 20 s behind a banner is dropped as old news.
+7. **Up next** rests there otherwise: the countdown ring, what it is
+   ("PRÓXIMO JOGO") and its title, big. Gold under a minute.
+
+During a game the stage gives way to the board, and up next becomes a
+pill atop the left column.
+
+### During a game
+
+The columns widen to 324 px beside the smaller character: up next as a
+pill, the kings at one line each, the goals' bars, and the support line,
+which gives its spot to a name card when one comes in. Everything ends
+above the board (y 556).
+
+### Motion
+
+Sprites gained a **zoom** spring (drawn around their center) and a
+horizontal **slide**, for pops and entrances without repainting. Anything
+that fills or sweeps repaints at most 15 to 30 times a second while it
+moves, and the goal bars snap small steps (likes arrive a few times a
+second in a storm), so the cloud broadcaster, which paints in software,
+pays little: with the whole HUD up during a simulated like storm, a frame
+costs 0.3 ms on average (1 ms at p95) in headless Chromium, as before.
 
 ## Options Considered
 
-### Option A: One kit, side columns plus a spotlight, hooks in every panel (chosen)
+### Option A: Calm edges, a busy center (chosen)
 
 | Dimension | Assessment |
 |---|---|
-| Complexity | Medium: every HUD element repainted, one new module for the kit |
+| Complexity | Medium-high: every HUD element repainted, the character moved, a moment queue |
 | Cost | None at runtime beyond a few repaints a second while something moves |
-| Scalability | New panels inherit the kit and the layout rules |
+| Scalability | New calls to action go into the stage's order; new edge cards inherit the kit |
 | Team familiarity | Same sprite and layer patterns as before |
 
-**Pros:** readable on a phone; one visual language; every panel pulls the
-viewer forward; no protocol or server change.
-**Cons:** the side columns hold fewer characters per name (long names shrink,
-then get cut).
+**Pros:** what asks the room to act is where people look; the edges are
+glanceable; everything fits inside TikTok's safe frame; nothing is cut; no
+protocol or server change.
+**Cons:** the rankings' second and third places only show on the stage
+from time to time; the support card is not shown during a game.
 
-### Option B: Keep the panels, raise the font sizes
+### Option B: Keep the side columns, make them bigger and clearer
 
-**Pros:** smallest change.
-**Cons:** bigger text in the same six look-alike boxes is still six boxes
-competing; nothing would give a reason to stay.
+This was the first version of this ADR's work.
 
-### Option C: Move most panels into one rotating "info" slot
+**Pros:** smaller change; every panel always visible.
+**Cons:** still six things at the edges competing; the center (under the
+character) empty most of the time; the caption still under TikTok's
+comments.
+
+### Option C: Everything rotates through one slot
 
 **Pros:** the least on screen at once.
-**Cons:** the goals, the countdown and the rankings are the open loops that
-keep people watching; hiding them most of the time loses that.
+**Cons:** the goals, the kings and up next are the open loops that keep
+people watching; hiding them most of the time loses that.
 
 ## Trade-off Analysis
 
-The stage is a TV show more than a dashboard. Option A keeps the features
-the owner asked for over many ADRs (rankings, goals, ticker, powers) on
-screen, but gives them hierarchy and turns each one into a reason to act.
-Its one real cost is width: 330 px columns cut very long names, which the
-old 340 px ones did too.
+A TikTok LIVE is watched on a phone, eyes on the face and the words. Option
+A puts the one thing to do right there, keeps the state of the room (who's
+on top, how close the goals are) small and still at the edges, and moves
+the whole HUD inside the area TikTok leaves clear. Its costs are a busier
+stage to reason about (hence a tested queue with a fixed order) and less
+room per side card (272 px), which cuts very long names.
 
 ## Consequences
 
-- Easier: a viewer can read every panel on a phone, and knows at a glance
-  what's next, how close the goals are and how to get on screen.
-- Harder: the layout depends on the column budget above the game board
-  (y 556); a new left-column card must have a compact form for games.
-- Revisit: watch real streams for whether the "QUASE!" threshold (80%) and
-  the ten-second countdown beat feel right, and whether the name cards
-  should stay up longer during gift storms.
+- Easier: a viewer can read everything on a phone and knows at a glance
+  what's next, how close the goals are and how to get on screen; the
+  caption no longer sits under TikTok's comments.
+- Harder: the stage's order is a design decision in code (`stage/text.ts`);
+  a new call to action must take a place in it.
+- Not changed here: the game boards still run to y 1500, into the area
+  TikTok's comment feed covers; making them fit the safe frame is a
+  separate change.
+- Revisit: the safe frame's numbers (no official spec for TikTok LIVE;
+  these are conservative), the "QUASE LÁ!" threshold (80%), the 45 s
+  reminder, and how long name cards stay up in a gift storm.
 
 ## Action Items
 
-1. [x] `text/kit.ts`: the look, layout constants, marks, text fitting, words and numbers.
-2. [x] Side panels (`text/hud.ts`) and the spotlight (`text/spotlight.ts`) on the kit, with compact forms for games.
-3. [x] Sprite zoom and slide; the now-playing chip beside the badge.
-4. [x] Unit tests for the new words and numbers; e2e pixel checks for the new positions and the fold in games.
-5. [ ] Watch a real stream on a phone and tune the thresholds above.
+1. [x] `text/kit.ts`: the look, the safe frame, marks, text fitting, words and numbers.
+2. [x] The edges (`text/hud.ts`) and the moment stage (`text/spotlight.ts`), with folded forms for games.
+3. [x] Sprite zoom and slide; the character moved up; the caption above TikTok's comments; the now-playing chip beside the badge.
+4. [x] Unit tests for the queue and the words; e2e pixel checks for the new positions, the stage and the fold in games.
+5. [ ] Check the safe frame on a phone with TikTok's UI on top (a private test LIVE) and tune `HUD`.
+6. [ ] Fit the game boards inside the safe frame.

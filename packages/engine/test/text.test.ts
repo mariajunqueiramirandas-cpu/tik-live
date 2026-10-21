@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { syllableCount, syllableEnvelope } from "../src/audio/envelope";
-import { giftCameIn, nextBoard, twinkle } from "../src/text/hud";
+import { giftCameIn } from "../src/text/hud";
 import { formatCount, formatCountdown, goalFraction, goalProgress, windowLabel } from "../src/text/kit";
 import { layoutCaption, wordAtProgress } from "../src/text/layout";
 
@@ -94,18 +94,7 @@ describe("heads-up panels", () => {
     expect(windowLabel(60)).toBe("1 H");
   });
 
-  it("takes turns between the rankings that have someone on them", () => {
-    const both = () => true;
-    const likesOnly = (board: string) => board === "likes";
-    expect(nextBoard(null, both)).toBe("likes");
-    expect(nextBoard("likes", both)).toBe("gifts");
-    expect(nextBoard("gifts", both)).toBe("likes");
-    expect(nextBoard("likes", likesOnly)).toBe("likes");
-    expect(nextBoard("gifts", likesOnly)).toBe("likes");
-    expect(nextBoard(null, () => false)).toBeNull();
-  });
-
-  it("lets the top gifters cut in when a gift comes in, not when old gifts age out", () => {
+  it("knows a gift came in, and that old gifts aging out is not one", () => {
     const rows = [
       { name: "duda", value: 25_300 },
       { name: "lu", value: 1_200 },
@@ -114,12 +103,6 @@ describe("heads-up panels", () => {
     expect(giftCameIn(rows, rows.map((row) => ({ ...row })))).toBe(false);
     expect(giftCameIn(rows, [rows[0]!, { name: "lu", value: 1_201 }])).toBe(true);
     expect(giftCameIn(rows, [rows[0]!])).toBe(false); // lu's gifts aged out of the hour
-  });
-
-  it("twinkles the gifters' card as the light sweep passes, and dims it at rest", () => {
-    expect(twinkle(null, 0.5)).toBe(0.35);
-    expect(twinkle(0.5, 0.5)).toBe(1);
-    expect(twinkle(0.9, 0.2)).toBe(0.35);
   });
 
   it("fills a goal's bar and writes its progress in Portuguese", () => {

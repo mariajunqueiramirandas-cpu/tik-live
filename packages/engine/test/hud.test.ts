@@ -3,7 +3,7 @@ import type { Challenge } from "@tik-live/shared";
 import { alertDetail } from "../src/engine";
 import { alertVerb, nextLabel, nextMood, toastLine, toastSlots, voteTab } from "../src/text/hud";
 import { crownTarget, formatClock, goalLeft, goalNear, goalPercent, pickHeader, ringFraction, wrapLines } from "../src/text/kit";
-import { challengeBarText, challengeFraction, challengeHeadline, tileReveal } from "../src/text/spotlight";
+import { challengeBarText, challengeFraction, challengeHeadline, MomentQueue, nearLine, tileReveal, type MomentKind } from "../src/text/spotlight";
 
 const likes: Challenge = { kind: "likes", title: "DESAFIO DAS CURTIDAS", detail: "toque na tela", value: 640, target: 1_000, remainingMs: 30_000, durationMs: 45_000, result: null, winner: null };
 const raffle: Challenge = { kind: "raffle", title: "SORTEIO RELÂMPAGO", detail: "digite EU", value: 1, target: 0, remainingMs: 20_000, durationMs: 25_000, result: null, winner: null };
@@ -68,10 +68,11 @@ describe("gift powers, the dono da live and challenges (ADR-0039, ADR-0040)", ()
     expect(toastLine("follow", "começou a seguir")).toBe("começou a seguir");
   });
 
-  it("stacks as many name cards as fit, from one to three", () => {
+  it("stacks as many name cards as fit, at most three, none when there's no room", () => {
     expect(toastSlots(606, 888)).toBe(3);
+    expect(toastSlots(552, 740)).toBe(2);
     expect(toastSlots(412, 556)).toBe(1);
-    expect(toastSlots(500, 560)).toBe(1);
+    expect(toastSlots(500, 560)).toBe(0);
     expect(toastSlots(200, 1800)).toBe(3);
   });
 });
@@ -122,5 +123,75 @@ describe("the HUD's hooks (ADR-0049)", () => {
     expect(measure(cut[1]!)).toBeLessThanOrEqual(200);
     // A single word too long for the row is cut, not dropped.
     expect(wrapLines("PARALELEPÍPEDOOOOOOOOOOOO", 100, 1, measure)[0]!.endsWith("…")).toBe(true);
+  });
+});
+
+describe("the moment stage (ADR-0049)", () => {
+  const everything = () => true;
+
+  it("says what's left for a goal in words, singular and plural", () => {
+    expect(nearLine({ kind: "likes", value: 4_420, target: 5_000 })).toBe("FALTAM 580 CURTIDAS PRA BATER A META!");
+    expect(nearLine({ kind: "likes", value: 4_999, target: 5_000 })).toBe("FALTA 1 CURTIDA PRA BATER A META!");
+    expect(nearLine({ kind: "gifts", value: 450, target: 500 })).toBe("FALTAM 50 DIAMANTES PRA BATER A META!");
+    expect(nearLine({ kind: "gifts", value: 499, target: 500 })).toBe("FALTA 1 DIAMANTE PRA BATER A META!");
+  });
+
+  it("shows one moment at a time for six seconds, a goal almost reached first", () => {
+    const queue = new MomentQueue();
+    queue.push("rank-likes", 0);
+    queue.push("rank-gifts", 0);
+    queue.push("near-likes", 0.5);
+    expect(queue.tick(1, true, everything)).toBe("near-likes");
+    expect(queue.tick(6.9, true, everything)).toBe("near-likes");
+    expect(queue.tick(7.1, true, everything)).toBe("rank-gifts");
+    expect(queue.tick(13.2, true, everything)).toBe("rank-likes");
+    expect(queue.tick(19.3, true, everything)).toBeNull();
+  });
+
+  it("waits out a moment's cooldown, and ignores one already up or waiting", () => {
+    const queue = new MomentQueue();
+    queue.push("near-gifts", 0);
+    expect(queue.tick(0, true, everything)).toBe("near-gifts");
+    queue.push("near-gifts", 1);
+    expect(queue.tick(6.5, true, everything)).toBeNull();
+    // Shown at 0: back no sooner than 30 s later.
+    queue.push("near-gifts", 20);
+    expect(queue.tick(20, true, everything)).toBeNull();
+    queue.push("near-gifts", 31);
+    expect(queue.tick(31, true, everything)).toBe("near-gifts");
+  });
+
+  it("gives the stage away while something louder has it, and drops old news", () => {
+    const queue = new MomentQueue();
+    queue.push("rank-gifts", 0);
+    expect(queue.tick(0, false, everything)).toBeNull();
+    // Busy for 25 s: the ranking from back then is old news by now.
+    expect(queue.tick(25, true, everything)).toBeNull();
+    // Something up is cut when a banner takes the stage.
+    queue.push("rank-likes", 30);
+    expect(queue.tick(30, true, everything)).toBe("rank-likes");
+    expect(queue.tick(31, false, everything)).toBeNull();
+    expect(queue.tick(32, true, everything)).toBeNull();
+  });
+
+  it("skips what has nothing to show", () => {
+    const queue = new MomentQueue();
+    queue.push("rank-likes", 0);
+    queue.push("near-gifts", 0);
+    const onlyLikes = (kind: MomentKind) => kind === "rank-likes";
+    expect(queue.tick(0, true, onlyLikes)).toBe("rank-likes");
+  });
+
+  it("brings the rankings back as a reminder when the stage has been quiet a while, taking turns", () => {
+    const queue = new MomentQueue();
+    expect(queue.tick(0, true, everything)).toBeNull();
+    expect(queue.tick(44, true, everything)).toBeNull();
+    expect(queue.tick(45, true, everything)).toBe("rank-gifts");
+    expect(queue.tick(51, true, everything)).toBeNull();
+    expect(queue.tick(96, true, everything)).toBe("rank-likes");
+    // Nobody on the likers: the gifters again.
+    const giftsOnly = (kind: MomentKind) => kind === "rank-gifts";
+    expect(queue.tick(102, true, giftsOnly)).toBeNull();
+    expect(queue.tick(147, true, giftsOnly)).toBe("rank-gifts");
   });
 });

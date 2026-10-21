@@ -376,7 +376,7 @@ export class FxLayer {
     }
     this.chip.opacity.target = playing ? 1 : 0;
     if (playing) this.player.bands(this.eq);
-    // Right of the AI badge, in the show bar, clear of the columns and the board (ADR-0049).
+    // Right of the AI badge, in the row of chips under the title (ADR-0049).
     const room = CHIP_RIGHT - f.nowPlayingX;
     if (this.chipTitle && Math.abs(room - this.chipRoom) > 1) this.paintChip(f.scale, room);
     this.chip.x = f.nowPlayingX;
@@ -557,7 +557,8 @@ export class FxLayer {
     const height = 270;
     const s = this.banner;
     s.x = 540 - width / 2;
-    s.y = 870;
+    // Over the moment stage, under the character: the gifter's name where the eye already is.
+    s.y = HUD.stageTop - 12;
     s.draw(width, height, scale, (ctx) => {
       // Nearly opaque: during games it sits over the board.
       ctx.fillStyle = "rgba(14,6,34,0.95)";
@@ -614,6 +615,6 @@ export class FxLayer {
 }
 
 const EQ: Rgba = rgba("#7CF5FF");
-/** The chip ends left of the right column, and is centered on the AI badge's row. */
-const CHIP_RIGHT = HUD.right - HUD.column - 16;
+/** The chip ends at the safe frame's right edge, centered on the AI badge's row. */
+const CHIP_RIGHT = HUD.right;
 const BADGE_H = 42;

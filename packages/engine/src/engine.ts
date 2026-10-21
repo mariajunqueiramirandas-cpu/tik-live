@@ -438,7 +438,7 @@ export class Engine implements StageEngine {
         this.text.card.setVote(message.vote, this.time, this.scale);
         break;
       case "support":
-        this.text.card.setSupport(message.card, this.time, this.scale);
+        this.text.support.set(message.card, this.time, this.scale);
         break;
       case "perks":
         this.text.showcase.set(message.card, this.time, this.scale);
@@ -462,7 +462,7 @@ export class Engine implements StageEngine {
         this.text.upNext.set(message.items, this.time, this.scale);
         break;
       case "leaders":
-        this.text.card.set(message.board, message.rows, message.windowMin, this.time, this.scale);
+        this.text.leaders(message.board, message.rows, message.windowMin, this.time, this.scale);
         break;
       case "game": {
         const { scene } = message;

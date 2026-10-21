@@ -1,16 +1,13 @@
-import type { AlertKind, GoalKind, GoalView, LeaderBoard, LeaderRow, SupportCard, Ticker, UpNextItem } from "@tik-live/shared";
+import type { AlertKind, GoalKind, GoalView, LeaderBoard, LeaderRow, Ticker, UpNextItem } from "@tik-live/shared";
 import { Spring, SPRINGS } from "../anim/spring";
 import type { Gl } from "../gl/gl";
 import {
   bar,
   BLEED,
-  bubble,
   card,
-  chip,
+  columnWidth,
   CREAM,
   crown,
-  CROWN_LABEL,
-  crownTarget,
   CYAN,
   DEEP,
   diamond,
@@ -24,13 +21,11 @@ import {
   goalFraction,
   goalLeft,
   goalNear,
-  goalPercent,
   heart,
   HEART,
-  HOT,
   HUD,
+  lineOrTwo,
   type Mark,
-  medal,
   outlined,
   paintPanel,
   PERK_PINK,
@@ -43,53 +38,42 @@ import {
   share,
   shrinkToFit,
   sparkle,
+  stageY,
   star,
   sweep,
   tab,
-  TAB_H,
   VIOLET,
   WAY_COLORS,
   WAY_MARKS,
-  windowLabel,
-  lineOrTwo,
   type Canvas2D,
 } from "./kit";
 import { GOLD, HAZE, INK, measureWith, roundRect, TextSprite, truncate, withAlpha } from "./sprites";
 
 /**
- * The stage's side panels (ADR-0049), flanking the character under
- * TikTok's header:
+ * The stage's calm edges (ADR-0049): what stays on screen, small and
+ * still, around the character, so the center can do the talking.
  *
- * - top left, the show bar: the segment's title and the AI badge;
- * - the left column: what's up next on a countdown ring, then one ranking
- *   card that takes turns between the top likers and the top gifters (or a
- *   vote, one viewer's pick, or how to support the show), and the "dono da
- *   live" under it;
- * - the right column: the stream's goals, the support ticker under them,
- *   and alerts as name cards under that.
+ * - The title row, and a row of chips under it: the AI badge (a legal
+ *   requirement, never hidden) and, from the effects layer, now playing.
+ * - Left of the character, the kings: who gives the most and who taps the
+ *   most, both at once (or a vote, or one viewer's pick), with the "dono da
+ *   live" under them.
+ * - Right of the character, the goals as two bars that say what's left,
+ *   the always-on support line, and alerts as name cards.
+ * - Up next rests in the moment stage under the character (`spotlight.ts`)
+ *   and moves to the top of the left column during a game.
  *
- * Every card has a colored tab that says what it is, names and numbers
- * big enough to read on a phone, and a line that gives a reason to act or
- * to stay (what's left for the goal, what takes the crown). During a game
- * the panels fold to their essentials so the board has the stage.
- * Painted when content changes; anything that counts or fills repaints
- * at most 30 times a second while it moves.
+ * During a game the side cards fold to one line per row and end above the
+ * board. Painted when content changes; anything that counts or fills
+ * repaints at most 20 to 30 times a second while it moves.
  */
 
-const COL = HUD.column;
 const LEFT = HUD.margin;
-const RIGHT_X = HUD.right - COL;
-const PAD = 16;
-/** How long each ranking stays up before the card turns to the other one. Gifters get longer. */
-const TURN_S = 8;
-const TURN_GIFTS_S = 12;
-/** The top gifters' card: a light sweep this often, lasting this long. */
-const SHINE_EVERY_S = 4.5;
-const SHINE_S = 0.9;
+const PAD = 14;
 /** Anything that moves repaints at most this often. */
 const FRAME_S = 1 / 30;
-/** How far the glow around the top gifters' card reaches past it. */
-const AURA = 34;
+/** How far the glow around the kings card reaches past it. */
+const AURA = 30;
 
 function enter(sprite: TextSprite, wasHidden: boolean): void {
   if (wasHidden) {
@@ -100,11 +84,16 @@ function enter(sprite: TextSprite, wasHidden: boolean): void {
   sprite.offsetY.target = 0;
 }
 
-// ---- the show bar ----------------------------------------------------------------
+/** Where the right column starts, at rest or in a game. */
+function rightX(compact: boolean): number {
+  return HUD.right - columnWidth(compact);
+}
 
-const TITLE = { size: 46, minSize: 36, maxWidth: 620, glow: 30 };
+// ---- the title and its chips ---------------------------------------------------
 
-/** The segment's title, big, and the AI-disclosure badge under it (a legal requirement: always on). */
+const TITLE = { size: 44, minSize: 34, maxWidth: HUD.right - HUD.margin, glow: 30 };
+
+/** The segment's title, and the AI-disclosure badge under it (a legal requirement: always on). */
 export class Chrome {
   readonly title: TextSprite;
   readonly badge: TextSprite;
@@ -155,7 +144,7 @@ export class Chrome {
   }
 
   private paintTitle(scale: number): void {
-    // Long titles shrink a little first, then squeeze into the room left of the goals.
+    // Long titles shrink a little first, then squeeze into the safe frame.
     let size = TITLE.size;
     while (size > TITLE.minSize && measureWith(font(820, size))(this.titleText) > TITLE.maxWidth) size -= 1;
     const f = font(820, size);
@@ -179,32 +168,36 @@ export class Chrome {
   }
 
   private paintBadge(scale: number): void {
-    const f = font(760, 26);
+    const f = font(760, 25);
     const text = this.badgeText;
     const height = 42;
-    const width = measureWith(f)(text) + 64;
+    const width = measureWith(f)(text) + 62;
     const glow = this.glow;
-    place(this.badge, LEFT, HUD.badgeTop);
+    place(this.badge, LEFT, HUD.chipsTop);
     paintPanel(this.badge, width, height, scale, (ctx) => {
-      ctx.fillStyle = "rgba(16,8,40,0.72)";
+      ctx.fillStyle = "rgba(16,8,40,0.74)";
       roundRect(ctx, 0, 0, width, height, height / 2);
       ctx.fill();
       ctx.strokeStyle = "rgba(244,240,255,0.34)";
       ctx.lineWidth = 1.5;
       roundRect(ctx, 0.75, 0.75, width - 1.5, height - 1.5, (height - 1.5) / 2);
       ctx.stroke();
-      sparkle(ctx, 24, height / 2, 20, glow);
+      sparkle(ctx, 23, height / 2, 20, glow);
       ctx.font = f;
       ctx.textBaseline = "middle";
       ctx.fillStyle = INK;
-      ctx.fillText(text, 42, height / 2 + 1);
+      ctx.fillText(text, 41, height / 2 + 1);
     });
   }
 }
 
 // ---- up next ---------------------------------------------------------------------
 
-const NEXT = { height: 100, ring: 84, radius: 34, line: 9 };
+/** Where up next is drawn: big in the moment stage, as a pill atop the left column in a game, or not at all. */
+export type NextPlacement = "stage" | "column" | "hidden";
+
+const NEXT_STAGE = { width: 620, height: 108, ring: 88, radius: 35, line: 10 };
+const NEXT_PILL = { height: 64, ring: 54, radius: 20, line: 6 };
 /** Under a minute the ring turns gold, in the last seconds it turns hot and pulses every second. */
 const NEXT_SOON_S = 60;
 const NEXT_FINAL_S = 10;
@@ -228,8 +221,8 @@ export function nextLabel(kind: UpNextItem["kind"], due: boolean): string {
 /**
  * What's next on the show, on a ring that drains as it gets close: calm in
  * the host's color, gold under a minute, hot and pulsing every second at
- * the end. An open loop on screen at all times: the reason to stay a few
- * minutes more.
+ * the end. The open loop that keeps people a few minutes more, so at rest
+ * it's the moment stage's resting card, right under the character.
  */
 export class UpNext {
   readonly card: TextSprite;
@@ -242,15 +235,28 @@ export class UpNext {
   private ringPaintedAt = -1;
   private second = Number.NaN;
   private primary = CYAN;
+  /** Where it's drawn now, and where it's going (it fades out, moves, and fades back in). */
+  private shown: NextPlacement = "hidden";
+  private wanted: NextPlacement = "hidden";
 
   constructor(gl: Gl) {
     this.card = new TextSprite(gl);
     this.ring = new TextSprite(gl);
   }
 
-  /** The room it takes in the column (0 when hidden). */
-  get height(): number {
-    return this.item ? NEXT.height + HUD.gap : 0;
+  /** Something is up next. */
+  get active(): boolean {
+    return this.item !== null;
+  }
+
+  /** The last seconds, or due: it outranks the stage's other moments. */
+  get urgent(): boolean {
+    return this.item !== null && (this.mood === "final" || this.mood === "due");
+  }
+
+  /** The room it takes atop the left column (0 unless it's a pill there). */
+  get columnHeight(): number {
+    return this.item && this.wanted === "column" ? NEXT_PILL.height + HUD.gap : 0;
   }
 
   setColors(primary: string, _secondary: string, scale: number): void {
@@ -263,8 +269,7 @@ export class UpNext {
     const before = this.item;
     this.item = next;
     if (!next) {
-      this.card.opacity.target = 0;
-      this.ring.opacity.target = 0;
+      this.wanted = "hidden";
       return;
     }
     const fresh = !before || before.kind !== next.kind || before.title !== next.title;
@@ -272,15 +277,32 @@ export class UpNext {
     this.deadline = now + left;
     if (fresh || left > this.total) this.total = Math.max(1, left);
     this.mood = nextMood(left);
-    this.paintCard(scale, fresh && before !== null, now);
-    this.paintRing(now, scale);
-    enter(this.card, before === null);
-    enter(this.ring, before === null);
-    if (fresh && before) this.card.pop(1.06);
+    if (this.shown !== "hidden") {
+      this.paintCard(scale, fresh, now);
+      this.paintRing(now, scale);
+      if (fresh) this.card.pop(1.06);
+    }
   }
 
-  update(dt: number, now: number, scale: number): void {
-    if (this.item) {
+  update(dt: number, now: number, placement: NextPlacement, scale: number): void {
+    this.wanted = this.item ? placement : "hidden";
+    if (this.wanted !== this.shown) {
+      // Out where it is, then in where it's going.
+      this.card.opacity.target = 0;
+      this.ring.opacity.target = 0;
+      if (this.shown === "hidden" || this.card.opacity.value < 0.05) {
+        this.shown = this.wanted;
+        if (this.shown !== "hidden") {
+          this.mood = nextMood(this.deadline - now);
+          this.paintCard(scale, false, now);
+          this.paintRing(now, scale);
+          enter(this.card, true);
+          enter(this.ring, true);
+          this.card.pop(0.92);
+        }
+      }
+    }
+    if (this.item && this.shown !== "hidden") {
       const left = this.deadline - now;
       const mood = nextMood(left);
       if (mood !== this.mood) {
@@ -301,7 +323,7 @@ export class UpNext {
   }
 
   repaint(scale: number): void {
-    if (!this.item) return;
+    if (!this.item || this.shown === "hidden") return;
     this.paintCard(scale, false, 0);
     this.second = Number.NaN;
   }
@@ -321,25 +343,51 @@ export class UpNext {
   private paintCard(scale: number, crossfade: boolean, now: number): void {
     const item = this.item as UpNextItem;
     const color = this.color();
-    const textX = NEXT.ring + 26;
-    const room = COL - textX - PAD;
-    const label = shrinkToFit(nextLabel(item.kind, this.mood === "due"), 880, 22, 18, room);
-    const title = shrinkToFit(item.title, 820, 31, 22, room);
-    place(this.card, LEFT, HUD.leftTop);
+    if (this.shown === "column") {
+      // A pill atop the left column: the ring, then the title.
+      const width = HUD.gameColumn;
+      const height = NEXT_PILL.height;
+      const textX = NEXT_PILL.ring + 18;
+      const title = shrinkToFit(item.title, 820, 25, 18, width - textX - PAD);
+      place(this.card, LEFT, HUD.sideTop);
+      paintPanel(
+        this.card,
+        width,
+        height,
+        scale,
+        (ctx) => {
+          card(ctx, width, height, color, VIOLET, height / 2);
+          ctx.font = title.font;
+          ctx.fillStyle = INK;
+          ctx.textBaseline = "middle";
+          ctx.fillText(title.text, textX, height / 2 + 1);
+        },
+        crossfade,
+        now,
+      );
+      return;
+    }
+    // The resting card in the moment stage: the ring, what it is, and its title, big.
+    const { width, height, ring } = NEXT_STAGE;
+    const textX = ring + 34;
+    const room = width - textX - 22;
+    const label = shrinkToFit(nextLabel(item.kind, this.mood === "due"), 900, 24, 19, room);
+    const title = shrinkToFit(item.title, 840, 38, 26, room);
+    place(this.card, 540 - width / 2, stageY(height));
     paintPanel(
       this.card,
-      COL,
-      NEXT.height,
+      width,
+      height,
       scale,
       (ctx) => {
-        card(ctx, COL, NEXT.height, color, VIOLET);
+        card(ctx, width, height, color, VIOLET, 34);
         ctx.textBaseline = "alphabetic";
         ctx.font = label.font;
         ctx.fillStyle = color;
-        ctx.fillText(label.text, textX, 40);
+        ctx.fillText(label.text, textX, 42);
         ctx.font = title.font;
         ctx.fillStyle = INK;
-        ctx.fillText(title.text, textX, 76);
+        ctx.fillText(title.text, textX, 84);
       },
       crossfade,
       now,
@@ -352,17 +400,19 @@ export class UpNext {
     const left = Math.max(0, this.deadline - now);
     this.second = Math.ceil(this.deadline - now);
     this.ringPaintedAt = now;
+    const pill = this.shown === "column";
+    const { ring: size, radius, line } = pill ? NEXT_PILL : NEXT_STAGE;
     const color = this.color();
-    const size = NEXT.ring;
     const c = size / 2;
     const fraction = this.mood === "due" ? 1 : ringFraction(left, this.total);
-    place(this.ring, LEFT + 10, HUD.leftTop + (NEXT.height - size) / 2);
+    if (pill) place(this.ring, LEFT + 5, HUD.sideTop + (NEXT_PILL.height - size) / 2);
+    else place(this.ring, 540 - NEXT_STAGE.width / 2 + 12, stageY(NEXT_STAGE.height) + (NEXT_STAGE.height - size) / 2);
     paintPanel(this.ring, size, size, scale, (ctx) => {
       ctx.lineCap = "round";
-      ctx.lineWidth = NEXT.line;
+      ctx.lineWidth = line;
       ctx.strokeStyle = "rgba(255,255,255,0.12)";
       ctx.beginPath();
-      ctx.arc(c, c, NEXT.radius, 0, Math.PI * 2);
+      ctx.arc(c, c, radius, 0, Math.PI * 2);
       ctx.stroke();
       if (fraction > 0.002) {
         ctx.save();
@@ -370,21 +420,23 @@ export class UpNext {
         ctx.shadowBlur = 10;
         ctx.strokeStyle = color;
         ctx.beginPath();
-        ctx.arc(c, c, NEXT.radius, -Math.PI / 2, -Math.PI / 2 + fraction * Math.PI * 2);
+        ctx.arc(c, c, radius, -Math.PI / 2, -Math.PI / 2 + fraction * Math.PI * 2);
         ctx.stroke();
         ctx.restore();
       }
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       if (this.mood === "due") {
-        // It's due: a play mark (the board says "já já").
-        (item.kind === "podium" ? crown : play)(ctx, c + (item.kind === "podium" ? 0 : 3), c, 30, color);
+        // It's due: a play mark (or a crown for the podium).
+        (item.kind === "podium" ? crown : play)(ctx, c + (item.kind === "podium" ? 0 : 3), c, radius * 0.85, color);
         return;
       }
       // Under a minute, just the seconds, bigger.
       const s = Math.ceil(left);
       const text = s < 60 ? String(s) : formatCountdown(s);
-      const shown = shrinkToFit(text, 900, s < 60 ? 34 : 24, 17, NEXT.radius * 2 - NEXT.line - 6);
+      const big = pill ? 22 : 34;
+      const small = pill ? 16 : 24;
+      const shown = shrinkToFit(text, 900, s < 60 ? big : small, 13, radius * 2 - line - 6);
       ctx.font = shown.font;
       ctx.fillStyle = this.mood === "calm" ? INK : color;
       ctx.fillText(shown.text, c, c + 2);
@@ -392,28 +444,14 @@ export class UpNext {
   }
 }
 
-// ---- the ranking card -----------------------------------------------------------
+// ---- the kings ------------------------------------------------------------------
 
-interface Board {
-  rows: LeaderRow[];
-  windowMin: number;
-}
-
-/** A chat vote shown in the card's place while it's open (ADR-0029), or one viewer's pick (`by`, ADR-0039). */
+/** A chat vote shown in the kings' place while it's open (ADR-0029), or one viewer's pick (`by`, ADR-0039). */
 export interface HudVote {
   title: string;
   options: string[];
   tally: number[];
   by?: string;
-}
-
-/** Which ranking the card shows next: the other one when it has rows, else whichever does. */
-export function nextBoard(current: LeaderBoard | null, hasRows: (board: LeaderBoard) => boolean): LeaderBoard | null {
-  const other: LeaderBoard = current === "likes" ? "gifts" : "likes";
-  if (current && hasRows(other)) return other;
-  if (current && hasRows(current)) return current;
-  if (hasRows("likes")) return "likes";
-  return hasRows("gifts") ? "gifts" : null;
 }
 
 /** Whether a gift just came in for the gifters shown: their diamonds grew. Gifts aging out of the window only shrink them. */
@@ -427,162 +465,103 @@ export function voteTab(options: number): string {
   return options <= 2 ? "VOTE: DIGITE 1 OU 2" : `VOTE: DIGITE 1 A ${options}`;
 }
 
-/** Where the top gifters' card twinkles (fractions of its size), and each twinkle's phase in the sweep. */
-const TWINKLES = [
-  { x: 0.9, y: 0.06, size: 14, phase: 0.15 },
-  { x: 0.64, y: 0.04, size: 9, phase: 0.45 },
-  { x: 0.97, y: 0.46, size: 10, phase: 0.7 },
-  { x: 0.03, y: 0.6, size: 9, phase: 0.3 },
-  { x: 0.5, y: 0.98, size: 11, phase: 0.85 },
-] as const;
-
-/** How bright a twinkle is, 0.35 at rest up to 1 as the light sweep passes it. */
-export function twinkle(shine: number | null, phase: number): number {
-  if (shine === null) return 0.35;
-  return 0.35 + 0.65 * Math.max(0, 1 - Math.abs(shine - phase) * 4);
-}
+/** Each king's row: its mark, label and color, and what it says when nobody's there yet. */
+const KINGS: Record<LeaderBoard, { label: string; color: string; mark: Mark; empty: string }> = {
+  gifts: { label: "TOP DOADOR", color: GOLD, mark: crown, empty: "Seja o primeiro!" },
+  likes: { label: "TOP CURTIDAS", color: HEART, mark: heart, empty: "Toque na tela!" },
+};
+const KING_ORDER: readonly LeaderBoard[] = ["gifts", "likes"];
 
 /**
- * One card that takes turns between the top likers and the top gifters, or
- * shows an open vote, one viewer's pick, or how to support the show. The
- * top gifters get the loud version: gold, a crowned first place on a
- * banner, a glow that breathes around the card, a light sweep now and then,
- * and they cut in whenever a gift comes in. Each ranking ends with how to
- * climb it. During a game only the tab and first place stay.
+ * Who's on top, left of the character: the top gifter (gold, crowned) and
+ * the top liker, both at once, so nobody waits for their turn on screen.
+ * Whoever isn't there yet is an invitation ("Seja o primeiro!"). A gift
+ * flares the gold glow around the card. The full top three take the
+ * moment stage when they change (`spotlight.ts`). A vote or one viewer's
+ * pick takes this card's place while it's open.
  */
 export class LeaderCard {
   readonly sprite: TextSprite;
-  /** The glow behind the top gifters' card. */
+  /** The gold glow around the card, brighter for a moment when a gift comes in. */
   readonly aura: TextSprite;
-  private readonly boards: Record<LeaderBoard, Board> = { likes: { rows: [], windowMin: 15 }, gifts: { rows: [], windowMin: 60 } };
-  private showing: LeaderBoard | null = null;
+  private readonly boards: Record<LeaderBoard, { rows: LeaderRow[]; windowMin: number }> = { likes: { rows: [], windowMin: 15 }, gifts: { rows: [], windowMin: 60 } };
   private vote: HudVote | null = null;
-  private support: SupportCard | null = null;
-  private turnedAt = 0;
   private visible = false;
   private compact = false;
   private body = 0;
-  private readonly top = new Spring(HUD.leftTop, SPRINGS.snappy);
-  /** When the last light sweep started, the progress last painted, and when a gift last cut in (for the glow's flash). */
-  private shineAt = 0;
-  private shinePainted = -1;
-  private shinePaintedAt = 0;
+  private readonly top = new Spring(HUD.sideTop, SPRINGS.snappy);
   private flashAt = -Infinity;
-  private auraHeight = 0;
+  private auraKey = "";
 
   constructor(gl: Gl) {
     this.sprite = new TextSprite(gl);
     this.aura = new TextSprite(gl);
   }
 
+  /** A ranking's rows (top three), for the moment stage. */
+  rows(board: LeaderBoard): readonly LeaderRow[] {
+    return this.boards[board].rows;
+  }
+
+  /** A ranking's window in minutes. */
+  windowMin(board: LeaderBoard): number {
+    return this.boards[board].windowMin;
+  }
+
   set(board: LeaderBoard, rows: readonly LeaderRow[], windowMin: number, now: number, scale: number): void {
     const before = this.boards[board].rows;
     this.boards[board] = { rows: rows.slice(0, 3), windowMin };
-    if (this.vote || this.support) return;
-    // A new gift cuts in, whatever was up: gifters are the show's VIPs.
-    if (board === "gifts" && giftCameIn(before, this.boards.gifts.rows)) {
-      const crossfade = this.visible && this.showing !== "gifts";
-      this.showing = "gifts";
-      this.turnedAt = now;
-      this.flashAt = now;
-      this.paint(scale, crossfade, now);
-      this.sprite.pop(1.05);
-      return;
-    }
-    const current = this.showing && this.has(this.showing) ? this.showing : null;
-    // The other ranking waits its turn.
-    if (current && current !== board) return;
-    const next = current ?? nextBoard(null, (b) => this.has(b));
-    if (next !== this.showing) this.turnedAt = now;
-    this.showing = next;
-    this.paint(scale, false, now);
+    const gift = board === "gifts" && giftCameIn(before, this.boards.gifts.rows);
+    if (gift) this.flashAt = now;
+    if (this.vote) return;
+    const newKing = (before[0]?.name ?? "") !== (rows[0]?.name ?? "");
+    if (newKing || (before[0]?.value ?? 0) !== (rows[0]?.value ?? 0) || !this.visible) this.paint(scale, this.visible && newKing, now);
+    if (gift) this.sprite.pop(1.05);
   }
 
-  /** Shows a vote instead of the rankings (null: back to the rankings). */
+  /** Shows a vote instead of the kings (null: back to the kings). */
   setVote(vote: HudVote | null, now: number, scale: number): void {
     const crossfade = this.visible;
     const opened = vote !== null && this.vote === null;
     this.vote = vote;
-    if (!vote) this.showing = nextBoard(null, (b) => this.has(b));
-    this.turnedAt = now;
     this.paint(scale, crossfade, now);
     if (opened && crossfade) this.sprite.pop(1.06);
   }
 
-  /** Shows how to support the show in the rankings' place (null: back to the rankings). An open vote stays on top. */
-  setSupport(card: SupportCard | null, now: number, scale: number): void {
-    const crossfade = this.visible;
-    this.support = card;
-    if (!card && !this.vote) this.showing = nextBoard(null, (b) => this.has(b));
-    this.turnedAt = now;
-    this.paint(scale, crossfade, now);
-  }
-
-  /** Where the column ends (stage px): the bottom of this card, or of whatever is above it when it's hidden. */
+  /** Where the card ends (stage px), or where it would start when hidden. */
   bottom(above: number): number {
-    return this.visible ? this.top.target + this.body : HUD.leftTop + above - (above ? HUD.gap : 0);
+    return this.visible ? this.top.target + this.body : HUD.sideTop + above - HUD.gap;
   }
 
-  /** `above` is the room up next takes over this card; `compact` folds it for a game. */
+  /** `above` is the room up next takes atop the column; `compact` folds the card for a game. */
   update(dt: number, now: number, above: number, compact: boolean, scale: number): void {
     if (compact !== this.compact) {
       this.compact = compact;
       if (this.visible) this.paint(scale, true, now);
     }
-    if (!this.vote && !this.support && this.showing && now - this.turnedAt >= (this.showsGifts() ? TURN_GIFTS_S : TURN_S)) {
-      const next = nextBoard(this.showing, (b) => this.has(b));
-      this.turnedAt = now;
-      if (next !== this.showing) {
-        this.showing = next;
-        this.paint(scale, true, now);
-      }
-    }
-    // The light sweep: not while the card is still fading in from the other ranking.
-    if (this.showsGifts() && now - this.turnedAt > 1) {
-      if (now - this.shineAt > SHINE_EVERY_S) this.shineAt = now;
-      const p = (now - this.shineAt) / SHINE_S;
-      if (p <= 1 && now - this.shinePaintedAt >= FRAME_S) {
-        this.shinePainted = p;
-        this.shinePaintedAt = now;
-        this.paintGifts(scale, false, now, p);
-      } else if (p > 1 && this.shinePainted >= 0) {
-        this.shinePainted = -1;
-        this.paintGifts(scale, false, now, null);
-      }
-    }
-    this.top.target = HUD.leftTop + above;
+    this.top.target = HUD.sideTop + above;
     this.top.step(dt);
     place(this.sprite, LEFT, this.top.value);
     this.sprite.update(dt, now);
-    // The glow breathes, and flares when a gift cuts in.
-    const flare = Math.max(0, 1 - (now - this.flashAt) / 1.5);
-    const glow = this.showsGifts() && this.visible ? Math.min(1, 0.7 + 0.3 * Math.sin(now * 2.6) + flare) : 0;
+    // A soft warm glow while someone holds the crown; it flares when a gift comes in.
+    const flare = Math.max(0, 1 - (now - this.flashAt) / 1.6);
+    const crowned = !this.vote && this.visible && this.boards.gifts.rows.length > 0;
     this.aura.x = LEFT - AURA;
     this.aura.y = this.top.value + this.sprite.offsetY.value - AURA;
     this.aura.zoom.snap(this.sprite.zoom.value);
-    this.aura.opacity.snap(glow * Math.min(1, Math.max(0, this.sprite.opacity.value)));
+    this.aura.opacity.snap(crowned ? Math.min(1, 0.3 + flare) * Math.min(1, Math.max(0, this.sprite.opacity.value)) : 0);
     this.aura.update(dt, now);
   }
 
   repaint(scale: number): void {
-    this.auraHeight = 0;
+    this.auraKey = "";
     this.paint(scale, false, 0);
-  }
-
-  private has(board: LeaderBoard): boolean {
-    return this.boards[board].rows.length > 0;
-  }
-
-  private showsGifts(): boolean {
-    return !this.vote && !this.support && this.showing === "gifts" && this.has("gifts");
   }
 
   private paint(scale: number, crossfade: boolean, now: number): void {
     const wasHidden = !this.visible;
     const vote = this.vote;
-    const support = this.support;
-    const board = this.showing && this.has(this.showing) ? this.showing : null;
-    if (!vote && !support && !board) {
+    if (!vote && !this.boards.gifts.rows.length && !this.boards.likes.rows.length) {
       this.visible = false;
       this.sprite.opacity.target = 0;
       return;
@@ -591,277 +570,171 @@ export class LeaderCard {
     const fade = crossfade && !wasHidden;
     if (vote?.by) this.paintPick(vote as HudVote & { by: string }, scale, fade, now);
     else if (vote) this.paintVote(vote, scale, fade, now);
-    else if (support) this.paintSupport(support, scale, fade, now);
-    else if (board === "gifts") this.paintGifts(scale, fade, now, null);
-    else this.paintLikes(scale, fade, now);
+    else this.paintKings(scale, fade, now);
     if (wasHidden) this.top.snap(this.top.target);
     enter(this.sprite, wasHidden);
   }
 
   private draw(height: number, scale: number, paint: (ctx: Canvas2D) => void, crossfade: boolean, now: number): void {
     this.body = height;
-    paintPanel(this.sprite, COL, height, scale, paint, crossfade, now);
+    paintPanel(this.sprite, columnWidth(this.compact), height, scale, paint, crossfade, now);
   }
 
-  /** The top likers: pink, and how to climb. */
-  private paintLikes(scale: number, crossfade: boolean, now: number): void {
-    const { rows: all, windowMin } = this.boards.likes;
-    const rows = this.compact ? all.slice(0, 1) : all;
-    const head = 66;
-    const rowH = 48;
-    const foot = this.compact ? 6 : 50;
-    const height = head + rows.length * rowH + foot;
-    const countFont = font(900, 26);
-    const counts = rows.map((row) => formatCount(row.value));
-    const countW = Math.max(...counts.map((text) => measureWith(countFont)(text)));
-    const nameRoom = COL - 58 - PAD - countW - 30;
+  /** Both kings: two lines a row at rest (what they are and the count, then the name), one line a row in a game. */
+  private paintKings(scale: number, crossfade: boolean, now: number): void {
+    const width = columnWidth(this.compact);
+    const rowH = this.compact ? 46 : 66;
+    const gap = 6;
+    const pad = 8;
+    const height = pad * 2 + rowH * 2 + gap;
+    this.paintAura(width, height, scale);
     this.draw(
       height,
       scale,
       (ctx) => {
-        card(ctx, COL, height, HEART, VIOLET);
-        tab(ctx, PAD, PAD, "TOP CURTIDAS", HEART, heart);
-        chip(ctx, COL - PAD, PAD, windowLabel(windowMin), HAZE);
-        rows.forEach((row, i) => {
-          const cy = head + i * rowH + rowH / 2;
-          medal(ctx, PAD + 16, cy, 16, i + 1);
-          const name = shrinkToFit(row.name, 780, 28, 21, nameRoom);
-          ctx.font = name.font;
-          ctx.fillStyle = INK;
-          ctx.fillText(name.text, 58, cy + 10);
-          ctx.font = countFont;
-          ctx.textAlign = "right";
-          ctx.fillStyle = i === 0 ? HEART : INK;
-          ctx.fillText(counts[i] as string, COL - PAD, cy + 9);
-          ctx.textAlign = "left";
-          heart(ctx, COL - PAD - countW - 15, cy, 17, HEART);
-        });
-        if (!this.compact) footer(ctx, head + rows.length * rowH, height, heart, HEART, "Toque na tela pra subir");
-      },
-      crossfade,
-      now,
-    );
-  }
-
-  /** The top gifters, loud: gold edges, a crowned first place on a banner, twinkles and a light sweep (`shine` 0 to 1), and what takes the crown. */
-  private paintGifts(scale: number, crossfade: boolean, now: number, shine: number | null): void {
-    const { rows: all, windowMin } = this.boards.gifts;
-    const rows = this.compact ? all.slice(0, 1) : all;
-    const head = 62;
-    const champH = 60;
-    const rowH = 46;
-    const foot = this.compact ? 4 : 52;
-    const height = head + champH + 6 + Math.max(0, rows.length - 1) * rowH + foot;
-    const champCountFont = font(900, 28);
-    const countFont = font(850, 24);
-    const counts = rows.map((row) => formatCount(row.value));
-    const champCountW = measureWith(champCountFont)(counts[0] ?? "");
-    const countW = Math.max(0, ...counts.slice(1).map((text) => measureWith(countFont)(text)));
-    const top = rows[0]?.value ?? 0;
-    this.paintAura(height, scale);
-    this.draw(
-      height,
-      scale,
-      (ctx) => {
-        // A richer body: deep purple warming toward gold at the bottom (the glow around it is the aura's).
         const body = ctx.createLinearGradient(0, 0, 0, height);
-        body.addColorStop(0, "rgba(36,12,64,0.94)");
-        body.addColorStop(1, "rgba(64,34,18,0.92)");
-        ctx.fillStyle = body;
-        roundRect(ctx, 0, 0, COL, height, 26);
-        ctx.fill();
-        const edge = ctx.createLinearGradient(0, 0, COL, height);
-        edge.addColorStop(0, GOLD);
-        edge.addColorStop(0.5, "#FF7AC8");
-        edge.addColorStop(1, DIAMOND);
-        ctx.strokeStyle = edge;
-        ctx.lineWidth = 3;
-        roundRect(ctx, 1.5, 1.5, COL - 3, height - 3, 25);
-        ctx.stroke();
-
-        const gold = ctx.createLinearGradient(0, PAD, 0, PAD + TAB_H);
-        gold.addColorStop(0, CREAM);
-        gold.addColorStop(1, GOLD);
-        tab(ctx, PAD, PAD, "TOP DOADORES", gold, crown);
-        chip(ctx, COL - PAD, PAD, windowLabel(windowMin), DIAMOND);
-
-        rows.forEach((row, i) => {
-          if (i === 0) {
-            // First place: a golden banner, a crowned medal, and the biggest letters on the card.
-            const y = head;
-            const banner = ctx.createLinearGradient(PAD, 0, COL - PAD, 0);
-            banner.addColorStop(0, withAlpha(GOLD, 0.42));
-            banner.addColorStop(1, withAlpha(EMBER, 0.12));
-            ctx.fillStyle = banner;
-            roundRect(ctx, 8, y, COL - 16, champH, 18);
+        body.addColorStop(0, "rgba(36,12,64,0.92)");
+        body.addColorStop(1, "rgba(20,8,44,0.9)");
+        card(ctx, width, height, GOLD, HEART, 24, body);
+        KING_ORDER.forEach((board, i) => {
+          const king = KINGS[board];
+          const row = this.boards[board].rows[0];
+          const y = pad + i * (rowH + gap);
+          const gold = board === "gifts";
+          // The crown's row sits on a soft gold band: it's the card's loudest thing.
+          if (gold) {
+            const band = ctx.createLinearGradient(pad, 0, width - pad, 0);
+            band.addColorStop(0, withAlpha(GOLD, row ? 0.3 : 0.1));
+            band.addColorStop(1, withAlpha(EMBER, 0.05));
+            ctx.fillStyle = band;
+            roundRect(ctx, pad - 2, y, width - pad * 2 + 4, rowH, 18);
             ctx.fill();
-            ctx.strokeStyle = withAlpha(GOLD, 0.75);
-            ctx.lineWidth = 1.5;
-            roundRect(ctx, 8.75, y + 0.75, COL - 17.5, champH - 1.5, 17);
-            ctx.stroke();
-            const cy = y + champH / 2;
-            medal(ctx, PAD + 18, cy + 4, 17, 1);
-            crown(ctx, PAD + 18, cy - 16, 18, CREAM);
-            const name = shrinkToFit(row.name, 850, 32, 22, COL - 64 - PAD - champCountW - 32);
-            ctx.save();
-            ctx.shadowColor = withAlpha(GOLD, 0.8);
-            ctx.shadowBlur = 12;
+          }
+          // The mark in a solid disc.
+          const r = this.compact ? 16 : 20;
+          const cx = pad + 6 + r;
+          const cy = y + rowH / 2;
+          ctx.fillStyle = row ? king.color : withAlpha(king.color, 0.35);
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.fill();
+          king.mark(ctx, cx, cy + 1, r * 1.05, DEEP);
+          const textX = cx + r + 11;
+          const value = row ? formatCount(row.value) : "";
+          const valueMark = gold ? diamond : heart;
+          const valueColor = gold ? DIAMOND : HEART;
+          if (this.compact) {
+            // One line: the name, then the count on the right.
+            const valueFont = font(900, 22);
+            const valueW = value ? measureWith(valueFont)(value) + 22 : 0;
+            const name = shrinkToFit(row ? row.name : king.empty, 820, 23, 16, width - textX - PAD - valueW - 6);
             ctx.font = name.font;
-            ctx.fillStyle = CREAM;
-            ctx.fillText(name.text, 60, cy + 11);
-            ctx.restore();
-            ctx.font = champCountFont;
-            ctx.textAlign = "right";
-            ctx.fillStyle = GOLD;
-            ctx.fillText(counts[0] as string, COL - PAD - 4, cy + 10);
-            ctx.textAlign = "left";
-            diamond(ctx, COL - PAD - 4 - champCountW - 16, cy + 1, 19, DIAMOND);
+            ctx.fillStyle = row ? (gold ? CREAM : INK) : HAZE;
+            ctx.fillText(name.text, textX, cy + 8);
+            if (value) {
+              ctx.font = valueFont;
+              ctx.textAlign = "right";
+              ctx.fillStyle = king.color;
+              ctx.fillText(value, width - PAD, cy + 8);
+              ctx.textAlign = "left";
+              valueMark(ctx, width - PAD - measureWith(valueFont)(value) - 11, cy, 15, valueColor);
+            }
             return;
           }
-          const cy = head + champH + 6 + (i - 1) * rowH + rowH / 2;
-          medal(ctx, PAD + 18, cy, 15, i + 1);
-          const name = shrinkToFit(row.name, 780, 26, 20, COL - 60 - PAD - countW - 30);
+          // The name big, and under it the count with its mark (or the invitation).
+          const name = shrinkToFit(row ? row.name : king.empty, row ? 850 : 760, 28, 19, width - textX - PAD);
+          ctx.save();
+          if (row && gold) {
+            ctx.shadowColor = withAlpha(GOLD, 0.7);
+            ctx.shadowBlur = 10;
+          }
           ctx.font = name.font;
-          ctx.fillStyle = INK;
-          ctx.fillText(name.text, 60, cy + 9);
-          ctx.font = countFont;
-          ctx.textAlign = "right";
-          ctx.fillStyle = DIAMOND;
-          ctx.fillText(counts[i] as string, COL - PAD - 4, cy + 8);
-          ctx.textAlign = "left";
-          diamond(ctx, COL - PAD - 4 - countW - 15, cy + 1, 15, DIAMOND);
+          ctx.fillStyle = row ? (gold ? CREAM : INK) : HAZE;
+          ctx.fillText(name.text, textX, y + 31);
+          ctx.restore();
+          if (value) {
+            valueMark(ctx, textX + 8, y + 47, 15, valueColor);
+            ctx.font = font(900, 22);
+            ctx.fillStyle = king.color;
+            ctx.fillText(value, textX + 22, y + 55);
+          } else {
+            ctx.font = font(860, 17);
+            ctx.fillStyle = withAlpha(king.color, 0.85);
+            ctx.fillText(king.label, textX, y + 55);
+          }
         });
-
-        if (!this.compact) {
-          // What takes the crown: past first place's diamonds.
-          footer(ctx, height - foot, height, crown, GOLD, CROWN_LABEL, CREAM, COL - PAD * 2 - 30 - measureWith(font(900, 23))(crownTarget(top)) - 30);
-          const cy = height - foot / 2 + 2;
-          ctx.font = font(900, 23);
-          ctx.textAlign = "right";
-          ctx.fillStyle = GOLD;
-          ctx.fillText(crownTarget(top), COL - PAD, cy + 8);
-          ctx.textAlign = "left";
-          diamond(ctx, COL - PAD - measureWith(font(900, 23))(crownTarget(top)) - 14, cy + 1, 17, DIAMOND);
-        }
-        for (const t of TWINKLES) sparkle(ctx, t.x * COL, t.y * height, t.size, withAlpha("#FFF6D6", twinkle(shine, t.phase)));
-        if (shine !== null) sweep(ctx, 0, 0, COL, height, 26, shine, 0.28);
       },
       crossfade,
       now,
     );
   }
 
-  /** The soft gold glow behind the gifters' card, repainted only when the card's height changes. */
-  private paintAura(height: number, scale: number): void {
-    if (height === this.auraHeight) return;
-    this.auraHeight = height;
-    const w = COL + AURA * 2;
-    const h = height + AURA * 2;
-    this.aura.draw(w, h, scale, (ctx) => {
+  /** The soft gold glow behind the card, repainted only when the card's size changes. */
+  private paintAura(width: number, height: number, scale: number): void {
+    const key = `${width}x${height}`;
+    if (key === this.auraKey) return;
+    this.auraKey = key;
+    this.aura.draw(width + AURA * 2, height + AURA * 2, scale, (ctx) => {
       // Two passes, a wide warm halo and a tighter bright one, kept inside the texture so it never shows an edge.
       for (const [blur, alpha] of [
-        [24, 0.7],
-        [10, 0.85],
+        [22, 0.7],
+        [9, 0.85],
       ] as const) {
         ctx.save();
         ctx.shadowColor = withAlpha(GOLD, alpha);
         ctx.shadowBlur = blur;
         ctx.fillStyle = withAlpha(GOLD, alpha);
-        roundRect(ctx, AURA, AURA, COL, height, 26);
+        roundRect(ctx, AURA, AURA, width, height, 24);
         ctx.fill();
         ctx.restore();
       }
     });
   }
 
-  /** How to support the show (ADR-0032). */
-  private paintSupport(support: SupportCard, scale: number, crossfade: boolean, now: number): void {
-    const lines = support.lines.slice(0, this.compact ? 1 : 4);
-    const head = this.compact ? 62 : 104;
-    const room = COL - PAD * 2 - 46;
-    // Long lines take two rows instead of being cut.
-    const texts = lines.map((line) => lineOrTwo(line.text, 760, 24, 21, 22, 18, room));
-    const rows = texts.map((text) => (text.lines.length > 1 ? 64 : 46));
-    const height = head + rows.reduce((sum, h) => sum + h, 0) + 10;
-    this.draw(
-      height,
-      scale,
-      (ctx) => {
-        card(ctx, COL, height, GOLD, HEART);
-        tab(ctx, PAD, PAD, "APOIE A LIVE", GOLD, diamond);
-        if (!this.compact) {
-          const title = shrinkToFit(support.title, 800, 27, 21, COL - PAD * 2);
-          ctx.font = title.font;
-          ctx.fillStyle = INK;
-          ctx.fillText(title.text, PAD, 88);
-        }
-        let y = head;
-        lines.forEach((line, i) => {
-          const rowH = rows[i] as number;
-          const cy = y + rowH / 2;
-          y += rowH;
-          const color = WAY_COLORS[line.way];
-          ctx.fillStyle = withAlpha(color, 0.18);
-          ctx.beginPath();
-          ctx.arc(PAD + 17, cy, 17, 0, Math.PI * 2);
-          ctx.fill();
-          WAY_MARKS[line.way](ctx, PAD + 17, cy, 18, color);
-          const text = texts[i] as ReturnType<typeof lineOrTwo>;
-          ctx.font = text.font;
-          ctx.fillStyle = line.way === "gift" ? GOLD : INK;
-          const lineH = text.size * 1.12;
-          const first = cy - ((text.lines.length - 1) * lineH) / 2 + text.size * 0.36;
-          text.lines.forEach((row, k) => ctx.fillText(row, PAD + 46, first + k * lineH));
-        });
-      },
-      crossfade,
-      now,
-    );
-  }
-
   /** One viewer chooses (a gift power or the raffle's prize): their name on the tab, the options numbered, no tally. */
   private paintPick(vote: HudVote & { by: string }, scale: number, crossfade: boolean, now: number): void {
+    const width = columnWidth(this.compact);
     const options = this.compact ? [] : vote.options.slice(0, 3);
-    const head = this.compact ? 62 : 102;
-    const rowH = 48;
-    const foot = 48;
+    const head = this.compact ? 60 : 98;
+    const rowH = 46;
+    const foot = 46;
     const height = head + options.length * rowH + foot;
     this.draw(
       height,
       scale,
       (ctx) => {
-        card(ctx, COL, height, GOLD, EMBER);
-        tab(ctx, PAD, PAD, fit(pickHeader(vote.by), font(900, 22), COL - PAD * 2 - 58), GOLD, crown);
+        card(ctx, width, height, GOLD, EMBER);
+        tab(ctx, PAD, PAD, fit(pickHeader(vote.by), font(900, 22), width - PAD * 2 - 58), GOLD, crown);
         if (!this.compact) {
-          const title = shrinkToFit(vote.title, 800, 27, 21, COL - PAD * 2);
+          const title = shrinkToFit(vote.title, 800, 26, 20, width - PAD * 2);
           ctx.font = title.font;
           ctx.fillStyle = INK;
-          ctx.fillText(title.text, PAD, 86);
+          ctx.fillText(title.text, PAD, 84);
         }
         options.forEach((option, i) => {
           const y = head + i * rowH;
           ctx.fillStyle = "rgba(255,255,255,0.07)";
-          roundRect(ctx, PAD - 4, y + 3, COL - PAD * 2 + 8, rowH - 6, 14);
+          roundRect(ctx, PAD - 4, y + 3, width - PAD * 2 + 8, rowH - 6, 14);
           ctx.fill();
           // The number in a gold disc: that's what they type.
           ctx.fillStyle = GOLD;
           ctx.beginPath();
-          ctx.arc(PAD + 16, y + rowH / 2, 15, 0, Math.PI * 2);
+          ctx.arc(PAD + 15, y + rowH / 2, 14, 0, Math.PI * 2);
           ctx.fill();
-          ctx.font = font(900, 19);
+          ctx.font = font(900, 18);
           ctx.textAlign = "center";
           ctx.fillStyle = DEEP;
-          ctx.fillText(String(i + 1), PAD + 16, y + rowH / 2 + 7);
+          ctx.fillText(String(i + 1), PAD + 15, y + rowH / 2 + 7);
           ctx.textAlign = "left";
-          const text = shrinkToFit(option, 760, 24, 19, COL - PAD * 2 - 46);
+          const text = shrinkToFit(option, 760, 23, 18, width - PAD * 2 - 42);
           ctx.font = text.font;
           ctx.fillStyle = INK;
-          ctx.fillText(text.text, PAD + 42, y + rowH / 2 + 8);
+          ctx.fillText(text.text, PAD + 38, y + rowH / 2 + 8);
         });
-        const hint = shrinkToFit(`${vote.by}, digite o número no chat`, 760, 22, 18, COL - PAD * 2);
+        const hint = shrinkToFit(`${vote.by}, digite o número no chat`, 760, 21, 16, width - PAD * 2);
         ctx.font = hint.font;
         ctx.fillStyle = GOLD;
-        ctx.fillText(hint.text, PAD, height - 18);
+        ctx.fillText(hint.text, PAD, height - 17);
       },
       crossfade,
       now,
@@ -870,30 +743,31 @@ export class LeaderCard {
 
   /** Chat's vote: what to type on the tab, a bar per option, the leader in gold. In a game, only the leader. */
   private paintVote(vote: HudVote, scale: number, crossfade: boolean, now: number): void {
+    const width = columnWidth(this.compact);
     const all = vote.options.slice(0, 3);
     const total = vote.tally.reduce((sum, n) => sum + n, 0);
     const lead = total ? vote.tally.indexOf(Math.max(...vote.tally)) : -1;
     const shown = this.compact ? [Math.max(0, lead)] : all.map((_, i) => i);
-    const head = this.compact ? 62 : 102;
-    const rowH = 50;
+    const head = this.compact ? 60 : 98;
+    const rowH = 48;
     const height = head + shown.length * rowH + 10;
     this.draw(
       height,
       scale,
       (ctx) => {
-        card(ctx, COL, height, GOLD, "#FF5FA2");
-        tab(ctx, PAD, PAD, voteTab(all.length), GOLD, bubble);
+        card(ctx, width, height, GOLD, "#FF5FA2");
+        tab(ctx, PAD, PAD, fit(voteTab(all.length), font(900, 22), width - PAD * 2 - 30), GOLD);
         if (!this.compact) {
-          const title = shrinkToFit(vote.title, 800, 27, 21, COL - PAD * 2);
+          const title = shrinkToFit(vote.title, 800, 26, 20, width - PAD * 2);
           ctx.font = title.font;
           ctx.fillStyle = INK;
-          ctx.fillText(title.text, PAD, 86);
+          ctx.fillText(title.text, PAD, 84);
         }
         shown.forEach((index, row) => {
           const y = head + row * rowH;
           const share = total ? (vote.tally[index] ?? 0) / total : 0;
           const leading = index === lead;
-          const w = COL - PAD * 2 + 8;
+          const w = width - PAD * 2 + 8;
           ctx.fillStyle = "rgba(255,255,255,0.07)";
           roundRect(ctx, PAD - 4, y + 3, w, rowH - 6, 14);
           ctx.fill();
@@ -904,40 +778,28 @@ export class LeaderCard {
           }
           ctx.fillStyle = leading ? GOLD : "rgba(244,240,255,0.85)";
           ctx.beginPath();
-          ctx.arc(PAD + 16, y + rowH / 2, 15, 0, Math.PI * 2);
+          ctx.arc(PAD + 15, y + rowH / 2, 14, 0, Math.PI * 2);
           ctx.fill();
-          ctx.font = font(900, 19);
+          ctx.font = font(900, 18);
           ctx.textAlign = "center";
           ctx.fillStyle = DEEP;
-          ctx.fillText(String(index + 1), PAD + 16, y + rowH / 2 + 7);
+          ctx.fillText(String(index + 1), PAD + 15, y + rowH / 2 + 7);
           ctx.textAlign = "right";
-          ctx.font = font(900, 24);
+          ctx.font = font(900, 23);
           ctx.fillStyle = leading ? GOLD : INK;
           const pct = total ? `${Math.round(share * 100)}%` : "";
-          ctx.fillText(pct, COL - PAD, y + rowH / 2 + 9);
+          ctx.fillText(pct, width - PAD, y + rowH / 2 + 9);
           ctx.textAlign = "left";
-          const text = shrinkToFit(all[index] ?? "", 760, 24, 19, COL - PAD * 2 - 46 - (pct ? 62 : 0));
+          const text = shrinkToFit(all[index] ?? "", 760, 23, 18, width - PAD * 2 - 42 - (pct ? 58 : 0));
           ctx.font = text.font;
           ctx.fillStyle = INK;
-          ctx.fillText(text.text, PAD + 42, y + rowH / 2 + 8);
+          ctx.fillText(text.text, PAD + 38, y + rowH / 2 + 8);
         });
       },
       crossfade,
       now,
     );
   }
-}
-
-/** A card's last line: a hairline, a mark and a call to act (in `room` px). */
-function footer(ctx: Canvas2D, y: number, height: number, mark: Mark, color: string, text: string, textColor = color, room = COL - PAD * 2 - 30): void {
-  ctx.fillStyle = "rgba(255,255,255,0.09)";
-  ctx.fillRect(PAD, y + 2, COL - PAD * 2, 1.5);
-  const cy = (y + height) / 2 + 2;
-  mark(ctx, PAD + 11, cy, 19, color);
-  const line = shrinkToFit(text, 780, 22, 18, room);
-  ctx.font = line.font;
-  ctx.fillStyle = textColor;
-  ctx.fillText(line.text, PAD + 30, cy + 8);
 }
 
 // ---- the stream's goals ----------------------------------------------------------
@@ -954,16 +816,18 @@ const NEAR_SWEEP_S = 0.7;
  */
 const GOAL_FRAME_S = 1 / 20;
 const GOAL_STEP = 0.02;
-const GOAL_LOOK: Record<GoalKind, { label: string; color: string; color2: string; mark: Mark }> = {
-  likes: { label: "CURTIDAS", color: HEART, color2: "#FF9AD5", mark: heart },
-  gifts: { label: "DIAMANTES", color: DIAMOND, color2: "#B8F0FF", mark: diamond },
+const GOAL_LOOK: Record<GoalKind, { color: string; color2: string; mark: Mark }> = {
+  likes: { color: HEART, color2: "#FF9AD5", mark: heart },
+  gifts: { color: DIAMOND, color2: "#B8F0FF", mark: diamond },
 };
+const GOAL_BAR_H = 42;
 
 /**
- * The like and gift goals (ADR-0036), top right: a bar each that fills with
- * a spring as they come in and says what's left ("FALTAM 1.760"). Near the
- * goal it says "QUASE!" and a light runs along the bar; reaching it turns
- * the bar gold with a pop. In a game, just the bars.
+ * The like and gift goals (ADR-0036), right of the character: a thick bar
+ * each, with its mark, that fills with a spring as they come in and says
+ * what's left ("FALTAM 1.760"). Near the goal a light runs along it (and
+ * the moment stage says "QUASE LÁ!" big); reaching it turns the bar gold
+ * with a pop. The same bars in a game, a little wider.
  */
 export class GoalPanel {
   readonly sprite: TextSprite;
@@ -979,6 +843,18 @@ export class GoalPanel {
 
   constructor(gl: Gl) {
     this.sprite = new TextSprite(gl);
+  }
+
+  /** A goal as last sent, for the moment stage. */
+  goal(kind: GoalKind): GoalView | undefined {
+    for (let i = 0; i < this.goals.length; i++) if ((this.goals[i] as GoalView).kind === kind) return this.goals[i];
+    return undefined;
+  }
+
+  /** The goal is close (80% and up) and not celebrating. Runs every frame: no closures. */
+  near(kind: GoalKind): boolean {
+    const goal = this.goal(kind);
+    return goal !== undefined && goalNear(goal) && !this.celebrating.has(kind);
   }
 
   set(goals: readonly GoalView[], now: number, scale: number): void {
@@ -1003,7 +879,7 @@ export class GoalPanel {
     }
     this.paint(now, scale);
     if (wasHidden) enter(this.sprite, true);
-    else if (reached) this.sprite.pop(1.1);
+    else if (reached) this.sprite.pop(1.12);
   }
 
   update(dt: number, now: number, compact: boolean, scale: number): void {
@@ -1014,14 +890,15 @@ export class GoalPanel {
       dirty = crossfade = true;
     }
     // Only while a goal celebrates (the map is empty otherwise).
-    if (this.celebrating.size) for (const [kind, until] of this.celebrating) {
-      if (until > now) continue;
-      this.celebrating.delete(kind);
-      // The next goal starts where its count already is.
-      const goal = this.goals.find((g) => g.kind === kind);
-      if (goal) this.fill[kind].snap(goalFraction(goal));
-      dirty = crossfade = true;
-    }
+    if (this.celebrating.size)
+      for (const [kind, until] of this.celebrating) {
+        if (until > now) continue;
+        this.celebrating.delete(kind);
+        // The next goal starts where its count already is.
+        const goal = this.goal(kind);
+        if (goal) this.fill[kind].snap(goalFraction(goal));
+        dirty = crossfade = true;
+      }
     let moving = false;
     for (let i = 0; i < this.goals.length; i++) {
       const kind = (this.goals[i] as GoalView).kind;
@@ -1041,108 +918,66 @@ export class GoalPanel {
     if (this.goals.length) this.paint(this.paintedAt, scale);
   }
 
-  /** Where the panel ends (stage px), or where it would start when there are no goals. */
+  /** Where the panel ends (stage px), or just above where it would start when there are no goals. */
   bottom(): number {
-    return this.goals.length ? HUD.rightTop + this.body : HUD.rightTop;
+    return this.goals.length ? HUD.sideTop + this.body : HUD.sideTop - HUD.gap;
   }
 
-  /** The light along a near goal's bar, 0 to 1, or null between sweeps (or when no goal is near). Runs every frame: no closures. */
+  /** The light along a near goal's bar, 0 to 1, or null between sweeps (or when no goal is near). */
   private sweepAt(now: number): number | null {
-    let near = false;
-    for (let i = 0; i < this.goals.length; i++) {
-      const goal = this.goals[i] as GoalView;
-      if (goalNear(goal) && !this.celebrating.has(goal.kind)) near = true;
-    }
-    if (!near) return null;
+    let any = false;
+    for (let i = 0; i < this.goals.length; i++) if (this.near((this.goals[i] as GoalView).kind)) any = true;
+    if (!any) return null;
     const p = (now % NEAR_SWEEP_EVERY_S) / NEAR_SWEEP_S;
     return p <= 1 ? p : null;
   }
 
   private paint(now: number, scale: number, crossfade = false): void {
     const goals = this.goals;
-    const compact = this.compact;
+    const width = columnWidth(this.compact);
     const shine = this.sweepAt(now);
     this.sweepPainted = shine !== null;
     this.paintedAt = now;
     for (const goal of goals) this.painted[goal.kind] = this.fill[goal.kind].value;
     const party = goals.some((goal) => this.celebrating.has(goal.kind));
-    const head = compact ? 12 : 64;
-    const rowH = compact ? 44 : 82;
-    const gap = compact ? 8 : 12;
-    const barH = compact ? 44 : 40;
-    const height = head + goals.length * rowH + (goals.length - 1) * gap + (compact ? 12 : 16);
+    const pad = 10;
+    const gap = 8;
+    const height = pad * 2 + goals.length * GOAL_BAR_H + (goals.length - 1) * gap;
     this.body = height;
-    place(this.sprite, RIGHT_X, HUD.rightTop);
+    place(this.sprite, rightX(this.compact), HUD.sideTop);
     paintPanel(
       this.sprite,
-      COL,
+      width,
       height,
       scale,
       (ctx) => {
-        card(ctx, COL, height, party ? GOLD : HEART, party ? EMBER : DIAMOND);
-        if (!compact) {
-          const fill = ctx.createLinearGradient(PAD, 0, PAD + 200, 0);
-          fill.addColorStop(0, party ? GOLD : HEART);
-          fill.addColorStop(1, party ? EMBER : DIAMOND);
-          tab(ctx, PAD, PAD, party ? "META BATIDA!" : "METAS DA LIVE", fill, star);
-        }
+        card(ctx, width, height, party ? GOLD : HEART, party ? EMBER : DIAMOND, 24);
         goals.forEach((goal, i) => {
-          const top = head + i * (rowH + gap);
+          const top = pad + i * (GOAL_BAR_H + gap);
           const look = GOAL_LOOK[goal.kind];
           const done = this.celebrating.has(goal.kind);
           const near = !done && goalNear(goal);
           const color = done ? GOLD : look.color;
           const color2 = done ? CREAM : look.color2;
-          const barY = compact ? top : top + 38;
-          if (!compact) {
-            look.mark(ctx, PAD + 11, top + 15, 21, color);
-            // "CURTIDAS · META 2" when there's room next to the percent, else just "CURTIDAS".
-            const labelFont = font(880, 22);
-            const room = COL - PAD * 2 - 30 - (near ? 96 : measureWith(font(900, 24))(done ? "100%" : goalPercent(goal)) + 12);
-            const numbered = `${look.label} · META ${goal.level}`;
-            const label = goal.level > 1 && measureWith(labelFont)(numbered) <= room ? numbered : look.label;
-            ctx.font = labelFont;
-            ctx.fillStyle = color;
-            ctx.fillText(fit(label, labelFont, room), PAD + 30, top + 23);
-            if (near) {
-              // "QUASE!" in a filled pill: the room is almost there.
-              const f = font(900, 20);
-              const w = measureWith(f)("QUASE!") + 22;
-              ctx.fillStyle = color;
-              roundRect(ctx, COL - PAD - w, top + 1, w, 30, 15);
-              ctx.fill();
-              ctx.font = f;
-              ctx.textAlign = "center";
-              ctx.fillStyle = DEEP;
-              ctx.fillText("QUASE!", COL - PAD - w / 2, top + 23);
-            } else {
-              ctx.font = font(900, 24);
-              ctx.textAlign = "right";
-              ctx.fillStyle = done ? GOLD : INK;
-              ctx.fillText(done ? "100%" : goalPercent(goal), COL - PAD, top + 24);
-            }
-            ctx.textAlign = "left";
-          }
+          const barW = width - pad * 2;
           const fraction = done ? 1 : this.fill[goal.kind].value;
-          bar(ctx, PAD, barY, COL - PAD * 2, barH, fraction, color, color2);
-          if (near && shine !== null) sweep(ctx, PAD, barY, COL - PAD * 2, barH, barH / 2, shine, 0.55);
-          // What's left, in the bar: the number that makes people tap.
-          const text = done ? "META BATIDA!" : near && compact ? `QUASE! ${goalLeft(goal)}` : goalLeft(goal);
-          const textX = compact ? PAD + 40 + (COL - PAD * 2 - 40) / 2 : PAD + (COL - PAD * 2) / 2;
-          const shown = shrinkToFit(text, 900, 24, 18, COL - PAD * 2 - (compact ? 56 : 20));
+          bar(ctx, pad, top, barW, GOAL_BAR_H, fraction, color, color2);
+          if (near && shine !== null) sweep(ctx, pad, top, barW, GOAL_BAR_H, GOAL_BAR_H / 2, shine, 0.55);
+          // The mark in white at the bar's start, then what's left: the number that makes people tap.
+          ctx.save();
+          ctx.shadowColor = "rgba(10,4,26,0.8)";
+          ctx.shadowBlur = 6;
+          look.mark(ctx, pad + 22, top + GOAL_BAR_H / 2, 22, "#FFFFFF");
+          ctx.restore();
+          const text = done ? "META BATIDA!" : near ? `${goalLeft(goal)}!` : goalLeft(goal);
+          const room = barW - 52;
+          const shown = shrinkToFit(text, 900, 24, 17, room);
           ctx.font = shown.font;
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          outlined(ctx, shown.text, textX, barY + barH / 2 + 1);
+          outlined(ctx, shown.text, pad + 42 + room / 2, top + GOAL_BAR_H / 2 + 1);
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
-          if (compact) {
-            ctx.save();
-            ctx.shadowColor = "rgba(10,4,26,0.8)";
-            ctx.shadowBlur = 6;
-            look.mark(ctx, PAD + 22, barY + barH / 2, 22, "#FFFFFF");
-            ctx.restore();
-          }
         });
       },
       crossfade,
@@ -1151,19 +986,19 @@ export class GoalPanel {
   }
 }
 
-// ---- the support ticker ---------------------------------------------------------------
+// ---- the support line ---------------------------------------------------------------
 
 /** How long each line stays up before the next. */
 const TICKER_TURN_S = 4.5;
-const TICKER_H = 124;
-const TICKER_COMPACT_H = 72;
+const TICKER_H = 78;
+const TICKER_COMPACT_H = 66;
 
 /**
- * Always on (ADR-0041), under the goals: "APOIE A LIVE" and one line at a
- * time, taking turns between what gifts pay for, what each gift gets on
- * the show (a gift power with its price) and the free ways to help. Lines
- * wrap to two rows instead of being cut. Each new line slides in. In a
- * game, one row without the tab.
+ * Always on (ADR-0041), under the goals: one line at a time, taking turns
+ * between what gifts pay for, what each gift gets on the show (a gift power
+ * with its price) and the free ways to help. Lines wrap to two rows instead
+ * of being cut; each new one slides in. In a game it shares its spot with
+ * a name card, which goes first.
  */
 export class SupportTicker {
   readonly sprite: TextSprite;
@@ -1171,7 +1006,7 @@ export class SupportTicker {
   private index = 0;
   private turnedAt = 0;
   private compact = false;
-  private readonly top = new Spring(HUD.rightTop, SPRINGS.snappy);
+  private readonly top = new Spring(HUD.sideTop, SPRINGS.snappy);
 
   constructor(gl: Gl) {
     this.sprite = new TextSprite(gl);
@@ -1190,13 +1025,13 @@ export class SupportTicker {
     if (wasHidden) enter(this.sprite, true);
   }
 
-  /** Where the ticker ends (stage px), or `fallback` when it's off. */
+  /** Where the line ends (stage px), or `fallback` when it's off. */
   bottom(fallback: number): number {
     return this.ticker ? this.top.target + (this.compact ? TICKER_COMPACT_H : TICKER_H) : fallback;
   }
 
-  /** `above` is where the goals end. */
-  update(dt: number, now: number, above: number, compact: boolean, scale: number): void {
+  /** `above` is where the goals end; `yieldTo` is true while a name card has its spot. */
+  update(dt: number, now: number, above: number, compact: boolean, yieldTo: boolean, scale: number): void {
     const ticker = this.ticker;
     if (ticker && compact !== this.compact) {
       this.compact = compact;
@@ -1209,11 +1044,12 @@ export class SupportTicker {
       this.sprite.offsetX.snap(18);
       this.sprite.offsetX.target = 0;
     }
-    const top = above > HUD.rightTop ? above + HUD.gap : HUD.rightTop;
+    if (ticker) this.sprite.opacity.target = yieldTo ? 0 : 1;
+    const top = above + HUD.gap;
     if (this.top.target !== top && !this.sprite.visible()) this.top.snap(top);
     this.top.target = top;
     this.top.step(dt);
-    place(this.sprite, RIGHT_X, this.top.value);
+    place(this.sprite, rightX(this.compact), this.top.value);
     this.sprite.update(dt, now);
   }
 
@@ -1224,57 +1060,44 @@ export class SupportTicker {
   private paint(scale: number, crossfade: boolean, now: number): void {
     const ticker = this.ticker as Ticker;
     const line = ticker.lines[this.index % ticker.lines.length] as Ticker["lines"][number];
-    const compact = this.compact;
-    const height = compact ? TICKER_COMPACT_H : TICKER_H;
+    const width = columnWidth(this.compact);
+    const height = this.compact ? TICKER_COMPACT_H : TICKER_H;
     const gift = line.way === "gift";
     const accent = gift ? GOLD : WAY_COLORS[line.way];
-    const chipFont = font(900, 25);
+    const chipFont = font(900, 23);
     const price = line.diamonds ? formatCount(line.diamonds) : "";
-    const chipW = price ? measureWith(chipFont)(price) + 46 : 0;
+    const chipW = price ? measureWith(chipFont)(price) + 42 : 0;
     paintPanel(
       this.sprite,
-      COL,
+      width,
       height,
       scale,
       (ctx) => {
-        card(ctx, COL, height, accent, PERK_PINK);
-        if (!compact) {
-          const title = fit(ticker.title.toUpperCase(), font(900, 22), COL - PAD * 2 - 28 - 90);
-          tab(ctx, PAD, PAD, title, GOLD, diamond);
-          // How far along the lines it is.
-          const dots = Math.min(ticker.lines.length, 9);
-          for (let i = 0; i < dots; i++) {
-            ctx.fillStyle = i === this.index % dots ? GOLD : "rgba(255,255,255,0.24)";
-            ctx.beginPath();
-            ctx.arc(COL - PAD - 4 - (dots - 1 - i) * 10, PAD + TAB_H / 2, 3.2, 0, Math.PI * 2);
-            ctx.fill();
-          }
-        }
-        // The line: a gift power's price in a chip, or the way's mark, then the text.
-        const cy = compact ? height / 2 : 60 + (height - 60) / 2;
-        let x = PAD;
+        card(ctx, width, height, accent, PERK_PINK, 24);
+        // A gift power's price in a chip, or the way's mark in a disc, then the line.
+        const cy = height / 2;
+        let x = 12;
         if (price) {
           ctx.fillStyle = withAlpha(GOLD, 0.24);
-          roundRect(ctx, x, cy - 19, chipW, 38, 19);
+          roundRect(ctx, x, cy - 18, chipW, 36, 18);
           ctx.fill();
-          diamond(ctx, x + 18, cy + 1, 19, DIAMOND);
+          diamond(ctx, x + 17, cy + 1, 18, DIAMOND);
           ctx.font = chipFont;
           ctx.fillStyle = GOLD;
-          ctx.fillText(price, x + 33, cy + 9);
-          x += chipW + 12;
+          ctx.fillText(price, x + 31, cy + 8);
+          x += chipW + 10;
         } else {
           ctx.fillStyle = withAlpha(accent, 0.2);
           ctx.beginPath();
-          ctx.arc(x + 19, cy, 19, 0, Math.PI * 2);
+          ctx.arc(x + 18, cy, 18, 0, Math.PI * 2);
           ctx.fill();
-          WAY_MARKS[line.way](ctx, x + 19, cy, 20, accent);
-          x += 50;
+          WAY_MARKS[line.way](ctx, x + 18, cy, 19, accent);
+          x += 46;
         }
-        const room = COL - x - PAD;
-        ctx.fillStyle = gift ? GOLD : INK;
-        const text = compact ? lineOrTwo(line.text, 800, 23, 20, 21, 18, room) : lineOrTwo(line.text, 800, 26, 22, 25, 20, room);
+        const text = lineOrTwo(line.text, 800, 23, 20, 21, 17, width - x - 12);
         ctx.font = text.font;
-        const lineH = text.size * 1.15;
+        ctx.fillStyle = gift ? GOLD : INK;
+        const lineH = text.size * 1.12;
         const first = cy - ((text.lines.length - 1) * lineH) / 2 + text.size * 0.36;
         text.lines.forEach((row, i) => ctx.fillText(row, x, first + i * lineH));
       },
@@ -1286,7 +1109,7 @@ export class SupportTicker {
 
 // ---- alerts ------------------------------------------------------------------------
 
-const TOAST = { minWidth: 236, height: 84, gap: 10, icon: 26, life: 6, loudLife: 7.5 };
+const TOAST = { minWidth: 220, height: 84, gap: 10, icon: 25, life: 6, loudLife: 7.5 };
 
 /** What goes between the name and the highlighted end: "duda enviou Rose", "duda ativou Fura-fila!". */
 export function alertVerb(kind: AlertKind): string {
@@ -1298,28 +1121,35 @@ export function toastLine(kind: AlertKind, detail: string): string {
   return `${alertVerb(kind)}${detail}`.trim();
 }
 
-/** How many name cards fit between `top` and `floor` (at least one, at most three). */
+/** How many name cards fit between `top` and `floor` (at most three; none when there's no room). */
 export function toastSlots(top: number, floor: number): number {
-  return Math.max(1, Math.min(3, Math.floor((floor - top + TOAST.gap) / (TOAST.height + TOAST.gap))));
+  return Math.max(0, Math.min(3, Math.floor((floor - top + TOAST.gap) / (TOAST.height + TOAST.gap))));
 }
 
 const TOAST_MARKS: Record<AlertKind, Mark> = { gift: diamond, follow: plus, share, level: star, crown, perk: diamond, raffle: sparkle };
 
 /**
- * Alerts as name cards, right column, newest on top: the viewer's name big,
- * what they did under it in the alert's color, and a mark in a disc. Each
- * slides in from the edge with a pop; the loud ones (a gift, a new top
- * gifter, a gift power) glow gold or pink.
+ * Alerts as name cards, right of the character, newest on top: the
+ * viewer's name big, what they did under it in the alert's color, and a
+ * mark in a disc. Each slides in from the edge with a pop; the loud ones (a
+ * gift, a new top gifter, a gift power) glow gold or pink.
  */
 export class Alerts {
   private readonly items: Array<{ sprite: TextSprite; bornAt: number; slot: Spring; kind: AlertKind; parts: [string, string]; width: number }> = [];
   private readonly pool: TextSprite[] = [];
   private glow = CYAN;
+  private compact = false;
 
   constructor(private readonly gl: Gl) {}
 
   setGlow(color: string): void {
     this.glow = color;
+  }
+
+  /** A name card is up (or coming in). Runs every frame: no closures. */
+  get showing(): boolean {
+    for (let i = 0; i < this.items.length; i++) if ((this.items[i] as { sprite: TextSprite }).sprite.opacity.target > 0) return true;
+    return false;
   }
 
   push(kind: AlertKind, name: string, detail: string, now: number, scale: number): void {
@@ -1338,8 +1168,12 @@ export class Alerts {
     while (this.items.length > 4) this.retire(this.items.length - 1);
   }
 
-  /** `top` is where the stack starts (under the support ticker); only `slots` name cards stay up at once. */
-  update(dt: number, now: number, top: number, slots: number): void {
+  /** `top` is where the stack starts; only `slots` name cards stay up at once; `compact` sizes them for a game. */
+  update(dt: number, now: number, top: number, slots: number, compact: boolean, scale: number): void {
+    if (compact !== this.compact) {
+      this.compact = compact;
+      this.repaint(scale);
+    }
     for (let i = this.items.length - 1; i >= 0; i--) {
       const item = this.items[i]!;
       const life = item.kind === "crown" || item.kind === "perk" ? TOAST.loudLife : TOAST.life;
@@ -1391,14 +1225,15 @@ export class Alerts {
   /** Paints one name card and returns its width. */
   private paint(sprite: TextSprite, kind: AlertKind, parts: [string, string], scale: number): number {
     const { height, icon } = TOAST;
+    const max = columnWidth(this.compact);
     const accent = this.accent(kind);
     const loud = kind === "gift" || kind === "crown" || kind === "perk";
-    const textX = PAD + icon * 2 + 14;
-    const room = COL - textX - PAD;
-    const name = shrinkToFit(parts[0], 860, 30, 22, room);
-    const line = shrinkToFit(parts[1], 780, 23, 19, room);
+    const textX = 12 + icon * 2 + 12;
+    const room = max - textX - 14;
+    const name = shrinkToFit(parts[0], 860, 29, 20, room);
+    const line = shrinkToFit(parts[1], 780, 22, 17, room);
     const natural = Math.max(measureWith(name.font)(name.text), measureWith(line.font)(line.text));
-    const width = Math.max(TOAST.minWidth, Math.min(COL, Math.ceil(textX + natural + PAD + 4)));
+    const width = Math.max(TOAST.minWidth, Math.min(max, Math.ceil(textX + natural + 18)));
     paintPanel(sprite, width, height, scale, (ctx) => {
       let body: string | CanvasGradient = "rgba(13,7,34,0.9)";
       if (loud) {
@@ -1409,7 +1244,7 @@ export class Alerts {
       }
       card(ctx, width, height, accent, loud ? accent : VIOLET, height / 2, body);
       // The mark in a solid disc in the alert's color.
-      const cx = PAD + icon - 4;
+      const cx = 12 + icon;
       ctx.save();
       ctx.shadowColor = withAlpha(accent, 0.8);
       ctx.shadowBlur = 12;
@@ -1418,7 +1253,7 @@ export class Alerts {
       ctx.arc(cx, height / 2, icon, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      TOAST_MARKS[kind](ctx, cx, height / 2 + (kind === "crown" ? 2 : 0), 26, DEEP);
+      TOAST_MARKS[kind](ctx, cx, height / 2 + (kind === "crown" ? 2 : 0), 25, DEEP);
       ctx.textBaseline = "alphabetic";
       ctx.font = name.font;
       ctx.fillStyle = kind === "crown" ? CREAM : INK;
@@ -1434,12 +1269,11 @@ export class Alerts {
 // ---- the "dono da live" ------------------------------------------------------------
 
 /**
- * Where the "dono da live" badge sits (ADR-0039): left, under the ranking
- * card (it follows the column's bottom, never above `minTop`), left of the
- * character and above the spotlight under it. A game board covers that
- * spot, so the badge gives way to it.
+ * Where the "dono da live" badge sits (ADR-0039): left of the character,
+ * under the kings card (it follows the card's bottom), above the moment
+ * stage. A game board covers that spot, so the badge gives way to it.
  */
-const BOSS = { minTop: 600, gap: 14, height: 104, glow: 26 };
+const BOSS = { gap: 12, height: 100, glow: 26 };
 
 /** A loud gold badge: a crown, "DONO DA LIVE", the name, and how long the reign has left. */
 export class BossBadge {
@@ -1450,8 +1284,8 @@ export class BossBadge {
   private second = Number.NaN;
   private shownAt = 0;
   private now = 0;
-  private below = BOSS.minTop;
-  private readonly top = new Spring(BOSS.minTop, SPRINGS.snappy);
+  private below: number = HUD.sideTop;
+  private readonly top = new Spring(HUD.sideTop, SPRINGS.snappy);
 
   constructor(gl: Gl) {
     this.sprite = new TextSprite(gl);
@@ -1481,7 +1315,7 @@ export class BossBadge {
     }
   }
 
-  /** `below` is where the ranking card ends; `away` (0 to 1) how far a game board has come in. */
+  /** `below` is where the kings card ends; `away` (0 to 1) how far a game board has come in. */
   update(dt: number, now: number, below: number, away: number, scale: number): void {
     this.below = below;
     this.now = now;
@@ -1508,7 +1342,7 @@ export class BossBadge {
   }
 
   private topFor(below: number): number {
-    return Math.max(BOSS.minTop, below + BOSS.gap);
+    return below + BOSS.gap;
   }
 
   /** Repaints when the second on the countdown changes. */
@@ -1518,11 +1352,10 @@ export class BossBadge {
     this.second = left;
     const name = this.name;
     const { height, glow } = BOSS;
-    const width = COL;
+    const width = HUD.column;
     const clock = formatClock(left);
-    const shown = shrinkToFit(name, 860, 32, 22, width - 92 - PAD);
-    const clockFont = font(850, 20);
-    const clockW = measureWith(clockFont)(clock) + 22;
+    const shown = shrinkToFit(name, 860, 30, 20, width - 84 - 14);
+    const clockFont = font(820, 18);
     const ending = left <= 30;
     this.sprite.draw(width + glow * 2, height + glow * 2, scale, (ctx) => {
       ctx.translate(glow, glow);
@@ -1534,7 +1367,7 @@ export class BossBadge {
       body.addColorStop(0, "rgba(40,14,66,0.95)");
       body.addColorStop(1, "rgba(96,58,10,0.93)");
       ctx.fillStyle = body;
-      roundRect(ctx, 0, 0, width, height, 26);
+      roundRect(ctx, 0, 0, width, height, 24);
       ctx.fill();
       ctx.restore();
       const edge = ctx.createLinearGradient(0, 0, width, height);
@@ -1543,40 +1376,34 @@ export class BossBadge {
       edge.addColorStop(1, EMBER);
       ctx.strokeStyle = edge;
       ctx.lineWidth = 3;
-      roundRect(ctx, 1.5, 1.5, width - 3, height - 3, 25);
+      roundRect(ctx, 1.5, 1.5, width - 3, height - 3, 23);
       ctx.stroke();
       // The crown, big, in a soft gold disc.
       ctx.fillStyle = withAlpha(GOLD, 0.2);
       ctx.beginPath();
-      ctx.arc(48, height / 2, 32, 0, Math.PI * 2);
+      ctx.arc(44, height / 2, 30, 0, Math.PI * 2);
       ctx.fill();
       ctx.save();
       ctx.shadowColor = withAlpha(GOLD, 0.9);
       ctx.shadowBlur = 12;
-      crown(ctx, 48, height / 2 + 2, 40, GOLD);
+      crown(ctx, 44, height / 2 + 2, 36, GOLD);
       ctx.restore();
-      sparkle(ctx, 70, height / 2 - 24, 13, "#FFF6D6");
+      sparkle(ctx, 64, height / 2 - 22, 12, "#FFF6D6");
       ctx.textBaseline = "alphabetic";
-      ctx.font = font(900, 21);
+      ctx.font = font(900, 19);
       ctx.fillStyle = GOLD;
-      ctx.fillText("DONO DA LIVE", 92, 36);
-      // The countdown in a chip, top right.
-      ctx.fillStyle = withAlpha(ending ? HOT : GOLD, ending ? 0.34 : 0.2);
-      roundRect(ctx, width - 14 - clockW, 14, clockW, 30, 15);
-      ctx.fill();
-      ctx.font = clockFont;
-      ctx.textAlign = "center";
-      ctx.fillStyle = ending ? "#FFD6DA" : GOLD;
-      ctx.fillText(clock, width - 14 - clockW / 2, 36);
-      ctx.textAlign = "left";
+      ctx.fillText("DONO DA LIVE", 84, 30);
       ctx.save();
       ctx.shadowColor = withAlpha(GOLD, 0.85);
       ctx.shadowBlur = 14;
       ctx.font = shown.font;
       ctx.fillStyle = CREAM;
-      ctx.fillText(shown.text, 92, 80);
+      ctx.fillText(shown.text, 84, 63);
       ctx.restore();
+      // How long the reign has left, hot in its last half minute.
+      ctx.font = clockFont;
+      ctx.fillStyle = ending ? "#FFB3BC" : withAlpha(GOLD, 0.85);
+      ctx.fillText(`por mais ${clock}`, 84, 88);
     });
   }
 }
-

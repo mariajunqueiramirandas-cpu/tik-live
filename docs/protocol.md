@@ -225,8 +225,9 @@ carries the lasting change (`boosts`, a quiz's `removed` options, the new
 Chat's vote on the minigame the run of show's last segment plays
 ([ADR-0029](adr/0029-gifts-power-ups-and-final-vote.md)): open during the
 last three minutes of the second-to-last segment, with the live tally (at
-most once a second). Viewers type the number. The stage's ranking card shows
-the vote instead of the rankings while it's open; `"vote": null` when it
+most once a second). Viewers type the number. The stage shows the vote in
+the kings card's place, left of the character, while it's open
+([ADR-0049](adr/0049-stage-hud-redesign.md)); `"vote": null` when it
 closes. Sent right after `hello` to a stage that connects mid-vote.
 
 With `by`, it's one viewer's pick of the next game instead (a gift power or
@@ -242,9 +243,11 @@ chat's vote while it's open.
 
 How viewers can support the show ([ADR-0032](adr/0032-gifts-and-supporting-the-show.md)):
 a title and up to four lines, each with a `way` (`like`, `follow`, `share`
-or `gift`) that picks its icon. The stage's ranking card shows it for about
-20 seconds every few minutes, and while the host explains it; an open
-`vote` stays on top. `"card": null` puts the rankings back. Sent right
+or `gift`) that picks its icon. The stage shows it on the moment stage under
+the character ([ADR-0049](adr/0049-stage-hud-redesign.md)) for about 20
+seconds every few minutes, and while the host explains it, unless a
+challenge or a call to passers-by has the stage or a game is on.
+`"card": null` takes it down. Sent right
 after `hello` to a stage that connects while it's up.
 
 #### `perks`
@@ -271,8 +274,9 @@ that connects while it's up.
 The always-on support ticker ([ADR-0041](adr/0041-support-ticker-and-gift-showcase.md)):
 a title and up to twelve lines, each with a `way` (`like`, `follow`,
 `share` or `gift`) that picks its icon; a `gift` line with `diamonds` is
-a gift power, shown with its price. The stage shows it top right under the
-goals and turns to the next line every four seconds on its own, so it's
+a gift power, shown with its price. The stage shows it right of the
+character, under the goals, and turns to the next line every few seconds
+on its own, so it's
 sent once, and again only when what it says changes. `"ticker": null`
 takes it down. Sent right after `hello` to a stage that connects.
 
@@ -324,7 +328,9 @@ a stage that connects while it's up.
 
 The stream's like and gift goals ([ADR-0036](adr/0036-like-and-gift-goals.md)):
 for each, the count so far (`gifts` counts diamonds), the target and which
-goal it is (`level` 1, 2...). The stage shows them top right as two bars.
+goal it is (`level` 1, 2...). The stage shows them right of the character
+as two bars that say what's left, and "QUASE LÁ!" on the moment stage when
+one is close.
 Progress is coalesced to a few messages a second; a goal reached goes out
 at once, with `level` one higher and the next `target`, and the stage
 shows "META BATIDA!" on that bar for a few seconds. An empty list hides the
@@ -358,8 +364,9 @@ three): `board` `likes` counts likes over the last 15 minutes
 diamonds over the last hour ([ADR-0029](adr/0029-gifts-power-ups-and-final-vote.md)).
 Anything older than `windowMin` no longer counts, so a board changes as
 things expire. Each board is sent at most once a second, and right after
-`hello`; empty `rows` takes that board off the card. The card takes turns
-between the two boards.
+`hello`; empty `rows` takes that board off the card. The stage shows each
+board's first place on the kings card, both at once, and a board's top three
+on the moment stage when they change ([ADR-0049](adr/0049-stage-hud-redesign.md)).
 
 #### `music`
 

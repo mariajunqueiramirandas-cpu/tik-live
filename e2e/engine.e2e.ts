@@ -43,7 +43,7 @@ test("every emotion renders a face on the orb", async ({ page }) => {
       (window as any).__lab.frame(time);
     }, [emotion, t] as const);
     // Above the eyes and below the brows: always inside the body, whatever the bob.
-    const body = await probe(page, 540, 625);
+    const body = await probe(page, 540, 470);
     expect(brightness(body), `${emotion}: orb body is lit`).toBeGreaterThan(300);
     const telemetry = await page.evaluate(() => (window as any).__lab.telemetry());
     expect(telemetry.error).toBeNull();
@@ -58,13 +58,13 @@ test("captions and alerts appear when the host speaks and gifts arrive", async (
   });
   // The reveal starts once playback begins (a microtask later), so render separately.
   await page.evaluate(() => (window as any).__lab.frame(2.5));
-  // Caption text sits below the orb; the gift's name card at the upper right (no goals: right under TikTok's header).
+  // Caption text sits under the moment stage; the gift's name card right of the character (no goals: at the column's top).
   let lit = 0;
-  for (let x = 140; x <= 940; x += 20) if (brightness(await probe(page, x, 1110)) > 450) lit++;
+  for (let x = 140; x <= 940; x += 20) if (brightness(await probe(page, x, 950)) > 450) lit++;
   expect(lit, "caption pixels").toBeGreaterThan(2);
   let gold = 0;
-  for (const y of [256, 272]) {
-    for (let x = 700; x <= 1030; x += 6) {
+  for (const y of [388, 408]) {
+    for (let x = 700; x <= 980; x += 6) {
       const [r, g, b] = await probe(page, x, y);
       if (r > 180 && g > 140 && b < 140) gold++;
     }
@@ -86,13 +86,13 @@ test("up next and the rankings show under the badge, and leave when emptied", as
     (window as any).__lab.frame(4);
   });
   expect(await lit(), "text in the panels").toBeGreaterThan(before + 8);
-  // The gifts came in last, so the gold top gifters' card is the one up.
+  // The top gifter's row is gold, on top of the kings card.
   let gold = 0;
-  for (let y = 420; y <= 500; y += 6) for (let x = 84; x <= 400; x += 10) {
+  for (let y = 356; y <= 420; y += 6) for (let x = 100; x <= 370; x += 10) {
     const [r, g, b] = await probe(page, x, y);
     if (r > 180 && g > 140 && b < 140) gold++;
   }
-  expect(gold, "the gold top gifters' card").toBeGreaterThan(4);
+  expect(gold, "the top gifter in gold").toBeGreaterThan(4);
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
   // A vote takes the ranking card's place, then gives it back.
   await page.evaluate(() => {
@@ -114,11 +114,11 @@ test("up next and the rankings show under the badge, and leave when emptied", as
   expect(await lit(), "panels faded out").toBeLessThanOrEqual(before + 2);
 });
 
-test("the goals show top right, turn gold when one is reached, and leave when hidden", async ({ page }) => {
-  // The goal panel's area: right of the title, above the alerts, clear of the orb.
+test("the goals show right of the character, turn gold when one is reached, and leave when hidden", async ({ page }) => {
+  // The goal bars' area: right of the character, under the title's chips.
   const area = async (match: (rgba: Rgba) => boolean) => {
     let n = 0;
-    for (let y = 214; y <= 340; y += 8) for (let x = 728; x <= 1004; x += 12) if (match(await probe(page, x, y))) n++;
+    for (let y = 352; y <= 448; y += 8) for (let x = 724; x <= 976; x += 12) if (match(await probe(page, x, y))) n++;
     return n;
   };
   const bright = (rgba: Rgba) => brightness(rgba) > 450;
@@ -148,7 +148,7 @@ test("the call to passers-by drops in under the character and comes down again",
   // Warm pink-to-orange pixels across the banner, above and below its white letters.
   const pink = async () => {
     let n = 0;
-    for (const y of [954, 998]) {
+    for (const y of [800, 864]) {
       for (let x = 200; x <= 880; x += 20) {
         const [r, , b] = await probe(page, x, y);
         if (r > 200 && r - b > 50) n++;
@@ -172,18 +172,20 @@ test("the call to passers-by drops in under the character and comes down again",
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
 });
 
-test("the support ticker stays up under the goals, and the gift showcase shows under the character", async ({ page }) => {
+test("the support line stays up under the goals, and the gift showcase shows under the character", async ({ page }) => {
   const gold = ([r, g, b]: Rgba) => r > 180 && g > 140 && b < 140;
   const count = async (x0: number, x1: number, y0: number, y1: number, step: number, match: (rgba: Rgba) => boolean) => {
     let n = 0;
     for (let y = y0; y <= y1; y += 6) for (let x = x0; x <= x1; x += step) if (match(await probe(page, x, y))) n++;
     return n;
   };
-  // The ticker sits right under the goals (they end near y 460), the showcase under the orb.
-  const ticker = () => count(720, 1020, 480, 590, 12, gold);
-  const showcase = () => count(80, 1000, 904, 1046, 30, gold);
+  // The support line sits right under the goals (they end near y 454), the showcase in the moment stage under the character.
+  const ticker = () => count(720, 980, 470, 536, 12, gold);
+  // Its lines take turns (gold for gifts, white for the free ways to help): up is any bright text there.
+  const tickerUp = () => count(720, 980, 470, 536, 8, (rgba) => brightness(rgba) > 450);
+  const showcase = () => count(110, 970, 756, 890, 30, gold);
   await page.evaluate(() => (window as any).__lab.frame(2));
-  const before = { ticker: await ticker(), showcase: await showcase() };
+  const before = { ticker: await ticker(), tickerUp: await tickerUp(), showcase: await showcase() };
   await page.evaluate(() => {
     const lab = (window as any).__lab;
     lab.goals(true);
@@ -191,7 +193,7 @@ test("the support ticker stays up under the goals, and the gift showcase shows u
     lab.perks(true);
     lab.frame(3.5);
   });
-  expect(await ticker(), "the ticker's gold title and gift line").toBeGreaterThan(before.ticker + 6);
+  expect(await ticker(), "the support line's first, gold line").toBeGreaterThan(before.ticker + 6);
   expect(await showcase(), "the showcase's gold title and crowned tile").toBeGreaterThan(before.showcase + 10);
   // A call to people scrolling past takes the spot; the ticker stays.
   await page.evaluate(() => {
@@ -202,20 +204,53 @@ test("the support ticker stays up under the goals, and the gift showcase shows u
     (window as any).__lab.frame(7);
   });
   expect(await showcase(), "showcase taken down").toBeLessThanOrEqual(before.showcase + 3);
-  expect(await ticker(), "the ticker is still up").toBeGreaterThan(before.ticker + 6);
+  expect(await tickerUp(), "the support line is still up").toBeGreaterThan(before.tickerUp + 6);
   await page.evaluate(() => {
     (window as any).__lab.ticker(false);
     (window as any).__lab.frame(9);
   });
-  expect(await ticker(), "ticker taken down").toBeLessThanOrEqual(before.ticker + 2);
+  expect(await tickerUp(), "the support line taken down").toBeLessThanOrEqual(before.tickerUp + 2);
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
 });
 
-test("during a game the side panels fold to fit above the board", async ({ page }) => {
-  const gold = ([r, g, b]: Rgba) => r > 180 && g > 140 && b < 140;
-  const count = async (x0: number, x1: number, y0: number, y1: number) => {
+test("up next rests on the moment stage, and a goal almost reached takes it over", async ({ page }) => {
+  const count = async (x0: number, x1: number, y0: number, y1: number, match: (rgba: Rgba) => boolean) => {
     let n = 0;
-    for (let y = y0; y <= y1; y += 6) for (let x = x0; x <= x1; x += 10) if (gold(await probe(page, x, y))) n++;
+    for (let y = y0; y <= y1; y += 6) for (let x = x0; x <= x1; x += 8) if (match(await probe(page, x, y))) n++;
+    return n;
+  };
+  // The countdown ring's cyan (the host's color) left on the stage card, and pink across the stage for the likes goal.
+  const cyan = ([r, g, b]: Rgba) => r < 190 && g > 190 && b > 200;
+  const pink = ([r, g, b]: Rgba) => r > 200 && r - g > 50 && b > 90;
+  const ring = () => count(245, 330, 780, 865, cyan);
+  const stage = () => count(130, 950, 824, 868, pink);
+  await page.evaluate(async () => {
+    const lab = (window as any).__lab;
+    await lab.ready();
+    lab.frame(2);
+  });
+  const before = { ring: await ring(), stage: await stage() };
+  await page.evaluate(() => {
+    const lab = (window as any).__lab;
+    lab.apply({ t: "schedule", items: [{ kind: "game", title: "Quiz: futebol", inMs: 154_000 }] });
+    lab.frame(3.5);
+  });
+  expect(await ring(), "up next's ring on the stage").toBeGreaterThan(before.ring + 4);
+  await page.evaluate(() => {
+    const lab = (window as any).__lab;
+    lab.apply({ t: "goals", goals: [{ kind: "likes", value: 4_420, target: 5_000, level: 2 }] });
+    lab.frame(5);
+  });
+  expect(await stage(), "the likes goal's bar across the stage").toBeGreaterThan(before.stage + 20);
+  expect(await ring(), "up next steps aside").toBeLessThanOrEqual(before.ring + 2);
+  expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
+});
+
+test("during a game the side panels fold to fit above the board, and up next moves atop them", async ({ page }) => {
+  const gold = ([r, g, b]: Rgba) => r > 180 && g > 140 && b < 140;
+  const count = async (x0: number, x1: number, y0: number, y1: number, match: (rgba: Rgba) => boolean) => {
+    let n = 0;
+    for (let y = y0; y <= y1; y += 6) for (let x = x0; x <= x1; x += 10) if (match(await probe(page, x, y))) n++;
     return n;
   };
   await page.evaluate(async () => {
@@ -226,20 +261,21 @@ test("during a game the side panels fold to fit above the board", async ({ page 
     lab.ticker(true);
     lab.frame(3);
   });
-  // At rest the gifters' card runs past y 560: second and third place, and what takes the crown.
-  expect(await count(60, 360, 566, 700), "the whole card").toBeGreaterThan(3);
+  // At rest the top gifter's row leads the kings card, right under the chips.
+  expect(await count(100, 370, 356, 420, gold), "the crown's row at rest").toBeGreaterThan(3);
   await page.evaluate(() => {
     (window as any).__lab.scene("trivia");
     (window as any).__lab.frame(6);
   });
-  expect(await count(60, 360, 566, 700), "folded above the board").toBe(0);
-  expect(await count(60, 360, 480, 550), "first place stays").toBeGreaterThan(3);
+  // In a game: up next is a pill at the column's top, the kings fold to one line each under it, all above the board.
+  expect(await count(100, 410, 426, 476, gold), "the crown's row, folded under up next").toBeGreaterThan(3);
+  expect(await count(60, 420, 562, 590, gold), "nothing gold past the board's edge").toBe(0);
   expect((await page.evaluate(() => (window as any).__lab.telemetry())).error).toBeNull();
 });
 
 test("the stage recovers from a lost GPU context", async ({ page }) => {
   await page.evaluate(() => (window as any).__lab.frame(2));
-  expect(brightness(await probe(page, 540, 625))).toBeGreaterThan(300);
+  expect(brightness(await probe(page, 540, 470))).toBeGreaterThan(300);
   await page.evaluate(async () => {
     const ext = (window as any).__lab.loseContext();
     await new Promise((r) => setTimeout(r, 100));
@@ -247,7 +283,7 @@ test("the stage recovers from a lost GPU context", async ({ page }) => {
     await new Promise((r) => setTimeout(r, 300));
     (window as any).__lab.frame(3);
   });
-  expect(brightness(await probe(page, 540, 625))).toBeGreaterThan(300);
+  expect(brightness(await probe(page, 540, 470))).toBeGreaterThan(300);
   const telemetry = await page.evaluate(() => (window as any).__lab.telemetry());
   expect(telemetry.error).toBeNull();
 });
@@ -279,7 +315,7 @@ test("broadcast capture reads the stage back as I420, top row first", async ({ p
       let [yMin, yMax, cMin, cMax] = [255, 0, 255, 0];
       for (let i = 0; i < w * h; i++) [yMin, yMax] = [Math.min(yMin, frame[i]!), Math.max(yMax, frame[i]!)];
       for (let i = w * h; i < frame.length; i++) [cMin, cMax] = [Math.min(cMin, frame[i]!), Math.max(cMax, frame[i]!)];
-      return { count: frames.length, bytes: frame.length, orb: luma(540, 625), below: luma(540, 1920 - 625), yMin, yMax, cMin, cMax, stats };
+      return { count: frames.length, bytes: frame.length, orb: luma(540, 470), below: luma(540, 1920 - 470), yMin, yMax, cMin, cMax, stats };
     },
     [W, H] as const,
   );
@@ -295,5 +331,5 @@ test("broadcast capture reads the stage back as I420, top row first", async ({ p
   expect(result.stats.frames).toBeGreaterThanOrEqual(3);
   // Stopping hands drawing back to the canvas.
   await page.evaluate(() => (window as any).__lab.frame(5));
-  expect(brightness(await probe(page, 540, 625))).toBeGreaterThan(300);
+  expect(brightness(await probe(page, 540, 470))).toBeGreaterThan(300);
 });

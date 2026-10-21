@@ -14,7 +14,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0006](0006-authentication.md) | Better Auth for accounts and sessions | Rejected (superseded by 0018) |
 | [0007](0007-channel-runtime.md) | Multi-tenant channel runtime | Proposed |
 | [0008](0008-realtime-protocol.md) | Realtime protocol | Proposed |
-| [0009](0009-stage-engine.md) | WebGL2 stage engine | Proposed |
+| [0009](0009-stage-engine.md) | WebGL2 stage engine | Proposed (the character's place amended by 0049) |
 | [0010](0010-frontend-stack.md) | Frontend stack | Proposed |
 | [0011](0011-design-direction.md) | Design direction | Proposed (palette, UI type and studio monitor amended by 0042) |
 | [0012](0012-ai-and-voice-pipeline.md) | AI and voice pipeline | Proposed (voice amended by 0021 and 0030, pacing by 0022 and 0031, prompt by 0025 and 0040, models and context by 0026) |
@@ -37,7 +37,7 @@ weighed, what we chose and what it costs us. Format and process are set by
 | [0029](0029-gifts-power-ups-and-final-vote.md) | A gift ranking, gift combos and power-ups, and chat's vote on the last segment | Proposed |
 | [0030](0030-fish-audio-default-voice.md) | Fish Audio Drama 3, through OpenRouter, is the default voice | Proposed |
 | [0031](0031-not-every-message-needs-an-answer.md) | Not every message needs an answer, and chat can't hold the show | Proposed |
-| [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed (on-screen support amended by 0041, gift moments by 0046) |
+| [0032](0032-gifts-and-supporting-the-show.md) | Bigger gift moments, and how viewers can support the show | Proposed (on-screen support amended by 0041 and 0049, gift moments by 0046) |
 | [0033](0033-host-memory.md) | Host memory that's cheap, fast and accurate | Proposed |
 | [0034](0034-names-that-sound-rude.md) | Names that sound rude out loud | Proposed |
 | [0035](0035-automatic-run-of-show.md) | A run of show the host plans by itself | Proposed (segment draw amended by 0044) |
