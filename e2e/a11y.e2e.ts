@@ -27,7 +27,7 @@ test("dashboard screens", async ({ page }) => {
   const host = page.url();
   await expect(page.getByText("está fora do ar")).toBeVisible();
   await audit(page, "studio");
-  for (const tab of ["character", "character?tab=voice", "character?tab=show", "safety", "setup", "analytics"]) {
+  for (const tab of ["character", "character?tab=voice", "character?tab=look", "character?tab=show", "safety", "setup", "analytics"]) {
     await page.goto(`${host}/${tab}`);
     await page.waitForLoadState("networkidle");
     await audit(page, tab);
