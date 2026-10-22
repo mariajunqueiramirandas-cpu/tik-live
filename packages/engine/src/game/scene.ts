@@ -41,17 +41,21 @@ import {
  * changes, at most a few times a second.
  */
 
-// Board geometry, stage px. Keep key text left of TikTok's right rail and
-// above its bottom bar; the character sits above the board.
+// Board geometry, stage px. The whole board, its footer and the caption under
+// it end above TikTok's comment feed (y 1325, measured on a phone, ADR-0050);
+// the character and the folded side panels sit above the board.
 const L = 84;
 const R = 996;
 const W = R - L;
 const CX = 540;
-const HEAD_Y = 622;
-const TOP = 708;
-const FOOT_Y = 1460;
-const ATLAS_Y = 560;
-const ATLAS_H = 940;
+const HEAD_Y = 474;
+const TOP = 556;
+const FOOT_Y = 1176;
+const ATLAS_Y = 412;
+const ATLAS_H = FOOT_Y + 40 - ATLAS_Y;
+/** The podium's floor and its blocks (first, second, third): room for the names above, and fourth and fifth below. */
+const PODIUM_BASE = FOOT_Y - 230;
+const PODIUM_HEIGHTS = [260, 190, 145];
 
 const DARK = "#120A2E";
 const GREEN = "#4DFF9A";
@@ -921,8 +925,8 @@ export class GameLayer implements Layer {
     const labelWidth = Math.min(this.measure(34, 800)(label), room);
     this.single(label, 34, 800, L, HEAD_Y - 20, G_HEAD, { align: 0, color: this.accent, maxWidth: labelWidth });
     this.single(round, 34, 600, L + labelWidth + 22, HEAD_Y - 20, G_HEAD, { align: 0, color: HAZE, weight: 600 });
-    this.box(L, 662, W, 14, 7, G_HEAD, TRACK).flags = F_TIMER;
-    const fill = this.box(L, 662, W, 14, 7, G_HEAD, this.accentRgba, NONE, rgba(this.accent, 0.5), 16);
+    this.box(L, HEAD_Y + 40, W, 14, 7, G_HEAD, TRACK).flags = F_TIMER;
+    const fill = this.box(L, HEAD_Y + 40, W, 14, 7, G_HEAD, this.accentRgba, NONE, rgba(this.accent, 0.5), 16);
     fill.bind = B_TIMER;
     fill.flags = F_TIMER;
     this.label(L_TIMER, R, HEAD_Y, 1, G_HEAD);
@@ -943,6 +947,9 @@ export class GameLayer implements Layer {
     const steps: Array<[number, number[], number, number[], number]> = [
       [3, [48, 44], 2, [40, 38], 92],
       [4, [44, 42], 2, [38, 36], 84],
+      // Tighter still, before any answer is cut to one line (the board ends above TikTok's comments).
+      [4, [40, 38, 36], 2, [34, 32], 72],
+      [5, [36, 34], 2, [30, 28], 64],
       [3, [62, 56, 52, 48], 1, [44, 42, 40], 100],
       [4, [44, 42, 40], 1, [38, 36], 84],
     ];
@@ -971,8 +978,9 @@ export class GameLayer implements Layer {
         bar.bind = B_BAR_X;
         bar.arg = i;
       }
-      this.box(L + 16, y + (h - 76) / 2, 76, 76, 22, g, rgba(correct ? GREEN : color));
-      this.single(OPTION_LETTERS[i] as string, 44, 800, L + 54, y + h / 2 - 25, g, { color: DARK });
+      const chip = Math.min(76, h - 14);
+      this.box(L + 16, y + (h - chip) / 2, chip, chip, 22, g, rgba(correct ? GREEN : color));
+      this.single(OPTION_LETTERS[i] as string, Math.round(chip * 0.58), 800, L + 16 + chip / 2, y + h / 2 - chip * 0.33, g, { color: DARK });
       this.text(o, L + 122, y + (h - o.lines.length * o.size * 1.12) / 2, g, { align: 0, weight: 680, lineHeight: 1.12 });
       if (reveal && pct) this.single(`${pct[i] ?? 0}%`, 42, 800, R - 26, y + h / 2 - 24, g, { align: 1, color: correct ? GREEN : INK });
       y += h + 14;
@@ -992,7 +1000,7 @@ export class GameLayer implements Layer {
       const textH = Math.max(...opts.map((o) => o.lines.length * o.size * 1.16));
       const trackTop = y + textH + 24;
       const trackBottom = FOOT_Y - 44;
-      const trackH = Math.max(240, trackBottom - trackTop);
+      const trackH = Math.max(180, trackBottom - trackTop);
       opts.forEach((o, i) => {
         const x = i === 0 ? L : CX + 14;
         const g = G_OPT + i;
@@ -1019,7 +1027,8 @@ export class GameLayer implements Layer {
     // Three or four options: racing bars.
     let pad = 36;
     let gap = 22;
-    const rowH = (o: FittedText) => Math.max(100, o.lines.length * o.size * 1.16 + pad);
+    let minRow = 100;
+    const rowH = (o: FittedText) => Math.max(minRow, o.lines.length * o.size * 1.16 + pad);
     const rows = (lines: number, sizes: number[]) => scene.options.map((o) => this.fit(o, W - 120 - 190, lines, sizes, 700));
     const height = (list: FittedText[]) => list.reduce((sum, o) => sum + rowH(o), 0) + gap * (n - 1);
     let opts = rows(2, [44, 42, 40]);
@@ -1034,6 +1043,13 @@ export class GameLayer implements Layer {
       pad = 36;
       gap = 22;
     }
+    if (y + height(opts) > FOOT_Y - 50) {
+      // Slimmer bars, still one full line each.
+      opts = rows(1, [40, 38, 36]);
+      pad = 22;
+      gap = 12;
+      minRow = 76;
+    }
     const total = height(opts);
     y += Math.max(0, (FOOT_Y - 50 - y - total) * 0.3);
     opts.forEach((o, i) => {
@@ -1047,8 +1063,9 @@ export class GameLayer implements Layer {
       bar.arg = i;
       bar.min = 100;
       if (leading) bar.flags = F_PULSE;
-      this.box(L + 14, y + (h - 72) / 2, 72, 72, 36, g, WHITE);
-      this.single(OPTION_LETTERS[i] as string, 42, 800, L + 50, y + h / 2 - 24, g, { color: DARK });
+      const disc = Math.min(72, h - 12);
+      this.box(L + 14, y + (h - disc) / 2, disc, disc, disc / 2, g, WHITE);
+      this.single(OPTION_LETTERS[i] as string, Math.round(disc * 0.58), 800, L + 14 + disc / 2, y + h / 2 - disc * 0.33, g, { color: DARK });
       this.text(o, L + 108, y + (h - o.lines.length * o.size * 1.16) / 2, g, { align: 0, weight: 700 });
       this.label(L_VALUE + i, R - 28, y + h / 2, 1, g);
       y += h + gap;
@@ -1140,7 +1157,7 @@ export class GameLayer implements Layer {
 
   private math(scene: Extract<GameScene, { kind: "math" }>): void {
     const reveal = scene.phase === "reveal" && scene.answer !== null;
-    const boardH = 540;
+    const boardH = Math.min(540, FOOT_Y - TOP - 110);
     // A chalkboard in a wooden frame.
     this.box(L - 4, TOP - 4, W + 8, boardH + 8, 36, G_MAIN, rgba("#7A4E2A"), rgba("#A87445", 0.9), rgba("#000000", 0.4), 30);
     this.box(L + 14, TOP + 14, W - 28, boardH - 28, 22, G_MAIN, rgba("#123326"), rgba("#FFFFFF", 0.08));
@@ -1149,7 +1166,7 @@ export class GameLayer implements Layer {
     this.text(expr, CX, TOP + 120, G_OPT, { weight: 700, color: chalk, glow: "#FFFFFF" });
     const answer = reveal ? `= ${scene.answer}` : "= ?";
     this.single(answer, 124, 700, CX, TOP + 300, G_EXTRA, { color: reveal ? "#FFE58A" : this.accent, glow: reveal ? "#FFD15C" : this.accent, weight: 700 });
-    const y = TOP + boardH + 50;
+    const y = TOP + boardH + 34;
     if (reveal) {
       if (scene.winner) this.pair(scene.winner, " acertou primeiro!", 58, CX, y, G_EXTRA2, this.accent, INK);
       else this.single("Ninguém acertou desta vez", 48, 700, CX, y, G_EXTRA2, { color: HAZE, weight: 700 });
@@ -1224,7 +1241,7 @@ export class GameLayer implements Layer {
   private tug(scene: Extract<GameScene, { kind: "tug" }>): void {
     const reveal = scene.phase === "reveal";
     const colW = (W - 24) / 2;
-    const panelH = 345;
+    const panelH = 300;
     scene.teams.forEach((team, i) => {
       const x = i === 0 ? L : CX + 12;
       const g = G_OPT + i;
@@ -1238,11 +1255,11 @@ export class GameLayer implements Layer {
       const name = this.fit(team.name, colW - 120, 2, [48, 42, 36], 800);
       const nameH = name.lines.length * name.size * 1.16;
       this.text(name, x + colW / 2 + 30, TOP + 20 + Math.max(0, (60 - nameH) / 2), g, { weight: 800, color: won ? GREEN : INK });
-      this.single("PUXÕES", 26, 800, x + colW / 2, TOP + 168, g, { color, weight: 800 });
-      this.label(L_VALUE + i, x + colW / 2, TOP + 252, 0.5, g);
-      this.label(L_VALUE + 2 + i, x + colW / 2, TOP + 312, 0.5, g);
+      this.single("PUXÕES", 26, 800, x + colW / 2, TOP + 146, g, { color, weight: 800 });
+      this.label(L_VALUE + i, x + colW / 2, TOP + 222, 0.5, g);
+      this.label(L_VALUE + 2 + i, x + colW / 2, TOP + 274, 0.5, g);
     });
-    const ropeY = TOP + panelH + 125;
+    const ropeY = TOP + panelH + 104;
     for (let i = 0; i < 2; i++) {
       const color = TEAM_COLORS[i] as string;
       this.box(i === 0 ? L : R - 120, ropeY - 70, 120, 140, 30, G_MAIN, rgba(color, 0.22), rgba(color, 0.65));
@@ -1257,9 +1274,9 @@ export class GameLayer implements Layer {
     knot.span = W - 120;
     if (!reveal) knot.flags = F_PULSE;
     const winner = reveal && scene.winner !== null ? scene.teams[scene.winner] : undefined;
-    if (!reveal) this.single("PUXA!", 110, 800, CX, ropeY + 96, G_EXTRA, { color: this.accent, glow: this.accent });
-    else if (winner) this.text(this.fit(`${winner.name} venceu!`.toUpperCase(), W, 2, [72, 64, 56, 48], 800), CX, ropeY + 100, G_EXTRA, { weight: 800, color: "#FFD15C", glow: "#FFD15C" });
-    else this.single("EMPATE!", 96, 800, CX, ropeY + 100, G_EXTRA, { color: this.accent, glow: this.accent });
+    if (!reveal) this.single("PUXA!", 88, 800, CX, ropeY + 84, G_EXTRA, { color: this.accent, glow: this.accent });
+    else if (winner) this.text(this.fit(`${winner.name} venceu!`.toUpperCase(), W, 1, [64, 56, 48, 42, 36], 800), CX, ropeY + 88, G_EXTRA, { weight: 800, color: "#FFD15C", glow: "#FFD15C" });
+    else this.single("EMPATE!", 84, 800, CX, ropeY + 86, G_EXTRA, { color: this.accent, glow: this.accent });
   }
 
   /**
@@ -1271,11 +1288,11 @@ export class GameLayer implements Layer {
     const reveal = scene.phase === "reveal";
     this.label(L_BIG, CX, TOP + 44, 0.5, G_MAIN);
     this.label(L_SUB, CX, TOP + 112, 0.5, G_MAIN);
-    const bodyW = 380;
-    const bodyH = 250;
+    const bodyW = 320;
+    const bodyH = 200;
     const bx = CX - bodyW / 2;
-    const by = TOP + 152;
-    const body = this.box(bx, by, bodyW, bodyH, 125, G_OPT, rgba(reveal ? "#3A1A0C" : "#C98B3E"), rgba(reveal ? "#FF5C3A" : "#FFD08A", 0.9), rgba(reveal ? "#FF3D3D" : "#FF8A2E", 0.55), 60);
+    const by = TOP + 150;
+    const body = this.box(bx, by, bodyW, bodyH, 100, G_OPT, rgba(reveal ? "#3A1A0C" : "#C98B3E"), rgba(reveal ? "#FF5C3A" : "#FFD08A", 0.9), rgba(reveal ? "#FF3D3D" : "#FF8A2E", 0.55), 60);
     body.bind = B_SHAKE;
     body.border = 4;
     if (!reveal) body.flags = F_PULSE;
@@ -1290,39 +1307,39 @@ export class GameLayer implements Layer {
       spot.bind = B_SHAKE;
       spot.arg = k + 1;
     });
-    const shine = this.box(bx + 70, by + 34, 120, 40, 20, G_OPT, rgba("#FFFFFF", reveal ? 0.05 : 0.2));
+    const shine = this.box(bx + 58, by + 28, 100, 34, 17, G_OPT, rgba("#FFFFFF", reveal ? 0.05 : 0.2));
     shine.bind = B_SHAKE;
     if (reveal) {
       this.punch[G_EXTRA2] = 1;
       this.delay[G_EXTRA2] = 0.08;
-      this.single("BOOM!", 140, 800, CX, by + bodyH / 2 - 86, G_EXTRA2, { color: "#FFE14D", glow: WARN });
+      this.single("BOOM!", 120, 800, CX, by + bodyH / 2 - 74, G_EXTRA2, { color: "#FFE14D", glow: WARN });
     }
     // How hot it is: never the real fuse.
-    const heatY = by + bodyH + 30;
+    const heatY = by + bodyH + 24;
     this.box(L + 40, heatY, W - 80, 26, 13, G_EXTRA, TRACK);
     const heat = this.box(L + 40, heatY, W - 80, 26, 13, G_EXTRA, rgba(reveal ? WARN : "#FF7A2E"), NONE, rgba("#FF5C3A", 0.55), 18);
     heat.bind = B_BAR_X;
     heat.arg = 0;
     heat.min = 26;
     // Who has held it longest.
-    const boardY = heatY + 52;
-    this.box(L + 40, boardY, W - 80, 182, 28, G_EXTRA, PANEL, rgba(this.accent, 0.35));
-    this.single("Quem mais segurou", 30, 700, CX, boardY + 14, G_EXTRA, { color: HAZE, weight: 700 });
-    for (let i = 0; i < 3; i++) this.label(L_VALUE + i, CX, boardY + 76 + i * 40, 0.5, G_EXTRA);
+    const boardY = heatY + 44;
+    this.box(L + 40, boardY, W - 80, 160, 28, G_EXTRA, PANEL, rgba(this.accent, 0.35));
+    this.single("Quem mais segurou", 30, 700, CX, boardY + 12, G_EXTRA, { color: HAZE, weight: 700 });
+    for (let i = 0; i < 3; i++) this.label(L_VALUE + i, CX, boardY + 68 + i * 34, 0.5, G_EXTRA);
   }
 
   private scoreboard(scene: Extract<GameScene, { kind: "scoreboard" }>): void {
     // Two lines only at a size that stays clear of the first-place name.
     let title = this.fit(scene.title, W, 1, [68, 60, 54], 800);
     if (isCut(title, scene.title)) title = this.fit(scene.title, W, 2, [54, 50, 46], 800);
-    this.text(title, CX, 600, G_MAIN, { weight: 800, color: "#FFD15C", glow: "#FFD15C" });
+    this.text(title, CX, HEAD_Y - 22, G_MAIN, { weight: 800, color: "#FFD15C", glow: "#FFD15C" });
     if (scene.rows.length === 0) {
-      this.single("Ninguém pontuou desta vez", 48, 700, CX, 900, G_OPT, { color: HAZE, weight: 700 });
+      this.single("Ninguém pontuou desta vez", 48, 700, CX, TOP + 200, G_OPT, { color: HAZE, weight: 700 });
       return;
     }
-    const base = 1180;
+    const base = PODIUM_BASE;
     const width = 270;
-    const heights = [300, 220, 170];
+    const heights = PODIUM_HEIGHTS;
     const columns = [1, 0, 2]; // second, first, third from the left
     const order = [0.75, 0.5, 0.3]; // first place grows last
     for (let place = 0; place < Math.min(3, scene.rows.length); place++) {
@@ -1341,13 +1358,13 @@ export class GameLayer implements Layer {
       this.single(`${formatCount(row.points)} pts`, 38, 700, x + width / 2, base - h - 74, g, { color, weight: 700, bind: B_FOLLOW, arg: ref });
     }
     scene.rows.slice(3, 5).forEach((row, k) => {
-      const y = base + 34 + k * 108;
+      const y = base + 24 + k * 94;
       const g = k === 0 ? G_EXTRA : G_EXTRA2;
       this.delay[g] = 1 + k * 0.1;
-      this.box(L + 50, y, W - 100, 90, 30, g, PANEL, rgba(HAZE, 0.35));
-      this.single(String(k + 4), 42, 800, L + 96, y + 20, g, { color: HAZE });
-      this.single(row.name, 42, 740, L + 150, y + 20, g, { align: 0, weight: 740, maxWidth: 470 });
-      this.single(`${formatCount(row.points)} pts`, 40, 800, R - 84, y + 21, g, { align: 1, color: this.accent });
+      this.box(L + 50, y, W - 100, 82, 30, g, PANEL, rgba(HAZE, 0.35));
+      this.single(String(k + 4), 40, 800, L + 96, y + 18, g, { color: HAZE });
+      this.single(row.name, 40, 740, L + 150, y + 18, g, { align: 0, weight: 740, maxWidth: 470 });
+      this.single(`${formatCount(row.points)} pts`, 38, 800, R - 84, y + 19, g, { align: 1, color: this.accent });
     });
   }
 
@@ -1357,10 +1374,10 @@ export class GameLayer implements Layer {
    * grows back with the name on it) the moment it's revealed.
    */
   private podium(scene: Extract<GameScene, { kind: "podium" }>): void {
-    this.text(this.fit(scene.title, W, 1, [68, 60, 54], 800), CX, 600, G_MAIN, { weight: 800, color: "#FFD15C", glow: "#FFD15C" });
-    const base = 1180;
+    this.text(this.fit(scene.title, W, 1, [68, 60, 54], 800), CX, HEAD_Y - 22, G_MAIN, { weight: 800, color: "#FFD15C", glow: "#FFD15C" });
+    const base = PODIUM_BASE;
     const width = 270;
-    const heights = [300, 220, 170];
+    const heights = PODIUM_HEIGHTS;
     const columns = [1, 0, 2]; // second, first, third from the left
     const order = [0.75, 0.5, 0.3]; // first place grows last
     const first = this.podiumShown < 0;

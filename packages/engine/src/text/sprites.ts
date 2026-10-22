@@ -106,10 +106,10 @@ export class TextSprite {
 
 // ---------------------------------------------------------------------------
 
-/** Under the moment stage, ending above TikTok's comment feed (y 1180) even at three lines (ADR-0049). */
-const CAPTION = { centerX: 540, top: 910, maxWidth: 860, maxLines: 3, sizes: [60, 52, 46], lineHeight: 1.12, pad: 40 };
-/** During games the caption sits under the board, above TikTok's bottom UI. */
-const GAME_CAPTION = { top: 1512, maxLines: 2, sizes: [52, 46, 40] };
+/** Under the moment stage, ending well above TikTok's comment feed (y 1325) even at three lines (ADR-0050). */
+const CAPTION = { centerX: 540, top: 872, maxWidth: 900, maxLines: 3, sizes: [64, 56, 48], lineHeight: 1.12, pad: 40 };
+/** During games the caption sits under the board, still above TikTok's comment feed. */
+const GAME_CAPTION = { top: 1206, maxLines: 2, sizes: [44, 40, 36] };
 
 /** The spoken line, revealed word by word in time with the voice. */
 export class Caption {

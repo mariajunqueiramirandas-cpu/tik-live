@@ -197,7 +197,7 @@ export class Chrome {
 export type NextPlacement = "stage" | "column" | "hidden";
 
 const NEXT_STAGE = { width: 620, height: 108, ring: 88, radius: 35, line: 10 };
-const NEXT_PILL = { height: 64, ring: 54, radius: 20, line: 6 };
+const NEXT_PILL = { height: 72, ring: 64, radius: 25, line: 7 };
 /** Under a minute the ring turns gold, in the last seconds it turns hot and pulses every second. */
 const NEXT_SOON_S = 60;
 const NEXT_FINAL_S = 10;
@@ -348,7 +348,7 @@ export class UpNext {
       const width = HUD.gameColumn;
       const height = NEXT_PILL.height;
       const textX = NEXT_PILL.ring + 18;
-      const title = shrinkToFit(item.title, 820, 25, 18, width - textX - PAD);
+      const title = shrinkToFit(item.title, 820, 28, 20, width - textX - PAD);
       place(this.card, LEFT, HUD.sideTop);
       paintPanel(
         this.card,
@@ -434,8 +434,8 @@ export class UpNext {
       // Under a minute, just the seconds, bigger.
       const s = Math.ceil(left);
       const text = s < 60 ? String(s) : formatCountdown(s);
-      const big = pill ? 22 : 34;
-      const small = pill ? 16 : 24;
+      const big = pill ? 26 : 34;
+      const small = pill ? 19 : 24;
       const shown = shrinkToFit(text, 900, s < 60 ? big : small, 13, radius * 2 - line - 6);
       ctx.font = shown.font;
       ctx.fillStyle = this.mood === "calm" ? INK : color;
